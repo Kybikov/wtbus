@@ -1,0 +1,120 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vivat-web
+    ports:
+      - "${WEB_PORT:-3001}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      API_INTERNAL_URL: http://api:8080
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: vivat-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vivat}
+      POSTGRES_USER: ${POSTGRES_USER:-vivat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vivat_local_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    container_name: vivat-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    container_name: vivat-migrate
+    volumes:
+      - ./backend/migrations:/migrations:ro
+    command:
+      [
+        "-path=/migrations",
+        "-database=postgres://${POSTGRES_USER:-vivat}:${POSTGRES_PASSWORD:-vivat_local_only}@postgres:5432/${POSTGRES_DB:-vivat}?sslmode=disable",
+        "up",
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vivat-api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vivat}:${POSTGRES_PASSWORD:-vivat_local_only}@postgres:5432/${POSTGRES_DB:-vivat}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGIN: http://localhost:${WEB_PORT:-3001}
+      SAAS_CONTROL_SECRET: ${SAAS_CONTROL_SECRET:-}
+      BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:-admin@vivat.local}
+      BOOTSTRAP_OWNER_PASSWORD: ${BOOTSTRAP_OWNER_PASSWORD:-vivat-local-change-me}
+      BOOTSTRAP_TENANT_SLUG: ${BOOTSTRAP_TENANT_SLUG:-vivat-bus}
+      BOOTSTRAP_OWNER_RESET_PASSWORD: ${BOOTSTRAP_OWNER_RESET_PASSWORD:-false}
+      SEED_DEMO_DATA: "true"
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  bot:
+    profiles: ["bot"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        COMMAND: bot
+    container_name: vivat-bot
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vivat}:${POSTGRES_PASSWORD:-vivat_local_only}@postgres:5432/${POSTGRES_DB:-vivat}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TENANT_SLUG: ${BOT_TENANT_SLUG:-vivat-bus}
+      TELEGRAM_BOTS_JSON: ${TELEGRAM_BOTS_JSON:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

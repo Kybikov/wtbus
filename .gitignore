@@ -10,6 +10,9 @@
 
 # testing
 /coverage
+/tmp
+/.impeccable
+/design-loop-progress.md
 
 # next.js
 /.next/
@@ -17,6 +20,7 @@
 
 # production
 /build
+/backend/*.exe
 
 # misc
 .DS_Store
@@ -30,6 +34,8 @@ pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+!.env.production.example
 
 # typescript
 *.tsbuildinfo

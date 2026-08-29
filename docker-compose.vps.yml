@@ -1,0 +1,46 @@
+# VPS integration override for servers that already run the Coolify Traefik proxy.
+#
+# Usage (together with the private .env.production file):
+# docker compose --env-file .env.production \
+#   -f docker-compose.production.yml -f docker-compose.vps.yml \
+#   --profile bot up -d --build --remove-orphans
+#
+# This keeps Vivat's database, Redis, API and web application private to its
+# Compose network. Only the web service joins the existing external `coolify`
+# network, where Traefik routes vivat.wtmelon.store to it and obtains TLS.
+
+services:
+  caddy:
+    profiles: ["standalone-proxy"]
+
+  web:
+    networks:
+      - default
+      - coolify
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: coolify
+      traefik.http.routers.vivat-http.entrypoints: http
+      traefik.http.routers.vivat-http.rule: Host(`${VIVAT_DOMAIN:?set VIVAT_DOMAIN in .env.production}`)
+      traefik.http.routers.vivat-http.middlewares: vivat-https-redirect
+      traefik.http.routers.vivat-http.service: vivat-web
+      traefik.http.routers.vivat-https.entrypoints: https
+      traefik.http.routers.vivat-https.rule: Host(`${VIVAT_DOMAIN:?set VIVAT_DOMAIN in .env.production}`)
+      traefik.http.routers.vivat-https.middlewares: vivat-compress,vivat-security
+      traefik.http.routers.vivat-https.service: vivat-web
+      traefik.http.routers.vivat-https.tls: "true"
+      traefik.http.routers.vivat-https.tls.certresolver: letsencrypt
+      traefik.http.services.vivat-web.loadbalancer.server.port: "3000"
+      traefik.http.middlewares.vivat-https-redirect.redirectscheme.scheme: https
+      traefik.http.middlewares.vivat-https-redirect.redirectscheme.permanent: "true"
+      traefik.http.middlewares.vivat-compress.compress: "true"
+      traefik.http.middlewares.vivat-security.headers.stsseconds: "31536000"
+      traefik.http.middlewares.vivat-security.headers.stsincludesubdomains: "true"
+      traefik.http.middlewares.vivat-security.headers.contenttypenosniff: "true"
+      traefik.http.middlewares.vivat-security.headers.frameDeny: "true"
+      traefik.http.middlewares.vivat-security.headers.referrerPolicy: strict-origin-when-cross-origin
+
+networks:
+  coolify:
+    external: true
+    name: coolify

@@ -1,0 +1,82 @@
+name: Deploy production stack
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vivat-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate web application
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm run build
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Validate Go services
+        working-directory: backend
+        run: |
+          go test ./...
+          go test -race ./...
+          go vet ./...
+
+      - name: Validate Docker Compose manifests
+        run: |
+          docker compose config --quiet
+          docker compose --env-file .env.production.example -f docker-compose.production.yml config --quiet
+          docker compose --env-file .env.production.example -f docker-compose.production.yml -f docker-compose.vps.yml config --quiet
+
+      - name: Configure SSH
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Synchronize source and start Docker Compose
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_PATH"
+          test -n "$DEPLOY_USER"
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude 'node_modules/' \
+            --exclude '.next/' \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          remote_command=$(printf 'cd %q && docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.vps.yml --profile bot up -d --build --remove-orphans' "$DEPLOY_PATH")
+          printf '%s\n' "$remote_command" | ssh "$DEPLOY_USER@$DEPLOY_HOST" sh -s

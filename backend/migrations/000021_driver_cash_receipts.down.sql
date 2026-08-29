@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS driver_cash_ledger_trip_cash_receipt_idx;
