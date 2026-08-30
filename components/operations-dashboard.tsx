@@ -668,7 +668,7 @@ export function OperationsDashboard() {
   return (
     <AppShell
       pageActions={
-        <Link className={buttonVariants({ size: "sm" })} href="/trips">
+        <Link className={buttonVariants({ size: "lg" })} href="/trips">
           <HugeiconsIcon icon={Add01Icon} size={16} />
           Создать рейс
         </Link>

@@ -585,7 +585,12 @@ export function AppShell({
       className="app-shell-frame min-h-svh bg-background p-2 text-foreground sm:p-3 lg:p-4"
       onOpenChange={setSidebarOpen}
       open={sidebarOpen}
-      style={{ "--sidebar-width": sidebarWidth } as React.CSSProperties}
+      style={
+        {
+          "--sidebar-width": sidebarWidth,
+          "--sidebar-width-icon": "3.5rem",
+        } as React.CSSProperties
+      }
     >
       <VivatSidebar
         brand={brand}
@@ -594,18 +599,26 @@ export function AppShell({
         variant={preferences.sidebarVariant}
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
-        <header className="app-topbar flex h-14 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:h-16 sm:px-5">
+        <header className="app-topbar flex h-14 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <SidebarTrigger
               aria-label="Открыть навигацию"
-              className="inline-flex"
+              className="inline-flex size-9 rounded-lg"
             />
             <Link className="shrink-0 md:hidden" href="/">
               <BrandMark brand={brand} className="size-9" />
             </Link>
+            <div className="hidden min-w-0 border-r border-border pr-3 lg:block">
+              <p className="truncate text-xs font-medium text-muted-foreground">
+                Операции <span className="px-1 text-border">/</span> {pageTitle}
+              </p>
+              <p className="truncate text-sm font-semibold">
+                {pageDescriptions[pageTitle] ?? pageTitle}
+              </p>
+            </div>
             <Button
               aria-haspopup="dialog"
-              className="hidden min-w-[17.5rem] justify-start text-muted-foreground md:inline-flex"
+              className="hidden h-9 min-w-[17.5rem] justify-start rounded-lg text-muted-foreground md:inline-flex"
               onClick={() => setSearchOpen(true)}
               variant="outline"
             >
@@ -615,14 +628,6 @@ export function AppShell({
                 ⌘K
               </kbd>
             </Button>
-            <div className="hidden min-w-0 border-l border-border pl-3 lg:block">
-              <p className="truncate text-xs font-medium text-muted-foreground">
-                Операции <span className="px-1 text-border">/</span> {pageTitle}
-              </p>
-              <p className="truncate text-sm font-semibold">
-                {pageDescriptions[pageTitle] ?? pageTitle}
-              </p>
-            </div>
             <p className="truncate font-semibold max-[420px]:hidden md:hidden">
               {pageTitle}
             </p>
@@ -661,8 +666,8 @@ export function AppShell({
                       render={
                         <Button
                           aria-label="Уведомления"
-                          className="relative"
-                          size="icon"
+                          className="relative size-9 rounded-lg"
+                          size="icon-lg"
                           variant="ghost"
                         />
                       }
@@ -741,7 +746,7 @@ export function AppShell({
                 render={
                   <Button
                     aria-label="Открыть меню профиля"
-                    className="ml-0.5 rounded-full"
+                    className="ml-0.5 size-9 rounded-full"
                     size="icon-lg"
                     variant="secondary"
                   />

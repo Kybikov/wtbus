@@ -247,7 +247,7 @@ export function RouteCatalog() {
   return (
     <AppShell
       pageActions={
-        <Button onClick={startCreate} size="sm">
+        <Button onClick={startCreate} size="lg">
           <HugeiconsIcon icon={Add01Icon} size={16} />
           Новый маршрут
         </Button>

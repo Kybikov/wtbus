@@ -122,26 +122,6 @@
 }
 
 @media (min-width: 1024px) {
-  :root[data-sidebar-mode="full"] .app-sidebar {
-    width: 18rem;
-  }
-  :root[data-sidebar-mode="icon"] .app-sidebar {
-    width: 4.5rem;
-    padding-inline: 0.5rem;
-  }
-  :root[data-sidebar-mode="icon"] .app-sidebar > a {
-    justify-content: center;
-    padding-inline: 0;
-  }
-  :root[data-sidebar-mode="icon"] .app-sidebar nav a {
-    justify-content: center;
-    padding-inline: 0;
-  }
-  :root[data-sidebar-mode="icon"] .app-sidebar-brand-copy,
-  :root[data-sidebar-mode="icon"] .app-sidebar-nav-label,
-  :root[data-sidebar-mode="icon"] .app-sidebar-demo {
-    display: none;
-  }
   :root[data-sidebar-variant="inset"] .app-shell-frame {
     gap: 1rem;
   }
@@ -181,6 +161,10 @@
     border-radius 180ms ease-out,
     width 180ms ease-out,
     background-color 180ms ease-out;
+}
+
+.app-topbar {
+  min-height: 3.5rem;
 }
 
 .dashboard-content > * {
