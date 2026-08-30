@@ -12,6 +12,7 @@ import {
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type Route = {
   id: string
@@ -320,19 +321,19 @@ export function RouteCatalog() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Модель цены
-              <select
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                onChange={(event) =>
+              <FieldSelect
+                onValueChange={(value) =>
                   updateForm(
                     "defaultPricingMode",
-                    event.target.value as RouteForm["defaultPricingMode"]
+                    value as RouteForm["defaultPricingMode"]
                   )
                 }
+                options={[
+                  { value: "per_passenger", label: "За пассажира" },
+                  { value: "per_booking", label: "За всю бронь" },
+                ]}
                 value={form.defaultPricingMode}
-              >
-                <option value="per_passenger">За пассажира</option>
-                <option value="per_booking">За всю бронь</option>
-              </select>
+              />
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               {form.defaultPricingMode === "per_booking"

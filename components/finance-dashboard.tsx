@@ -2,14 +2,12 @@
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Calendar01Icon,
-  Wallet01Icon,
-} from "@hugeicons/core-free-icons"
+import { Calendar01Icon, Wallet01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type CurrencySummary = {
   currency: string
@@ -221,7 +219,9 @@ export function FinanceDashboard() {
       await load()
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "Не удалось сохранить расход."
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось сохранить расход."
       )
     } finally {
       setExpenseSaving(false)
@@ -230,7 +230,12 @@ export function FinanceDashboard() {
 
   const currency = summary?.currency ?? "EUR"
   const availableCurrencies = Array.from(
-    new Set([currency, "EUR", "UAH", ...(summary?.currencies.map((item) => item.currency) ?? [])])
+    new Set([
+      currency,
+      "EUR",
+      "UAH",
+      ...(summary?.currencies.map((item) => item.currency) ?? []),
+    ])
   )
   return (
     <AppShell pageTitle="Финансы" utilities={<ThemeCustomizer />}>
@@ -300,10 +305,13 @@ export function FinanceDashboard() {
               Чистый результат
             </p>
             <p className="mt-3 text-3xl font-bold tracking-[-.035em] tabular-nums">
-              {loading ? "—" : formatMoney(summary?.netProfitMinor ?? 0, currency)}
+              {loading
+                ? "—"
+                : formatMoney(summary?.netProfitMinor ?? 0, currency)}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              Расходы: {formatMoney(summary?.operationalExpensesMinor ?? 0, currency)}
+              Расходы:{" "}
+              {formatMoney(summary?.operationalExpensesMinor ?? 0, currency)}
             </p>
           </section>
           <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/30 p-5">
@@ -342,22 +350,40 @@ export function FinanceDashboard() {
             </p>
           </div>
           <div className="grid divide-y divide-border md:grid-cols-2 md:divide-x md:divide-y-0">
-            {(summary?.currencies ?? [{
-              currency,
-              confirmedRevenueMinor: 0,
-              pendingRevenueMinor: 0,
-              confirmedBookings: 0,
-              cashCollectedMinor: 0,
-              cashHandedInMinor: 0,
-              driverCashBalanceMinor: 0,
-              operationalExpensesMinor: 0,
-              netProfitMinor: 0,
-            }]).map((item) => (
-              <div className="grid grid-cols-[4.5rem_1fr] gap-x-4 gap-y-2 px-5 py-4 text-sm" key={item.currency}>
+            {(
+              summary?.currencies ?? [
+                {
+                  currency,
+                  confirmedRevenueMinor: 0,
+                  pendingRevenueMinor: 0,
+                  confirmedBookings: 0,
+                  cashCollectedMinor: 0,
+                  cashHandedInMinor: 0,
+                  driverCashBalanceMinor: 0,
+                  operationalExpensesMinor: 0,
+                  netProfitMinor: 0,
+                },
+              ]
+            ).map((item) => (
+              <div
+                className="grid grid-cols-[4.5rem_1fr] gap-x-4 gap-y-2 px-5 py-4 text-sm"
+                key={item.currency}
+              >
                 <span className="font-bold text-primary">{item.currency}</span>
-                <span className="font-semibold tabular-nums">Выручка {formatMoney(item.confirmedRevenueMinor, item.currency)}</span>
-                <span className="text-xs text-muted-foreground">{item.confirmedBookings} броней</span>
-                <span className="text-xs text-muted-foreground tabular-nums">У водителей {formatMoney(item.driverCashBalanceMinor, item.currency)} · расходы {formatMoney(item.operationalExpensesMinor, item.currency)} · итог {formatMoney(item.netProfitMinor, item.currency)}</span>
+                <span className="font-semibold tabular-nums">
+                  Выручка{" "}
+                  {formatMoney(item.confirmedRevenueMinor, item.currency)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {item.confirmedBookings} броней
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  У водителей{" "}
+                  {formatMoney(item.driverCashBalanceMinor, item.currency)} ·
+                  расходы{" "}
+                  {formatMoney(item.operationalExpensesMinor, item.currency)} ·
+                  итог {formatMoney(item.netProfitMinor, item.currency)}
+                </span>
               </div>
             ))}
           </div>
@@ -405,8 +431,8 @@ export function FinanceDashboard() {
             <div>
               <h2 className="font-bold">Кассовая операция</h2>
               <p className="text-sm text-muted-foreground">
-                Водительские поступления фиксируются автоматически. Здесь
-                обычно отмечается сдача наличных в кассу.
+                Водительские поступления фиксируются автоматически. Здесь обычно
+                отмечается сдача наличных в кассу.
               </p>
             </div>
           </div>
@@ -416,46 +442,44 @@ export function FinanceDashboard() {
           >
             <label className="text-sm font-semibold">
               Водитель
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
-                onChange={(event) => setDriverID(event.target.value)}
+              <FieldSelect
+                onValueChange={setDriverID}
+                options={drivers.map((driver) => ({
+                  value: driver.id,
+                  label: driver.name,
+                }))}
+                triggerClassName="mt-2"
                 value={driverID}
-              >
-                {drivers.map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm font-semibold">
               Операция
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
-                onChange={(event) =>
-                  setKind(event.target.value as "cash_collected" | "collection")
+              <FieldSelect
+                onValueChange={(value) =>
+                  setKind(value as "cash_collected" | "collection")
                 }
+                options={[
+                  { value: "collection", label: "Сдал в кассу" },
+                  {
+                    value: "cash_collected",
+                    label: "Получил наличные вручную",
+                  },
+                ]}
+                triggerClassName="mt-2"
                 value={kind}
-              >
-                <option value="collection">Сдал в кассу</option>
-                <option value="cash_collected">
-                  Получил наличные вручную
-                </option>
-              </select>
+              />
             </label>
             <label className="text-sm font-semibold">
               Валюта
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
-                onChange={(event) => setCashCurrency(event.target.value)}
+              <FieldSelect
+                onValueChange={setCashCurrency}
+                options={availableCurrencies.map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+                triggerClassName="mt-2"
                 value={cashCurrency || currency}
-              >
-                {availableCurrencies.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm font-semibold">
               Сумма
@@ -478,11 +502,16 @@ export function FinanceDashboard() {
         </section>
         <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5">
           <div className="flex items-center gap-2">
-            <HugeiconsIcon className="text-primary" icon={Wallet01Icon} size={20} />
+            <HugeiconsIcon
+              className="text-primary"
+              icon={Wallet01Icon}
+              size={20}
+            />
             <div>
               <h2 className="font-bold">Операционный расход</h2>
               <p className="text-sm text-muted-foreground">
-                Фиксируйте реальные расходы в валюте платежа — итог всегда остаётся отдельным по каждой валюте.
+                Фиксируйте реальные расходы в валюте платежа — итог всегда
+                остаётся отдельным по каждой валюте.
               </p>
             </div>
           </div>
@@ -492,31 +521,30 @@ export function FinanceDashboard() {
           >
             <label className="text-sm font-semibold">
               Категория
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
-                onChange={(event) => setExpenseCategory(event.target.value)}
+              <FieldSelect
+                onValueChange={setExpenseCategory}
+                options={[
+                  { value: "fuel", label: "Топливо" },
+                  { value: "driver_pay", label: "Оплата водителю" },
+                  { value: "amortization", label: "Амортизация" },
+                  { value: "marketing", label: "Маркетинг" },
+                  { value: "other", label: "Другое" },
+                ]}
+                triggerClassName="mt-2"
                 value={expenseCategory}
-              >
-                <option value="fuel">Топливо</option>
-                <option value="driver_pay">Оплата водителю</option>
-                <option value="amortization">Амортизация</option>
-                <option value="marketing">Маркетинг</option>
-                <option value="other">Другое</option>
-              </select>
+              />
             </label>
             <label className="text-sm font-semibold">
               Валюта
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
-                onChange={(event) => setExpenseCurrency(event.target.value)}
+              <FieldSelect
+                onValueChange={setExpenseCurrency}
+                options={availableCurrencies.map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+                triggerClassName="mt-2"
                 value={expenseCurrency || currency}
-              >
-                {availableCurrencies.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm font-semibold">
               Сумма

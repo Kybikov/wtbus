@@ -1,5 +1,7 @@
 "use client"
 
+import { FieldSelect } from "@/components/ui/field-select"
+
 export type CustomFieldType = "text" | "number" | "date" | "boolean" | "select"
 
 export type CustomDataField = {
@@ -96,21 +98,20 @@ export function CustomDataFields({
                     *
                   </span>
                 ) : null}
-                <select
-                  {...common}
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  onChange={(event) =>
-                    onChange({ ...values, [field.key]: event.target.value })
+                <FieldSelect
+                  disabled={common.disabled}
+                  onValueChange={(nextValue) =>
+                    onChange({ ...values, [field.key]: nextValue })
                   }
+                  options={[
+                    { value: "", label: "Выберите значение" },
+                    ...field.options.map((option) => ({
+                      value: option,
+                      label: option,
+                    })),
+                  ]}
                   value={typeof value === "string" ? value : ""}
-                >
-                  <option value="">Выберите значение</option>
-                  {field.options.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             )
           }

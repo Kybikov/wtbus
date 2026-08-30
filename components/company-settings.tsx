@@ -6,6 +6,7 @@ import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { CustomFieldManager } from "@/components/custom-field-manager"
 import { PaymentSettings } from "@/components/payment-settings"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type Branding = {
   logoUrl?: string
@@ -218,22 +219,22 @@ export function CompanySettings() {
             </label>
             <label className="text-sm font-semibold">
               Тема по умолчанию
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 font-normal"
+              <FieldSelect
                 disabled={loading || isSubscriptionLocked}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setBranding((current) => ({
                     ...current,
-                    defaultTheme: event.target
-                      .value as Branding["defaultTheme"],
+                    defaultTheme: value as Branding["defaultTheme"],
                   }))
                 }
+                options={[
+                  { value: "dark", label: "Тёмная" },
+                  { value: "light", label: "Светлая" },
+                  { value: "system", label: "Как в системе" },
+                ]}
+                triggerClassName="mt-2"
                 value={branding.defaultTheme}
-              >
-                <option value="dark">Тёмная</option>
-                <option value="light">Светлая</option>
-                <option value="system">Как в системе</option>
-              </select>
+              />
             </label>
             <label className="text-sm font-semibold sm:col-span-2">
               Логотип (HTTPS URL или путь)

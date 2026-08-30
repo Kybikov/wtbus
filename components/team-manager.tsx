@@ -2,13 +2,12 @@
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Add01Icon,
-} from "@hugeicons/core-free-icons"
+import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type Role = "owner" | "admin" | "dispatcher" | "driver"
 
@@ -321,23 +320,20 @@ export function TeamManager() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Роль
-              <select
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              <FieldSelect
                 disabled={saving}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setForm((current) => ({
                     ...current,
-                    role: event.target.value as Role,
+                    role: value as Role,
                   }))
                 }
+                options={roles.map((role) => ({
+                  value: role,
+                  label: roleLabels[role],
+                }))}
                 value={form.role}
-              >
-                {roles.map((role) => (
-                  <option key={role} value={role}>
-                    {roleLabels[role]}
-                  </option>
-                ))}
-              </select>
+              />
               <span className="text-xs font-normal text-muted-foreground">
                 {roleDescriptions[form.role]}
               </span>
@@ -431,23 +427,20 @@ export function TeamManager() {
                   </div>
                   <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
                     Роль
-                    <select
+                    <FieldSelect
                       aria-label={`Роль ${member.displayName}`}
-                      className="h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
                       disabled={!editable || changingId === member.membershipId}
-                      onChange={(event) =>
+                      onValueChange={(value) =>
                         void updateMember(member, {
-                          role: event.target.value as Role,
+                          role: value as Role,
                         })
                       }
+                      options={(editable ? roles : [member.role]).map(
+                        (role) => ({ value: role, label: roleLabels[role] })
+                      )}
+                      triggerClassName="h-10 text-sm font-semibold"
                       value={member.role}
-                    >
-                      {(editable ? roles : [member.role]).map((role) => (
-                        <option key={role} value={role}>
-                          {roleLabels[role]}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                   <div className="flex justify-start md:justify-end">
                     {editable ? (

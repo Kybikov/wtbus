@@ -17,6 +17,7 @@ import { useTheme } from "next-themes"
 
 import { AppShell } from "@/components/app-shell"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 import { cn } from "@/lib/utils"
 
 type ThemePreset = "company" | "gold" | "ocean" | "emerald" | "violet"
@@ -113,7 +114,9 @@ function isUIPreferences(value: unknown): value is UIPreferences {
     typeof value === "object" &&
     value !== null &&
     "theme" in value &&
-    (value.theme === "light" || value.theme === "dark" || value.theme === "system") &&
+    (value.theme === "light" ||
+      value.theme === "dark" ||
+      value.theme === "system") &&
     "accent" in value &&
     (value.accent === "company" ||
       (typeof value.accent === "string" && value.accent in presets)) &&
@@ -315,7 +318,8 @@ export function ThemeCustomizer() {
             payload.defaultTheme === "system")
         ) {
           setCompanyAccent(payload.primaryColor)
-          if (!hasPersonalThemePreference.current) setTheme(payload.defaultTheme)
+          if (!hasPersonalThemePreference.current)
+            setTheme(payload.defaultTheme)
         }
       })
       .catch(() => undefined)
@@ -452,20 +456,18 @@ export function ThemeCustomizer() {
           <div className="space-y-4">
             <label className="block space-y-2">
               <span className="text-xs font-bold">Цветовой акцент</span>
-              <select
-                className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                onChange={(event) =>
-                  setPreset(event.target.value as ThemePreset)
-                }
+              <FieldSelect
+                onValueChange={(value) => setPreset(value as ThemePreset)}
+                options={[
+                  { value: "company", label: "Бренд компании" },
+                  ...Object.entries(presets).map(([value, option]) => ({
+                    value,
+                    label: option.label,
+                  })),
+                ]}
+                triggerClassName="h-9 text-sm"
                 value={preset}
-              >
-                <option value="company">Бренд компании</option>
-                {Object.entries(presets).map(([value, option]) => (
-                  <option key={value} value={value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <div className="space-y-2">
               <span className="block text-xs font-bold">Режим</span>
@@ -540,7 +542,8 @@ export function ThemeCustomizer() {
             </div>
           </div>
           <p className="mt-5 border-t border-border pt-3 text-xs leading-4 text-muted-foreground">
-            Личные настройки сохраняются в профиле и синхронизируются между устройствами. {" "}
+            Личные настройки сохраняются в профиле и синхронизируются между
+            устройствами.{" "}
             <Link
               className="font-semibold text-foreground underline underline-offset-4"
               href="/settings"
@@ -684,7 +687,10 @@ export function OperationsDashboard() {
             role="alert"
           >
             <span>{loadError}</span>
-            <Link className="font-semibold underline underline-offset-4" href="/trips">
+            <Link
+              className="font-semibold underline underline-offset-4"
+              href="/trips"
+            >
               Открыть рейсы
             </Link>
           </div>
@@ -694,7 +700,11 @@ export function OperationsDashboard() {
           className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
         >
           <Metric
-            detail={dashboard ? `на ${formatDashboardDate(dashboard.date, dashboard.timezone)}` : "загружаем данные"}
+            detail={
+              dashboard
+                ? `на ${formatDashboardDate(dashboard.date, dashboard.timezone)}`
+                : "загружаем данные"
+            }
             icon={Route01Icon}
             label="Рейсов"
             value={dashboard ? String(dashboard.tripCount) : "—"}
@@ -721,7 +731,10 @@ export function OperationsDashboard() {
             label="Ожидаемая выручка"
             value={
               dashboard
-                ? formatMoney(dashboard.expectedRevenueMinor, dashboard.currency)
+                ? formatMoney(
+                    dashboard.expectedRevenueMinor,
+                    dashboard.currency
+                  )
                 : "—"
             }
           />
@@ -764,36 +777,38 @@ export function OperationsDashboard() {
                   tone: "slate" as const,
                 }
                 return (
-                <div
-                  className="trip-row grid grid-cols-[3rem_minmax(8rem,1fr)_auto] items-center gap-3 px-5 py-4 sm:grid-cols-[4rem_minmax(10rem,1.3fr)_minmax(8rem,1fr)_minmax(7rem,1fr)_auto]"
-                  key={trip.id}
-                >
-                  <div className="text-sm font-bold tabular-nums">
-                    {formatTime(trip.startsAt, dashboard.timezone)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">
-                      {trip.origin} → {trip.destination}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground sm:hidden">
-                      {trip.vehicle || "Транспорт не назначен"} · {trip.bookedSeats}/{trip.capacity} мест
-                    </p>
-                  </div>
-                  <p className="hidden text-sm text-muted-foreground sm:block">
-                    {trip.vehicle || "Не назначен"}
-                  </p>
-                  <p className="hidden text-sm text-muted-foreground sm:block">
-                    {trip.driver || `${trip.bookedSeats}/${trip.capacity} мест`}
-                  </p>
-                  <span
-                    className={cn(
-                      "justify-self-end rounded-full px-2.5 py-1 text-xs font-bold",
-                      `status-${meta.tone}`
-                    )}
+                  <div
+                    className="trip-row grid grid-cols-[3rem_minmax(8rem,1fr)_auto] items-center gap-3 px-5 py-4 sm:grid-cols-[4rem_minmax(10rem,1.3fr)_minmax(8rem,1fr)_minmax(7rem,1fr)_auto]"
+                    key={trip.id}
                   >
-                    {meta.label}
-                  </span>
-                </div>
+                    <div className="text-sm font-bold tabular-nums">
+                      {formatTime(trip.startsAt, dashboard.timezone)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {trip.origin} → {trip.destination}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground sm:hidden">
+                        {trip.vehicle || "Транспорт не назначен"} ·{" "}
+                        {trip.bookedSeats}/{trip.capacity} мест
+                      </p>
+                    </div>
+                    <p className="hidden text-sm text-muted-foreground sm:block">
+                      {trip.vehicle || "Не назначен"}
+                    </p>
+                    <p className="hidden text-sm text-muted-foreground sm:block">
+                      {trip.driver ||
+                        `${trip.bookedSeats}/${trip.capacity} мест`}
+                    </p>
+                    <span
+                      className={cn(
+                        "justify-self-end rounded-full px-2.5 py-1 text-xs font-bold",
+                        `status-${meta.tone}`
+                      )}
+                    >
+                      {meta.label}
+                    </span>
+                  </div>
                 )
               })}
             </div>
@@ -801,7 +816,8 @@ export function OperationsDashboard() {
               className="flex w-full items-center justify-center gap-2 border-t border-border px-5 py-3 text-sm font-bold text-primary hover:bg-muted"
               href="/trips"
             >
-              Открыть календарь <HugeiconsIcon icon={ArrowUpRight01Icon} size={16} />
+              Открыть календарь{" "}
+              <HugeiconsIcon icon={ArrowUpRight01Icon} size={16} />
             </Link>
           </article>
           <article className="surface-card p-5">
@@ -819,7 +835,9 @@ export function OperationsDashboard() {
             </div>
             <div className="mt-7 space-y-5">
               {isLoading ? (
-                <p className="text-sm text-muted-foreground">Загружаем автопарк…</p>
+                <p className="text-sm text-muted-foreground">
+                  Загружаем автопарк…
+                </p>
               ) : null}
               {!isLoading && dashboard?.vehicles.length === 0 ? (
                 <p className="text-sm text-muted-foreground">

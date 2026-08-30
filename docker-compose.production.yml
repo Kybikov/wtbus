@@ -1,137 +1,44 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    environment:
-      VIVAT_DOMAIN: ${VIVAT_DOMAIN:?set VIVAT_DOMAIN in .env.production}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      web:
-        condition: service_started
-    restart: unless-stopped
-
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOSTNAME: 0.0.0.0
-      # `api` is a generic hostname on shared proxy networks. Use an explicit
-      # alias so the BFF always reaches this stack's Go API on a VPS where the
-      # web service is also attached to Coolify's external network.
-      API_INTERNAL_URL: http://vivat-api:8080
-      SESSION_COOKIE_SECURE: "true"
-    depends_on:
-      api:
-        condition: service_started
-    restart: unless-stopped
-
   postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.production}
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.production}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
+    ports: !reset []
 
   redis:
-    image: redis:8-alpine
-    command:
-      [
-        "sh",
-        "-c",
-        "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\"",
-      ]
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  migrate:
-    image: migrate/migrate:v4.18.3
-    volumes:
-      - ./backend/migrations:/migrations:ro
-    command:
-      [
-        "-path=/migrations",
-        "-database=postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable",
-        "up",
-      ]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
+    ports: !reset []
 
   api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    ports: !reset []
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable
-      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}@redis:6379/0
-      CORS_ORIGIN: https://${VIVAT_DOMAIN:?set VIVAT_DOMAIN in .env.production}
-      SAAS_CONTROL_SECRET: ${SAAS_CONTROL_SECRET:?set SAAS_CONTROL_SECRET in .env.production}
-      BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:?set BOOTSTRAP_OWNER_EMAIL in .env.production}
-      BOOTSTRAP_OWNER_PASSWORD: ${BOOTSTRAP_OWNER_PASSWORD:?set BOOTSTRAP_OWNER_PASSWORD in .env.production}
-      BOOTSTRAP_TENANT_SLUG: ${BOOTSTRAP_TENANT_SLUG:-vivat-bus}
-      BOOTSTRAP_OWNER_RESET_PASSWORD: ${BOOTSTRAP_OWNER_RESET_PASSWORD:-false}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
+      DATABASE_URL: ${VIVAT_DATABASE_URL:?Set VIVAT_DATABASE_URL in the production environment}
+
+  web:
+    environment:
+      API_INTERNAL_URL: http://vivat-api:8080
     networks:
-      default:
-        aliases:
-          - vivat-api
-    restart: unless-stopped
+      - default
+      - coolify
+    labels:
+      caddy_0: https://vivat.wtmelon.store
+      caddy_0.encode: zstd gzip
+      caddy_0.handle_path: /*
+      caddy_0.handle_path.0_reverse_proxy: "{{upstreams 3000}}"
+      caddy_0.header: -Server
+      caddy_ingress_network: coolify
+      traefik.enable: "true"
+      traefik.http.middlewares.vivat-gzip.compress: "true"
+      traefik.http.middlewares.vivat-https.redirectscheme.scheme: https
+      traefik.http.routers.vivat-http.entryPoints: http
+      traefik.http.routers.vivat-http.middlewares: vivat-https
+      traefik.http.routers.vivat-http.rule: "Host(`vivat.wtmelon.store`) && PathPrefix(`/`)"
+      traefik.http.routers.vivat-http.service: vivat-http
+      traefik.http.routers.vivat-https.entryPoints: https
+      traefik.http.routers.vivat-https.middlewares: vivat-gzip
+      traefik.http.routers.vivat-https.rule: "Host(`vivat.wtmelon.store`) && PathPrefix(`/`)"
+      traefik.http.routers.vivat-https.service: vivat-https
+      traefik.http.routers.vivat-https.tls: "true"
+      traefik.http.routers.vivat-https.tls.certresolver: letsencrypt
+      traefik.http.services.vivat-http.loadbalancer.server.port: "3000"
+      traefik.http.services.vivat-https.loadbalancer.server.port: "3000"
 
-  bot:
-    profiles: ["bot"]
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        COMMAND: bot
-    environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable
-      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}@redis:6379/0
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TENANT_SLUG: ${BOT_TENANT_SLUG:-vivat-bus}
-      TELEGRAM_BOTS_JSON: ${TELEGRAM_BOTS_JSON:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-  redis_data:
-  caddy_data:
-  caddy_config:
+networks:
+  coolify:
+    external: true

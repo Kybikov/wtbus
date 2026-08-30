@@ -11,6 +11,7 @@ import {
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type Route = { id: string; name: string }
 type Block = {
@@ -218,24 +219,23 @@ export function AvailabilityManager() {
             </div>
             <label className="grid gap-2 text-sm font-semibold">
               Маршрут
-              <select
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              <FieldSelect
                 disabled={saving}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setForm((current) => ({
                     ...current,
-                    routeId: event.target.value,
+                    routeId: value,
                   }))
                 }
+                options={[
+                  { value: "", label: "Все маршруты" },
+                  ...routes.map((route) => ({
+                    value: route.id,
+                    label: route.name,
+                  })),
+                ]}
                 value={form.routeId}
-              >
-                <option value="">Все маршруты</option>
-                {routes.map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Причина (необязательно)

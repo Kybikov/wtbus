@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon, Edit02Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type FieldType = "text" | "number" | "date" | "boolean" | "select"
 type EntityType = "customer" | "trip" | "booking"
@@ -347,25 +348,20 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
           </label>
           <label className="grid gap-2 text-sm font-semibold">
             Тип
-            <select
-              className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            <FieldSelect
               disabled={saving || editingID !== null}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 setForm((current) => ({
                   ...current,
-                  fieldType: event.target.value as FieldType,
-                  optionsText:
-                    event.target.value === "select" ? current.optionsText : "",
+                  fieldType: value as FieldType,
+                  optionsText: value === "select" ? current.optionsText : "",
                 }))
               }
+              options={(Object.keys(fieldTypeLabels) as FieldType[]).map(
+                (type) => ({ value: type, label: fieldTypeLabels[type] })
+              )}
               value={form.fieldType}
-            >
-              {(Object.keys(fieldTypeLabels) as FieldType[]).map((type) => (
-                <option key={type} value={type}>
-                  {fieldTypeLabels[type]}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label className="flex items-center gap-3 self-end pb-3 text-sm font-semibold">
             <input

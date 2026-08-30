@@ -2,11 +2,16 @@
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Calendar01Icon, RefreshIcon, Search01Icon } from "@hugeicons/core-free-icons"
+import {
+  Calendar01Icon,
+  RefreshIcon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type RequestStatus = "new" | "in_progress" | "closed" | "cancelled"
 
@@ -57,7 +62,11 @@ function errorFrom(value: unknown, fallback: string) {
     : fallback
 }
 
-function formatDate(value: string, timeZone: string, options?: Intl.DateTimeFormatOptions) {
+function formatDate(
+  value: string,
+  timeZone: string,
+  options?: Intl.DateTimeFormatOptions
+) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "Дата не указана"
   return new Intl.DateTimeFormat("ru-RU", {
@@ -116,7 +125,9 @@ export function IndividualTransferRequests() {
       )
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "Не удалось загрузить заявки."
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось загрузить заявки."
       )
     } finally {
       setLoading(false)
@@ -128,7 +139,10 @@ export function IndividualTransferRequests() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  async function updateRequest(item: TransferRequest, nextStatus: RequestStatus) {
+  async function updateRequest(
+    item: TransferRequest,
+    nextStatus: RequestStatus
+  ) {
     setUpdatingID(item.id)
     setError(null)
     setNotice(null)
@@ -147,7 +161,9 @@ export function IndividualTransferRequests() {
       const payload: unknown = await response.json()
       if (!response.ok)
         throw new Error(errorFrom(payload, "Не удалось обновить заявку."))
-      setNotice(`Статус заявки изменён: ${statusLabels[nextStatus].toLowerCase()}.`)
+      setNotice(
+        `Статус заявки изменён: ${statusLabels[nextStatus].toLowerCase()}.`
+      )
       await load()
     } catch (reason) {
       setError(
@@ -167,17 +183,26 @@ export function IndividualTransferRequests() {
               Индивидуальные заявки
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Запросы из Telegram на поездку по индивидуальному маршруту. Сначала подтвердите возможность, затем создайте рейс в планировщике.
+              Запросы из Telegram на поездку по индивидуальному маршруту.
+              Сначала подтвердите возможность, затем создайте рейс в
+              планировщике.
             </p>
           </div>
-          <Button disabled={loading} onClick={() => void load()} variant="outline">
+          <Button
+            disabled={loading}
+            onClick={() => void load()}
+            variant="outline"
+          >
             <HugeiconsIcon icon={RefreshIcon} size={17} />
             Обновить
           </Button>
         </div>
 
         {error ? (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
+          <div
+            className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+            role="alert"
+          >
             {error}
           </div>
         ) : null}
@@ -191,7 +216,11 @@ export function IndividualTransferRequests() {
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_13rem]">
             <label className="relative block">
               <span className="sr-only">Поиск заявок</span>
-              <HugeiconsIcon className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" icon={Search01Icon} size={17} />
+              <HugeiconsIcon
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+                icon={Search01Icon}
+                size={17}
+              />
               <input
                 className="h-11 w-full rounded-xl border border-border bg-background pr-3 pl-10 text-base outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 onChange={(event) => setQuery(event.target.value)}
@@ -201,41 +230,49 @@ export function IndividualTransferRequests() {
             </label>
             <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
               Статус
-              <select
-                className="h-11 rounded-xl border border-border bg-background px-3 text-base text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setStatus(event.target.value as "" | RequestStatus)}
+              <FieldSelect
+                onValueChange={(value) =>
+                  setStatus(value as "" | RequestStatus)
+                }
+                options={[
+                  { value: "", label: "Все статусы" },
+                  ...(Object.keys(statusLabels) as RequestStatus[]).map(
+                    (item) => ({ value: item, label: statusLabels[item] })
+                  ),
+                ]}
                 value={status}
-              >
-                <option value="">Все статусы</option>
-                {(Object.keys(statusLabels) as RequestStatus[]).map((item) => (
-                  <option key={item} value={item}>{statusLabels[item]}</option>
-                ))}
-              </select>
+              />
             </label>
           </div>
         </section>
 
         <section className="space-y-3" aria-live="polite">
           {loading ? (
-            <div className="surface-card p-6 text-sm text-muted-foreground">Загружаем индивидуальные заявки…</div>
+            <div className="surface-card p-6 text-sm text-muted-foreground">
+              Загружаем индивидуальные заявки…
+            </div>
           ) : null}
           {!loading && items.length === 0 ? (
             <div className="surface-card p-8 text-center">
               <p className="font-semibold">Заявок пока нет</p>
               <p className="mx-auto mt-1 max-w-xl text-sm text-muted-foreground">
-                Новые обращения появятся здесь после подтверждения клиентом индивидуального трансфера в Telegram.
+                Новые обращения появятся здесь после подтверждения клиентом
+                индивидуального трансфера в Telegram.
               </p>
             </div>
           ) : null}
           {items.map((item) => {
             const isUpdating = updatingID === item.id
-            const editable = item.status === "new" || item.status === "in_progress"
+            const editable =
+              item.status === "new" || item.status === "in_progress"
             return (
               <article className="surface-card p-4 sm:p-5" key={item.id}>
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(16rem,.85fr)_minmax(19rem,.9fr)] xl:items-start">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.status)}`}>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.status)}`}
+                      >
                         {statusLabels[item.status]}
                       </span>
                       <span className="text-xs text-muted-foreground">
@@ -258,31 +295,52 @@ export function IndividualTransferRequests() {
 
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     <div className="col-span-2">
-                      <dt className="text-xs font-semibold text-muted-foreground">Пассажир</dt>
-                      <dd className="mt-0.5 font-semibold">{item.passengerName}</dd>
+                      <dt className="text-xs font-semibold text-muted-foreground">
+                        Пассажир
+                      </dt>
+                      <dd className="mt-0.5 font-semibold">
+                        {item.passengerName}
+                      </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold text-muted-foreground">Телефон</dt>
-                      <dd className="mt-0.5 font-medium tabular-nums">{item.passengerPhone}</dd>
+                      <dt className="text-xs font-semibold text-muted-foreground">
+                        Телефон
+                      </dt>
+                      <dd className="mt-0.5 font-medium tabular-nums">
+                        {item.passengerPhone}
+                      </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold text-muted-foreground">Пассажиров</dt>
-                      <dd className="mt-0.5 font-medium tabular-nums">{item.seats}</dd>
+                      <dt className="text-xs font-semibold text-muted-foreground">
+                        Пассажиров
+                      </dt>
+                      <dd className="mt-0.5 font-medium tabular-nums">
+                        {item.seats}
+                      </dd>
                     </div>
                     <div className="col-span-2">
-                      <dt className="text-xs font-semibold text-muted-foreground">Дата рождения</dt>
-                      <dd className="mt-0.5 font-medium tabular-nums">{formatBirthDate(item.passengerBirthDate)}</dd>
+                      <dt className="text-xs font-semibold text-muted-foreground">
+                        Дата рождения
+                      </dt>
+                      <dd className="mt-0.5 font-medium tabular-nums">
+                        {formatBirthDate(item.passengerBirthDate)}
+                      </dd>
                     </div>
                   </dl>
 
-                  <div className="min-w-0 border-t border-border pt-4 xl:border-t-0 xl:border-l xl:pl-5 xl:pt-0">
+                  <div className="min-w-0 border-t border-border pt-4 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-5">
                     <label className="grid gap-2 text-sm font-semibold">
                       Комментарий диспетчера
                       <textarea
                         className="min-h-20 resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={!editable || isUpdating}
                         maxLength={2000}
-                        onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))}
+                        onChange={(event) =>
+                          setNotes((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))
+                        }
                         placeholder="Например: перезвонить до 18:00"
                         value={notes[item.id] ?? ""}
                       />
@@ -290,20 +348,37 @@ export function IndividualTransferRequests() {
                     {editable ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {item.status === "new" ? (
-                          <Button disabled={isUpdating} onClick={() => void updateRequest(item, "in_progress")} size="sm">
+                          <Button
+                            disabled={isUpdating}
+                            onClick={() =>
+                              void updateRequest(item, "in_progress")
+                            }
+                            size="sm"
+                          >
                             {isUpdating ? "Сохраняем…" : "Взять в работу"}
                           </Button>
                         ) : (
-                          <Button disabled={isUpdating} onClick={() => void updateRequest(item, "closed")} size="sm">
+                          <Button
+                            disabled={isUpdating}
+                            onClick={() => void updateRequest(item, "closed")}
+                            size="sm"
+                          >
                             {isUpdating ? "Сохраняем…" : "Закрыть заявку"}
                           </Button>
                         )}
-                        <Button disabled={isUpdating} onClick={() => void updateRequest(item, "cancelled")} size="sm" variant="outline">
+                        <Button
+                          disabled={isUpdating}
+                          onClick={() => void updateRequest(item, "cancelled")}
+                          size="sm"
+                          variant="outline"
+                        >
                           Отклонить
                         </Button>
                       </div>
                     ) : (
-                      <p className="mt-3 text-xs text-muted-foreground">Заявка закрыта для изменений.</p>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Заявка закрыта для изменений.
+                      </p>
                     )}
                   </div>
                 </div>

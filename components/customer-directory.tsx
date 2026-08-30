@@ -2,15 +2,12 @@
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Add01Icon,
-  Edit02Icon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons"
+import { Add01Icon, Edit02Icon, Search01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type Customer = {
   id: string
@@ -195,12 +192,16 @@ export function CustomerDirectory() {
   const [saving, setSaving] = React.useState(false)
   const importInput = React.useRef<HTMLInputElement>(null)
   const [importing, setImporting] = React.useState(false)
-	const [exporting, setExporting] = React.useState(false)
-  const [expandedHistoryID, setExpandedHistoryID] = React.useState<string | null>(null)
+  const [exporting, setExporting] = React.useState(false)
+  const [expandedHistoryID, setExpandedHistoryID] = React.useState<
+    string | null
+  >(null)
   const [historyByCustomer, setHistoryByCustomer] = React.useState<
     Record<string, CustomerBookingHistory[]>
   >({})
-  const [historyLoadingID, setHistoryLoadingID] = React.useState<string | null>(null)
+  const [historyLoadingID, setHistoryLoadingID] = React.useState<string | null>(
+    null
+  )
   const [historyError, setHistoryError] = React.useState<string | null>(null)
   const [importResult, setImportResult] = React.useState<{
     created: number
@@ -513,10 +514,7 @@ export function CustomerDirectory() {
               </p>
             ) : customers.length ? (
               customers.map((customer) => (
-                <article
-                  className="p-4"
-                  key={customer.id}
-                >
+                <article className="p-4" key={customer.id}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="font-bold">
@@ -543,7 +541,8 @@ export function CustomerDirectory() {
                           {formatTripCount(customer.tripCount)}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          LTV: {formatCustomerLifetimeValue(customer.lifetimeValue)}
+                          LTV:{" "}
+                          {formatCustomerLifetimeValue(customer.lifetimeValue)}
                         </p>
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -577,13 +576,18 @@ export function CustomerDirectory() {
                   </div>
                   {expandedHistoryID === customer.id ? (
                     <div className="mt-4 border-t border-border pt-3">
-                      <p className="text-sm font-semibold">История бронирований</p>
+                      <p className="text-sm font-semibold">
+                        История бронирований
+                      </p>
                       {historyLoadingID === customer.id ? (
                         <p className="mt-2 text-sm text-muted-foreground">
                           Загружаем историю…
                         </p>
                       ) : historyError ? (
-                        <p className="mt-2 text-sm text-destructive" role="alert">
+                        <p
+                          className="mt-2 text-sm text-destructive"
+                          role="alert"
+                        >
                           {historyError}
                         </p>
                       ) : historyByCustomer[customer.id]?.length ? (
@@ -597,13 +601,16 @@ export function CustomerDirectory() {
                                 {booking.origin} → {booking.destination}
                               </span>
                               <span className="text-muted-foreground tabular-nums">
-                                {new Date(booking.startsAt).toLocaleString("ru-RU", {
-                                  day: "2-digit",
-                                  month: "2-digit",
-                                  year: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                                {new Date(booking.startsAt).toLocaleString(
+                                  "ru-RU",
+                                  {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }
+                                )}
                                 {` · ${booking.seats} мест · ${formatCustomerMoney(booking.priceMinor, booking.currency)} · ${bookingStatusLabel(booking.status)}`}
                               </span>
                             </li>
@@ -694,31 +701,29 @@ export function CustomerDirectory() {
                     <span className="text-primary"> *</span>
                   ) : null}
                   {field.fieldType === "select" ? (
-                    <select
-                      className="h-11 rounded-xl border border-border bg-background px-3 font-normal"
-                      onChange={(event) =>
+                    <FieldSelect
+                      onValueChange={(value) =>
                         setForm((current) => ({
                           ...current,
                           customData: {
                             ...current.customData,
-                            [field.key]: event.target.value,
+                            [field.key]: value,
                           },
                         }))
                       }
-                      required={field.isRequired}
+                      options={[
+                        { value: "", label: "Выберите вариант" },
+                        ...field.options.map((option) => ({
+                          value: option,
+                          label: option,
+                        })),
+                      ]}
                       value={
                         typeof form.customData[field.key] === "string"
                           ? (form.customData[field.key] as string)
                           : ""
                       }
-                    >
-                      <option value="">Выберите вариант</option>
-                      {field.options.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   ) : field.fieldType === "boolean" ? (
                     <span className="flex h-11 items-center gap-3 rounded-xl border border-border bg-background px-3 font-normal">
                       <input

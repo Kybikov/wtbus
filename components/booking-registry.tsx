@@ -18,6 +18,7 @@ import {
   type CustomDataValues,
 } from "@/components/custom-data-fields"
 import { Button } from "@/components/ui/button"
+import { FieldSelect } from "@/components/ui/field-select"
 
 type BookingStatus =
   | "pending"
@@ -508,22 +509,18 @@ export function BookingRegistry() {
               </label>
               <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
                 Статус
-                <select
-                  className="h-11 rounded-xl border border-border bg-background px-3 text-base text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  onChange={(event) =>
-                    setStatus(event.target.value as "" | BookingStatus)
+                <FieldSelect
+                  onValueChange={(value) =>
+                    setStatus(value as "" | BookingStatus)
                   }
+                  options={[
+                    { value: "", label: "Все статусы" },
+                    ...(Object.keys(statusLabels) as BookingStatus[]).map(
+                      (item) => ({ value: item, label: statusLabels[item] })
+                    ),
+                  ]}
                   value={status}
-                >
-                  <option value="">Все статусы</option>
-                  {(Object.keys(statusLabels) as BookingStatus[]).map(
-                    (item) => (
-                      <option key={item} value={item}>
-                        {statusLabels[item]}
-                      </option>
-                    )
-                  )}
-                </select>
+                />
               </label>
               <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
                 Дата рейса
@@ -584,107 +581,105 @@ export function BookingRegistry() {
                   passengerPhone !== booking.customerPhone
                 return (
                   <article
-                  className="grid grid-cols-[minmax(0,1fr)_7rem_9rem] gap-3 px-5 py-4 md:grid-cols-[minmax(14rem,1.2fr)_minmax(12rem,1fr)_5rem_8rem_8rem] md:items-center"
-                  key={booking.id}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">
-                      {passengerName}
-                    </p>
-                    <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                      {passengerPhone}
-                    </p>
-                    {passengerDiffers && bookingContact ? (
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        Контакт брони: {bookingContact}
+                    className="grid grid-cols-[minmax(0,1fr)_7rem_9rem] gap-3 px-5 py-4 md:grid-cols-[minmax(14rem,1.2fr)_minmax(12rem,1fr)_5rem_8rem_8rem] md:items-center"
+                    key={booking.id}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{passengerName}</p>
+                      <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                        {passengerPhone}
                       </p>
-                    ) : null}
-                    <p className="mt-2 truncate text-sm font-medium">
-                      {booking.origin} → {booking.destination}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {formatDate(booking.startsAt, timezone)}
-                    </p>
-                    {formatBirthDate(
-                      booking.customData?.passenger_birth_date
-                    ) ? (
+                      {passengerDiffers && bookingContact ? (
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          Контакт брони: {bookingContact}
+                        </p>
+                      ) : null}
+                      <p className="mt-2 truncate text-sm font-medium">
+                        {booking.origin} → {booking.destination}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {formatDate(booking.startsAt, timezone)}
+                      </p>
+                      {formatBirthDate(
+                        booking.customData?.passenger_birth_date
+                      ) ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Дата рождения:{" "}
+                          {formatBirthDate(
+                            booking.customData?.passenger_birth_date
+                          )}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="hidden min-w-0 md:block">
+                      <p className="text-sm font-semibold tabular-nums">
+                        {booking.availableSeats} / {booking.capacity} свободно
+                      </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Дата рождения:{" "}
-                        {formatBirthDate(
-                          booking.customData?.passenger_birth_date
-                        )}
+                        После этой брони
                       </p>
-                    ) : null}
-                  </div>
-                  <div className="hidden min-w-0 md:block">
-                    <p className="text-sm font-semibold tabular-nums">
-                      {booking.availableSeats} / {booking.capacity} свободно
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      После этой брони
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-semibold tabular-nums">
-                      {booking.seats}
-                    </p>
-                    <p className="text-xs text-muted-foreground">мест.</p>
-                  </div>
-                  <div className="hidden md:block">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass(booking.status)}`}
-                    >
-                      {statusLabels[booking.status]}
-                    </span>
-                  </div>
-                  <div className="hidden text-sm text-muted-foreground md:block">
-                    <p>{sourceLabels[booking.source] ?? booking.source}</p>
-                    {booking.paymentMethod ? (
-                      <p className="mt-1 text-xs">
-                        {booking.paymentMethod === "cash"
-                          ? "Наличными"
-                          : `Банк: ${booking.paymentMethod}`}
+                    </div>
+                    <div>
+                      <p className="font-semibold tabular-nums">
+                        {booking.seats}
                       </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-col items-end gap-2 text-right">
-                    {booking.status === "awaiting_payment" ? (
-                      <Button
-                        disabled={confirmingID === booking.id}
-                        onClick={() => void confirmTransfer(booking)}
-                        size="sm"
+                      <p className="text-xs text-muted-foreground">мест.</p>
+                    </div>
+                    <div className="hidden md:block">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass(booking.status)}`}
                       >
-                        {confirmingID === booking.id
-                          ? "Подтверждаем…"
-                          : "Подтвердить перевод"}
-                      </Button>
-                    ) : null}
-                    {booking.status === "pending" ||
-                    booking.status === "awaiting_payment" ||
-                    booking.status === "cash_on_boarding" ||
-                    booking.status === "confirmed" ? (
-                      <Button
-                        disabled={
-                          cancellingID === booking.id ||
-                          booking.tripStatus === "in_progress" ||
-                          booking.tripStatus === "completed"
-                        }
-                        onClick={() => void cancelBooking(booking)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {cancellingID === booking.id ? "…" : "Отменить"}
-                      </Button>
-                    ) : null}
-                    {booking.status !== "awaiting_payment" &&
-                    booking.status !== "pending" &&
-                    booking.status !== "cash_on_boarding" &&
-                    booking.status !== "confirmed" ? (
-                      <span className="text-xs text-muted-foreground">
-                        {formatMoney(booking.priceMinor, booking.currency)}
+                        {statusLabels[booking.status]}
                       </span>
-                    ) : null}
-                  </div>
+                    </div>
+                    <div className="hidden text-sm text-muted-foreground md:block">
+                      <p>{sourceLabels[booking.source] ?? booking.source}</p>
+                      {booking.paymentMethod ? (
+                        <p className="mt-1 text-xs">
+                          {booking.paymentMethod === "cash"
+                            ? "Наличными"
+                            : `Банк: ${booking.paymentMethod}`}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 text-right">
+                      {booking.status === "awaiting_payment" ? (
+                        <Button
+                          disabled={confirmingID === booking.id}
+                          onClick={() => void confirmTransfer(booking)}
+                          size="sm"
+                        >
+                          {confirmingID === booking.id
+                            ? "Подтверждаем…"
+                            : "Подтвердить перевод"}
+                        </Button>
+                      ) : null}
+                      {booking.status === "pending" ||
+                      booking.status === "awaiting_payment" ||
+                      booking.status === "cash_on_boarding" ||
+                      booking.status === "confirmed" ? (
+                        <Button
+                          disabled={
+                            cancellingID === booking.id ||
+                            booking.tripStatus === "in_progress" ||
+                            booking.tripStatus === "completed"
+                          }
+                          onClick={() => void cancelBooking(booking)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {cancellingID === booking.id ? "…" : "Отменить"}
+                        </Button>
+                      ) : null}
+                      {booking.status !== "awaiting_payment" &&
+                      booking.status !== "pending" &&
+                      booking.status !== "cash_on_boarding" &&
+                      booking.status !== "confirmed" ? (
+                        <span className="text-xs text-muted-foreground">
+                          {formatMoney(booking.priceMinor, booking.currency)}
+                        </span>
+                      ) : null}
+                    </div>
                   </article>
                 )
               })}
@@ -769,79 +764,75 @@ export function BookingRegistry() {
               </label>
               <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
                 Рейс
-                <select
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                <FieldSelect
                   disabled={
                     isCreating || isCreateLoading || bookableTrips.length === 0
                   }
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     setBookingForm((current) => ({
                       ...current,
-                      tripId: event.target.value,
+                      tripId: value,
                     }))
                   }
-                  required
+                  options={[
+                    {
+                      value: "",
+                      label: isCreateLoading
+                        ? "Загружаем рейсы…"
+                        : bookableTrips.length === 0
+                          ? "На эту дату нет доступных рейсов"
+                          : "Выберите рейс",
+                    },
+                    ...bookableTrips.map((trip) => ({
+                      value: trip.id,
+                      label: `${trip.origin} → ${trip.destination} · ${formatDate(trip.startsAt, timezone)} · ${formatMoney(trip.priceMinor, trip.currency)}`,
+                    })),
+                  ]}
                   value={bookingForm.tripId}
-                >
-                  <option value="">
-                    {isCreateLoading
-                      ? "Загружаем рейсы…"
-                      : bookableTrips.length === 0
-                        ? "На эту дату нет доступных рейсов"
-                        : "Выберите рейс"}
-                  </option>
-                  {bookableTrips.map((trip) => (
-                    <option key={trip.id} value={trip.id}>
-                      {trip.origin} → {trip.destination} ·{" "}
-                      {formatDate(trip.startsAt, timezone)} ·{" "}
-                      {formatMoney(trip.priceMinor, trip.currency)}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
                 Клиент
-                <select
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                <FieldSelect
                   disabled={
                     isCreating || isCreateLoading || customers.length === 0
                   }
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     setBookingForm((current) => {
                       const customer = customers.find(
-                        (item) => item.id === event.target.value
+                        (item) => item.id === value
                       )
                       return {
                         ...current,
-                        customerId: event.target.value,
+                        customerId: value,
                         passengerName: customer?.fullName ?? "",
                         passengerPhone: customer?.phone ?? "",
                       }
                     })
                   }
-                  required
+                  options={[
+                    {
+                      value: "",
+                      label: isCreateLoading
+                        ? "Загружаем клиентов…"
+                        : customers.length === 0
+                          ? "Сначала добавьте клиента"
+                          : "Выберите клиента",
+                    },
+                    ...customers.map((customer) => ({
+                      value: customer.id,
+                      label: `${customer.fullName || "Без имени"} · ${customer.phone}`,
+                    })),
+                  ]}
                   value={bookingForm.customerId}
-                >
-                  <option value="">
-                    {isCreateLoading
-                      ? "Загружаем клиентов…"
-                      : customers.length === 0
-                        ? "Сначала добавьте клиента"
-                        : "Выберите клиента"}
-                  </option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.fullName || "Без имени"} · {customer.phone}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </div>
             <fieldset className="mt-5 border-t border-border pt-5">
               <legend className="text-sm font-bold">Данные пассажира</legend>
               <p className="mt-1 text-sm text-muted-foreground">
-                Можно указать другого человека. Эти данные сохранятся в брони,
-                а не заменят контакт клиента.
+                Можно указать другого человека. Эти данные сохранятся в брони, а
+                не заменят контакт клиента.
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2 text-sm font-semibold sm:col-span-2">

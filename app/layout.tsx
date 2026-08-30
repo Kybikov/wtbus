@@ -4,6 +4,7 @@ import type { Metadata } from "next"
 import "./globals.css"
 import { PWARegistrar } from "@/components/pwa-registrar"
 import { ThemeProvider } from "@/components/theme-provider"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
@@ -43,8 +44,10 @@ export default function RootLayout({
     >
       <body>
         <ThemeProvider>
-          <PWARegistrar />
-          {children}
+          <TooltipProvider>
+            <PWARegistrar />
+            {children}
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>
