@@ -5,11 +5,11 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import Link from "next/link"
 import {
   ArrowUpRight01Icon,
+  Add01Icon,
   Car01Icon,
   ChartIncreaseIcon,
   Clock01Icon,
   Route01Icon,
-  Settings01Icon,
   UserGroupIcon,
   Wallet01Icon,
 } from "@hugeicons/core-free-icons"
@@ -18,6 +18,14 @@ import { useTheme } from "next-themes"
 import { AppShell } from "@/components/app-shell"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 
 type ThemePreset = "company" | "gold" | "ocean" | "emerald" | "violet"
@@ -187,23 +195,30 @@ function SegmentedControl<T extends string>({
   options: ReadonlyArray<{ value: T; label: string }>
 }) {
   return (
-    <div className="grid auto-cols-fr grid-flow-col rounded-xl border border-border/70 bg-background/40 p-1">
+    <ToggleGroup
+      className="grid w-full grid-flow-col auto-cols-fr rounded-xl border border-border bg-background/40 p-1"
+      onValueChange={(next) => {
+        const value = next[0]
+        if (value) onChange(value as T)
+      }}
+      spacing={0}
+      value={[value]}
+    >
       {options.map((option) => (
-        <button
+        <ToggleGroupItem
           className={cn(
-            "rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            "w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
             value === option.value
-              ? "bg-secondary text-foreground shadow-sm"
+              ? "bg-secondary text-foreground"
               : "text-muted-foreground hover:text-foreground"
           )}
           key={option.value}
-          onClick={() => onChange(option.value)}
-          type="button"
+          value={option.value}
         >
           {option.label}
-        </button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   )
 }
 
@@ -221,6 +236,12 @@ export function ThemeCustomizer() {
   const [preferencesReady, setPreferencesReady] = React.useState(false)
   const hasLoadedPreferences = React.useRef(false)
   const hasPersonalThemePreference = React.useRef(false)
+
+  React.useEffect(() => {
+    const show = () => setOpen(true)
+    window.addEventListener("vivat-open-interface-settings", show)
+    return () => window.removeEventListener("vivat-open-interface-settings", show)
+  }, [])
 
   React.useEffect(() => {
     if (hasLoadedPreferences.current) return
@@ -425,41 +446,22 @@ export function ThemeCustomizer() {
   ])
 
   return (
-    <div className="relative">
-      <Button
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        size="icon"
-        variant={open ? "secondary" : "ghost"}
-      >
-        <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.8} />
-        <span className="sr-only">Настроить интерфейс</span>
-      </Button>
-      {open ? (
-        <section className="absolute top-11 right-0 z-20 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-border bg-popover p-4 shadow-2xl shadow-black/30">
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-bold">Настройка интерфейса</h2>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Выберите удобный вид рабочего пространства.
-              </p>
-            </div>
-            <button
-              aria-label="Закрыть настройку интерфейса"
-              className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => setOpen(false)}
-              type="button"
-            >
-              ×
-            </button>
-          </div>
+    <Dialog onOpenChange={setOpen} open={open}>
+      <DialogContent className="max-h-[min(46rem,calc(100svh-2rem))] max-w-[min(28rem,calc(100vw-2rem))] gap-0 overflow-y-auto p-5 sm:max-w-lg">
+        <DialogHeader className="pr-8">
+          <DialogTitle>Интерфейс</DialogTitle>
+          <DialogDescription>
+            Настройте отображение рабочего пространства.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-5">
           <div className="space-y-4">
             <label className="block space-y-2">
               <span className="text-xs font-bold">Цветовой акцент</span>
               <FieldSelect
                 onValueChange={(value) => setPreset(value as ThemePreset)}
                 options={[
-                  { value: "company", label: "Бренд компании" },
+                  { value: "company", label: "Цвет компании" },
                   ...Object.entries(presets).map(([value, option]) => ({
                     value,
                     label: option.label,
@@ -472,7 +474,13 @@ export function ThemeCustomizer() {
             <div className="space-y-2">
               <span className="block text-xs font-bold">Режим</span>
               <SegmentedControl
-                value={resolvedTheme === "light" ? "light" : "dark"}
+                value={
+                  theme === "system"
+                    ? "system"
+                    : resolvedTheme === "light"
+                      ? "light"
+                      : "dark"
+                }
                 onChange={setTheme}
                 options={[
                   { value: "light", label: "Светлый" },
@@ -542,19 +550,11 @@ export function ThemeCustomizer() {
             </div>
           </div>
           <p className="mt-5 border-t border-border pt-3 text-xs leading-4 text-muted-foreground">
-            Личные настройки сохраняются в профиле и синхронизируются между
-            устройствами.{" "}
-            <Link
-              className="font-semibold text-foreground underline underline-offset-4"
-              href="/settings"
-            >
-              Бренд компании
-            </Link>{" "}
-            меняет администратор.
+            Настройки сохраняются в профиле и синхронизируются между устройствами.
           </p>
-        </section>
-      ) : null}
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -666,7 +666,16 @@ export function OperationsDashboard() {
       : undefined
 
   return (
-    <AppShell pageTitle="Обзор" utilities={<ThemeCustomizer />}>
+    <AppShell
+      pageActions={
+        <Link className={buttonVariants({ size: "sm" })} href="/trips">
+          <HugeiconsIcon icon={Add01Icon} size={16} />
+          Создать рейс
+        </Link>
+      }
+      pageTitle="Обзор"
+      utilities={<ThemeCustomizer />}
+    >
       <div className="space-y-6">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
@@ -677,9 +686,6 @@ export function OperationsDashboard() {
               Контролируйте рейсы, загрузку и команду в течение дня.
             </p>
           </div>
-          <Link className={buttonVariants({ size: "lg" })} href="/trips">
-            <span className="text-lg leading-none">+</span>Создать рейс
-          </Link>
         </div>
         {loadError ? (
           <div

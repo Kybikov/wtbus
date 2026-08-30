@@ -51,7 +51,12 @@ function FieldSelect({
           triggerClassName
         )}
       >
-        <SelectValue placeholder={placeholder} />
+        <SelectValue placeholder={placeholder}>
+          {(selectedValue) =>
+            options.find((option) => option.value === selectedValue)?.label ??
+            placeholder
+          }
+        </SelectValue>
       </SelectTrigger>
       <SelectContent className={className}>
         {options.map((option) => (

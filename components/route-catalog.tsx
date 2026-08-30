@@ -12,6 +12,7 @@ import {
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { FieldSelect } from "@/components/ui/field-select"
 
 type Route = {
@@ -244,20 +245,29 @@ export function RouteCatalog() {
   }
 
   return (
-    <AppShell pageTitle="Маршруты" utilities={<ThemeCustomizer />}>
-      <section className="mx-auto max-w-[1200px] space-y-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <AppShell
+      pageActions={
+        <Button onClick={startCreate} size="sm">
+          <HugeiconsIcon icon={Add01Icon} size={16} />
+          Новый маршрут
+        </Button>
+      }
+      pageTitle="Маршруты"
+      utilities={<ThemeCustomizer />}
+    >
+      <Card className="mx-auto max-w-[1200px] rounded-[calc(var(--radius)*1.35)] border border-border shadow-none">
+        <CardContent className="space-y-5 px-4 sm:px-6">
           <div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Link
-                aria-label="На главную"
-                className="hover:text-foreground"
-                href="/"
-              >
-                <HugeiconsIcon icon={DashboardSquare01Icon} size={16} />
-              </Link>
-              <span>/</span>
-              <span>Маршруты</span>
+                <Link
+                  aria-label="На главную"
+                  className="hover:text-foreground"
+                  href="/"
+                >
+                  <HugeiconsIcon icon={DashboardSquare01Icon} size={16} />
+                </Link>
+                <span>/</span>
+                <span>Маршруты</span>
             </div>
             <h1 className="mt-2 text-2xl font-bold tracking-[-.035em] sm:text-3xl">
               Каталог регулярных маршрутов
@@ -267,11 +277,6 @@ export function RouteCatalog() {
               создании рейса.
             </p>
           </div>
-          <Button onClick={startCreate} size="lg">
-            <HugeiconsIcon icon={Add01Icon} size={18} />
-            Новый маршрут
-          </Button>
-        </div>
 
         {error ? (
           <div
@@ -397,7 +402,7 @@ export function RouteCatalog() {
           </form>
         ) : null}
 
-        <div className="overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border">
+        <div className="overflow-hidden rounded-xl border border-border bg-background/20">
           {loading ? (
             <p className="p-6 text-sm text-muted-foreground">
               Загружаем маршруты…
@@ -451,7 +456,8 @@ export function RouteCatalog() {
               ))
             : null}
         </div>
-      </section>
+        </CardContent>
+      </Card>
     </AppShell>
   )
 }

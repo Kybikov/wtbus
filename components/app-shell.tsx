@@ -31,7 +31,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -68,6 +67,7 @@ type AppShellProps = {
   children: React.ReactNode
   pageTitle: string
   utilities?: React.ReactNode
+  pageActions?: React.ReactNode
 }
 type ShellBrand = {
   logoUrl?: string
@@ -173,6 +173,20 @@ const defaultShellBrand: ShellBrand = {
   tenantName: "Vivat Bus",
   userInitials: "АК",
   role: "owner",
+}
+const pageDescriptions: Record<string, string> = {
+  "Обзор": "Оперативная картина на сегодня",
+  "Рейсы": "Планирование и контроль выездов",
+  "Маршруты": "Шаблоны регулярных направлений",
+  "Недоступность": "Периоды недоступности ресурсов",
+  "Автопарк": "Транспорт и состояние машин",
+  "Клиенты": "Пассажиры и история обращений",
+  "Бронирования": "Заявки, оплаты и статусы",
+  "Индивидуальные заявки": "Запросы на поездки точка — точка",
+  "Финансы": "Доходы, расходы и наличные",
+  "Команда": "Сотрудники и роли доступа",
+  "Настройки": "Настройки компании и реквизиты",
+  "Мой рейс": "Рабочий рейс водителя",
 }
 const hasItems = <T,>(value: unknown): value is { items: T[] } =>
   typeof value === "object" &&
@@ -336,18 +350,18 @@ function VivatSidebar({
         </ScrollArea>
       </SidebarContent>
       <SidebarFooter>
-        <div className="rounded-xl bg-sidebar-accent px-3 py-3 group-data-[collapsible=icon]:hidden">
-          <p className="text-xs font-bold">Рабочее пространство</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Данные и настройки доступны только сотрудникам вашей компании.
-          </p>
-        </div>
+        <div className="h-2 group-data-[collapsible=icon]:hidden" />
       </SidebarFooter>
     </Sidebar>
   )
 }
 
-export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
+export function AppShell({
+  children,
+  pageTitle,
+  utilities,
+  pageActions,
+}: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
   const preferences = useSidebarPreferences()
@@ -557,6 +571,14 @@ export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
     setSearchOpen(false)
     router.push(href)
   }
+  const openInterfaceSettings = () => {
+    window.dispatchEvent(new Event("vivat-open-interface-settings"))
+  }
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined)
+    router.replace("/login")
+    router.refresh()
+  }
 
   return (
     <SidebarProvider
@@ -572,11 +594,11 @@ export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
         variant={preferences.sidebarVariant}
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
-        <header className="app-topbar flex h-16 shrink-0 items-center justify-between rounded-[var(--app-radius)] border border-border bg-card px-4 sm:px-6">
+        <header className="app-topbar flex h-14 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:h-16 sm:px-5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <SidebarTrigger
               aria-label="Открыть навигацию"
-              className="md:hidden"
+              className="inline-flex"
             />
             <Link className="shrink-0 md:hidden" href="/">
               <BrandMark brand={brand} className="size-9" />
@@ -593,13 +615,23 @@ export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
                 ⌘K
               </kbd>
             </Button>
-            <p className="truncate font-semibold md:hidden">{pageTitle}</p>
+            <div className="hidden min-w-0 border-l border-border pl-3 lg:block">
+              <p className="truncate text-xs font-medium text-muted-foreground">
+                Операции <span className="px-1 text-border">/</span> {pageTitle}
+              </p>
+              <p className="truncate text-sm font-semibold">
+                {pageDescriptions[pageTitle] ?? pageTitle}
+              </p>
+            </div>
+            <p className="truncate font-semibold max-[420px]:hidden md:hidden">
+              {pageTitle}
+            </p>
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     aria-label="Поиск рейса или клиента"
-                    className="md:hidden"
+                    className="max-[420px]:hidden md:hidden"
                     onClick={() => setSearchOpen(true)}
                     size="icon"
                     variant="ghost"
@@ -611,7 +643,10 @@ export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
               <TooltipContent>Поиск</TooltipContent>
             </Tooltip>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
+            {pageActions ? (
+              <div className="flex items-center gap-2">{pageActions}</div>
+            ) : null}
             <DropdownMenu
               onOpenChange={(open) => {
                 setNotificationsOpen(open)
@@ -646,9 +681,9 @@ export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
                 className="w-[min(23rem,calc(100vw-2rem))] p-2"
               >
                 <div className="flex items-center justify-between gap-3 px-2 py-1">
-                  <DropdownMenuLabel className="p-0 text-sm font-semibold">
+                  <p className="p-0 text-sm font-semibold">
                     Уведомления
-                  </DropdownMenuLabel>
+                  </p>
                   <Button
                     onClick={() => void loadNotifications()}
                     size="xs"
@@ -701,15 +736,48 @@ export function AppShell({ children, pageTitle, utilities }: AppShellProps) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {utilities}
-            <div
-              aria-label={`Аккаунт ${brand.userInitials}`}
-              className="ml-1 flex size-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-            >
-              {brand.userInitials}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    aria-label="Открыть меню профиля"
+                    className="ml-0.5 rounded-full"
+                    size="icon-lg"
+                    variant="secondary"
+                  />
+                }
+              >
+                <span className="grid size-7 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  {brand.userInitials}
+                </span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 p-2">
+                <div className="px-2 py-2">
+                  <span className="block text-sm font-semibold text-foreground">
+                    {brand.tenantName}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                    Рабочий профиль
+                  </span>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={openInterfaceSettings}>
+                  Интерфейс
+                </DropdownMenuItem>
+                {brand.role === "owner" || brand.role === "admin" ? (
+                  <DropdownMenuItem render={<Link href="/settings" />}>
+                    Настройки компании
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void signOut} variant="destructive">
+                  Выйти
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
+        {utilities ? <div className="hidden">{utilities}</div> : null}
         <ScrollArea className="dashboard-content min-h-0 flex-1">
           <div className="px-2 py-3 sm:px-3 sm:py-4 lg:px-4 lg:py-5">
             {children}
