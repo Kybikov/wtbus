@@ -48,12 +48,17 @@ services:
 
   migrate:
     image: migrate/migrate:v4.18.3
+    # The production volume is already at the latest migration. Run this
+    # explicitly with --profile maintenance when a new migration is added.
+    profiles: ["maintenance"]
     volumes:
       - ./backend/migrations:/migrations:ro
     command:
       [
-        "-path=/migrations",
-        "-database=${DATABASE_URL:?DATABASE_URL is required}",
+        "-path",
+        "/migrations",
+        "-database",
+        "${DATABASE_URL:?DATABASE_URL is required}",
         "up",
       ]
     depends_on:
@@ -82,8 +87,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   bot:
@@ -103,6 +106,4 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     restart: unless-stopped
