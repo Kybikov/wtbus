@@ -23,7 +23,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Coolify scopes named volumes per application. Mount the verified
+      # production data directory explicitly so the migration always uses
+      # the existing Vivat database rather than creating an empty volume.
+      - /var/lib/docker/volumes/vivat_postgres_data/_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -35,7 +38,7 @@ services:
     image: redis:8-alpine
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - redis_data:/data
+      - /var/lib/docker/volumes/vivat_redis_data/_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -103,11 +106,3 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-
-volumes:
-  postgres_data:
-    external: true
-    name: vivat_postgres_data
-  redis_data:
-    external: true
-    name: vivat_redis_data
