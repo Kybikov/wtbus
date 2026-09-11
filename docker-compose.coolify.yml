@@ -36,7 +36,7 @@ services:
 
   redis:
     image: redis:8-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes:
       - /var/lib/docker/volumes/vivat_redis_data/_data:/data
     healthcheck:
@@ -72,7 +72,7 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://vivat.wtmelon.store}
       SAAS_CONTROL_SECRET: ${SAAS_CONTROL_SECRET:-}
       BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:?BOOTSTRAP_OWNER_EMAIL is required}
@@ -97,7 +97,7 @@ services:
         COMMAND: bot
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
       TENANT_SLUG: ${BOT_TENANT_SLUG:-vivat-bus}
       TELEGRAM_BOTS_JSON: ${TELEGRAM_BOTS_JSON:-}
