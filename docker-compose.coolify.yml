@@ -106,6 +106,8 @@ services:
 
 volumes:
   postgres_data:
-    name: ${VIVAT_POSTGRES_VOLUME_NAME:-vivatbus_postgres_data}
+    external: true
+    name: vivat_postgres_data
   redis_data:
-    name: ${VIVAT_REDIS_VOLUME_NAME:-vivatbus_redis_data}
+    external: true
+    name: vivat_redis_data
