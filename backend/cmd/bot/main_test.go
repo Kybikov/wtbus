@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -262,6 +263,26 @@ func TestCalendarCallbacksAndDateRange(t *testing.T) {
 		if _, ok := parseCalendarDate(value, location, now); ok {
 			t.Fatalf("parseCalendarDate(%q) must be rejected", value)
 		}
+	}
+}
+
+func TestCalendarShowsMonthBeforeWeekdays(t *testing.T) {
+	location := time.UTC
+	now := time.Now().In(location)
+	app := app{timezone: location}
+	state := bookingState{CalendarMonth: now.Format("2006-01")}
+
+	_, markup := app.calendarMarkup(state, "r")
+	if len(markup.InlineKeyboard) < 2 {
+		t.Fatalf("calendar has %d rows, want at least 2", len(markup.InlineKeyboard))
+	}
+	monthRow := markup.InlineKeyboard[0]
+	weekdayRow := markup.InlineKeyboard[1]
+	if len(monthRow) != 3 || monthRow[1].Text != monthNameRU(now.Month())+" "+strconv.Itoa(now.Year()) {
+		t.Fatalf("first row must contain current month navigation, got %#v", monthRow)
+	}
+	if len(weekdayRow) != 7 || weekdayRow[0].Text != "Пн" || weekdayRow[6].Text != "Вс" {
+		t.Fatalf("second row must contain weekdays, got %#v", weekdayRow)
 	}
 }
 

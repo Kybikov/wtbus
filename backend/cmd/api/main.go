@@ -895,6 +895,7 @@ type createTeamMemberRequest struct {
 type updateTeamMemberRequest struct {
 	Role     *string `json:"role"`
 	IsActive *bool   `json:"isActive"`
+	Password *string `json:"password"`
 }
 
 var teamRoles = map[string]struct{}{"owner": {}, "admin": {}, "dispatcher": {}, "driver": {}}
@@ -1087,8 +1088,8 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	var input updateTeamMemberRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil || (input.Role == nil && input.IsActive == nil) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provide a role or active status"})
+	if err := decoder.Decode(&input); err != nil || (input.Role == nil && input.IsActive == nil && input.Password == nil) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provide a role, active status or password"})
 		return
 	}
 	if input.Role != nil {
@@ -1098,6 +1099,10 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid role"})
 			return
 		}
+	}
+	if input.Password != nil && (len([]rune(*input.Password)) < 12 || len([]rune(*input.Password)) > 128) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must contain from 12 to 128 characters"})
+		return
 	}
 	slug := strings.ToLower(strings.TrimSpace(r.PathValue("slug")))
 	tenant, ok := app.loadTenant(w, r, slug)
@@ -1139,6 +1144,10 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot make this access change"})
 		return
 	}
+	if input.Password != nil && actor.Role != "owner" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only an owner can set a team member password"})
+		return
+	}
 	if nextRole == "driver" && current.DriverID == nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "create a new driver account with a phone number instead of changing this role"})
 		return
@@ -1167,7 +1176,23 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
 		return
 	}
-	if !nextActive {
+	if input.Password != nil {
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			app.log.Error("hash team password", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
+			return
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO user_credentials (user_id, password_hash) VALUES ($1, $2)
+			ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = now()
+		`, current.UserID, string(passwordHash)); err != nil {
+			app.log.Error("update team password", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
+			return
+		}
+	}
+	if !nextActive || input.Password != nil {
 		if _, err := tx.Exec(r.Context(), `UPDATE user_sessions SET revoked_at = now() WHERE membership_id = $1 AND revoked_at IS NULL`, membershipID); err != nil {
 			app.log.Error("revoke member sessions", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})

@@ -90,6 +90,12 @@ type tripOption struct {
 	Available   int
 }
 
+type routeDirection struct {
+	ID          string
+	Origin      string
+	Destination string
+}
+
 type customerTrip struct {
 	ID            string
 	Status        string
@@ -387,8 +393,11 @@ func (app *app) handleMessage(message *tgbotapi.Message) {
 		return
 	}
 	if message.Text == "Найти рейс" {
-		app.saveState(message.Chat.ID, bookingState{Step: "origin"})
-		app.send(message.Chat.ID, "Откуда отправляетесь? Напишите город.")
+		app.showAvailableDirections(message.Chat.ID)
+		return
+	}
+	if message.Text == "Доступные рейсы" {
+		app.showUpcomingTrips(message.Chat.ID)
 		return
 	}
 	if message.Text == "Индивидуальный трансфер" {
@@ -604,6 +613,51 @@ func (app *app) showTrips(chatID int64, state bookingState) {
 	app.saveState(chatID, state)
 }
 
+func (app *app) showAvailableDirections(chatID int64) {
+	directions, err := app.findAvailableDirections(context.Background())
+	if err != nil {
+		app.log.Error("find available directions", "error", err)
+		app.send(chatID, "Не удалось загрузить направления. Попробуйте ещё раз.")
+		return
+	}
+	if len(directions) == 0 {
+		app.send(chatID, "Сейчас нет доступных рейсов. Можно оставить заявку на индивидуальный трансфер.")
+		return
+	}
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(directions))
+	for _, direction := range directions {
+		label := direction.Origin + " → " + direction.Destination
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(label, "route:"+direction.ID),
+		))
+	}
+	app.saveState(chatID, bookingState{Step: "route"})
+	app.sendWithMarkup(chatID, "Выберите направление:", tgbotapi.NewInlineKeyboardMarkup(rows...))
+}
+
+func (app *app) showUpcomingTrips(chatID int64) {
+	trips, err := app.findUpcomingTrips(context.Background(), 10)
+	if err != nil {
+		app.log.Error("find upcoming trips", "error", err)
+		app.send(chatID, "Не удалось загрузить рейсы. Попробуйте ещё раз.")
+		return
+	}
+	if len(trips) == 0 {
+		app.send(chatID, "Сейчас нет доступных рейсов. Можно оставить заявку на индивидуальный трансфер.")
+		return
+	}
+	var message strings.Builder
+	message.WriteString("Ближайшие доступные рейсы:\n\n")
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(trips))
+	for _, trip := range trips {
+		fmt.Fprintf(&message, "%s → %s\n%s · %d мест · %s\n\n", trip.Origin, trip.Destination, trip.StartsAt.In(app.timezone).Format("02.01.2006 15:04"), trip.Available, formatMoney(trip.PriceMinor, trip.Currency))
+		label := fmt.Sprintf("%s · %s → %s", trip.StartsAt.In(app.timezone).Format("02.01 15:04"), trip.Origin, trip.Destination)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(label, "book:"+trip.ID)))
+	}
+	app.clearState(chatID)
+	app.sendWithMarkup(chatID, message.String(), tgbotapi.NewInlineKeyboardMarkup(rows...))
+}
+
 const calendarMonthsAhead = 12
 
 func (app *app) askBookingDate(chatID int64, state bookingState) {
@@ -628,6 +682,21 @@ func (app *app) calendarMarkup(state bookingState, flow string) (string, tgbotap
 		month = calendarFirstMonth(time.Now().In(app.timezone))
 	}
 	rows := make([][]tgbotapi.InlineKeyboardButton, 0, 9)
+	today := startOfDay(time.Now().In(app.timezone))
+	lastAllowedDay := today.AddDate(0, calendarMonthsAhead, 0)
+	previousData := "cal:x"
+	if month.After(calendarFirstMonth(today)) {
+		previousData = "cal:m:" + flow + ":" + month.AddDate(0, -1, 0).Format("200601")
+	}
+	nextData := "cal:x"
+	if month.Before(calendarFirstMonth(lastAllowedDay)) {
+		nextData = "cal:m:" + flow + ":" + month.AddDate(0, 1, 0).Format("200601")
+	}
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("‹", previousData),
+		tgbotapi.NewInlineKeyboardButtonData(monthNameRU(month.Month())+" "+strconv.Itoa(month.Year()), "cal:x"),
+		tgbotapi.NewInlineKeyboardButtonData("›", nextData),
+	))
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("Пн", "cal:x"),
 		tgbotapi.NewInlineKeyboardButtonData("Вт", "cal:x"),
@@ -638,8 +707,6 @@ func (app *app) calendarMarkup(state bookingState, flow string) (string, tgbotap
 		tgbotapi.NewInlineKeyboardButtonData("Вс", "cal:x"),
 	))
 
-	today := startOfDay(time.Now().In(app.timezone))
-	lastAllowedDay := today.AddDate(0, calendarMonthsAhead, 0)
 	firstWeekday := (int(month.Weekday()) + 6) % 7
 	days := month.AddDate(0, 1, -1).Day()
 	week := make([]tgbotapi.InlineKeyboardButton, 0, 7)
@@ -665,20 +732,6 @@ func (app *app) calendarMarkup(state bookingState, flow string) (string, tgbotap
 		}
 		rows = append(rows, week)
 	}
-
-	previousData := "cal:x"
-	if month.After(calendarFirstMonth(today)) {
-		previousData = "cal:m:" + flow + ":" + month.AddDate(0, -1, 0).Format("200601")
-	}
-	nextData := "cal:x"
-	if month.Before(calendarFirstMonth(lastAllowedDay)) {
-		nextData = "cal:m:" + flow + ":" + month.AddDate(0, 1, 0).Format("200601")
-	}
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("‹", previousData),
-		tgbotapi.NewInlineKeyboardButtonData(monthNameRU(month.Month())+" "+strconv.Itoa(month.Year()), "cal:x"),
-		tgbotapi.NewInlineKeyboardButtonData("›", nextData),
-	))
 
 	text := "Выберите дату поездки:"
 	if flow == "i" {
@@ -1081,6 +1134,10 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 		app.handleTelegramCancellationCallback(chatID, callback.From.ID, callback.Data)
 		return
 	}
+	if strings.HasPrefix(callback.Data, "route:") {
+		app.handleRouteCallback(chatID, callback.Data)
+		return
+	}
 	if callback.Data == "request:confirm" {
 		app.confirmIndividualTransferRequest(chatID, callback.From.ID)
 		return
@@ -1098,11 +1155,13 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 	if strings.TrimSpace(tripID) == "" {
 		return
 	}
-	state, ok := app.getState(chatID)
-	if !ok || state.Origin == "" || state.Destination == "" {
-		app.send(chatID, "Сессия поиска истекла. Нажмите «Найти рейс».")
+	state, _ := app.getState(chatID)
+	direction, err := app.findTripDirection(context.Background(), tripID)
+	if err != nil {
+		app.send(chatID, "Этот рейс уже недоступен. Обновите список рейсов.")
 		return
 	}
+	state.Origin, state.Destination = direction.Origin, direction.Destination
 	customerID, err := app.findCustomerByTelegram(context.Background(), callback.From.ID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		app.log.Error("find telegram customer", "error", err)
@@ -1120,6 +1179,29 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 	}
 	state.PendingTripID, state.PendingCustomerID = tripID, customerID
 	app.beginPassengerDetails(chatID, state)
+}
+
+func (app *app) handleRouteCallback(chatID int64, data string) {
+	routeID := strings.TrimPrefix(data, "route:")
+	if !validBookingID(routeID) {
+		return
+	}
+	var state bookingState
+	err := app.db.QueryRow(context.Background(), `
+		SELECT route.origin_name, route.destination_name
+		FROM routes route
+		WHERE route.id = $1 AND route.tenant_id = $2 AND route.is_active
+			AND EXISTS (
+				SELECT 1 FROM trips trip
+				WHERE trip.route_id = route.id AND trip.tenant_id = route.tenant_id
+					AND trip.status IN ('new', 'assigned') AND trip.starts_at > now()
+			)
+	`, routeID, app.tenantID).Scan(&state.Origin, &state.Destination)
+	if err != nil {
+		app.send(chatID, "Это направление уже недоступно. Обновите список.")
+		return
+	}
+	app.askBookingDate(chatID, state)
 }
 
 func (app *app) handleTelegramCancellationCallback(chatID, telegramID int64, data string) {
@@ -1933,6 +2015,104 @@ func (app *app) findTrips(ctx context.Context, origin, destination string, day t
 	return collectTrips(rows)
 }
 
+func (app *app) findAvailableDirections(ctx context.Context) ([]routeDirection, error) {
+	rows, err := app.db.Query(ctx, `
+		SELECT route.id::text, route.origin_name, route.destination_name
+		FROM routes route
+		WHERE route.tenant_id = $1 AND route.is_active
+			AND EXISTS (
+				SELECT 1
+				FROM trips trip
+				WHERE trip.route_id = route.id AND trip.tenant_id = route.tenant_id
+					AND trip.status IN ('new', 'assigned') AND trip.starts_at > now()
+					AND NOT EXISTS (
+						SELECT 1 FROM availability_blocks block
+						WHERE block.tenant_id = trip.tenant_id
+							AND block.starts_at < trip.ends_at AND block.ends_at > trip.starts_at
+							AND (block.route_id IS NULL OR block.route_id = trip.route_id)
+					)
+					AND trip.capacity > (
+						SELECT COALESCE(sum(booking.seats), 0)
+						FROM bookings booking
+						WHERE booking.trip_id = trip.id
+							AND (booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
+								OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now()))
+					)
+			)
+		ORDER BY route.origin_name, route.destination_name
+		LIMIT 20
+	`, app.tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	directions := make([]routeDirection, 0)
+	for rows.Next() {
+		var direction routeDirection
+		if err := rows.Scan(&direction.ID, &direction.Origin, &direction.Destination); err != nil {
+			return nil, err
+		}
+		directions = append(directions, direction)
+	}
+	return directions, rows.Err()
+}
+
+func (app *app) findUpcomingTrips(ctx context.Context, limit int) ([]tripOption, error) {
+	if limit < 1 || limit > 20 {
+		limit = 10
+	}
+	if err := app.expireBookingHolds(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := app.db.Query(ctx, `
+		SELECT trip.id::text, trip.origin_name, trip.destination_name, trip.starts_at, trip.ends_at,
+			trip.price_minor, trip.currency, trip.pricing_mode,
+			trip.capacity - COALESCE(sum(booking.seats) FILTER (
+				WHERE booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
+					OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now())
+			), 0) AS available
+		FROM trips trip
+		LEFT JOIN bookings booking ON booking.trip_id = trip.id
+		WHERE trip.tenant_id = $1 AND trip.status IN ('new', 'assigned') AND trip.starts_at > now()
+			AND NOT EXISTS (
+				SELECT 1 FROM availability_blocks block
+				WHERE block.tenant_id = trip.tenant_id
+					AND block.starts_at < trip.ends_at AND block.ends_at > trip.starts_at
+					AND (block.route_id IS NULL OR block.route_id = trip.route_id)
+			)
+		GROUP BY trip.id
+		HAVING trip.capacity > COALESCE(sum(booking.seats) FILTER (
+			WHERE booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
+				OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now())
+		), 0)
+		ORDER BY trip.starts_at
+		LIMIT $2
+	`, app.tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectTrips(rows)
+}
+
+func (app *app) findTripDirection(ctx context.Context, tripID string) (routeDirection, error) {
+	var direction routeDirection
+	err := app.db.QueryRow(ctx, `
+		SELECT trip.id::text, trip.origin_name, trip.destination_name
+		FROM trips trip
+		WHERE trip.id = $1 AND trip.tenant_id = $2 AND trip.status IN ('new', 'assigned')
+			AND trip.starts_at > now()
+			AND trip.capacity > (
+				SELECT COALESCE(sum(booking.seats), 0)
+				FROM bookings booking
+				WHERE booking.trip_id = trip.id
+					AND (booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
+						OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now()))
+			)
+	`, tripID, app.tenantID).Scan(&direction.ID, &direction.Origin, &direction.Destination)
+	return direction, err
+}
+
 type sqlExecutor interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
@@ -2030,7 +2210,7 @@ func welcomeMessage(companyName string) string {
 
 func (app *app) sendWelcome(chatID int64) {
 	keyboard := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("Найти рейс")),
+		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("Найти рейс"), tgbotapi.NewKeyboardButton("Доступные рейсы")),
 		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("Индивидуальный трансфер")),
 		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("Мои поездки"), tgbotapi.NewKeyboardButton("Связь с диспетчером")),
 	)
