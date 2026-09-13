@@ -40,7 +40,9 @@ services:
       retries: 10
     restart: unless-stopped
     networks:
-      - vivat-internal
+      vivat-internal:
+        aliases:
+          - vivat-postgres
 
   redis:
     image: redis:8-alpine
@@ -56,7 +58,9 @@ services:
       retries: 10
     restart: unless-stopped
     networks:
-      - vivat-internal
+      vivat-internal:
+        aliases:
+          - vivat-redis
 
   migrate:
     image: migrate/migrate:v4.18.3
