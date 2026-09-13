@@ -7,13 +7,19 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      API_INTERNAL_URL: http://api:8080
+      # Coolify connects every public service to its shared proxy network.
+      # The private alias prevents this frontend from resolving an `api`
+      # container belonging to a different Coolify application.
+      API_INTERNAL_URL: http://vivat-api:8080
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
     expose:
       - "3000"
     depends_on:
       api:
         condition: service_started
+    networks:
+      - coolify
+      - vivat-internal
     restart: unless-stopped
 
   postgres:
@@ -33,18 +39,24 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    networks:
+      - vivat-internal
 
   redis:
     image: redis:8-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes:
       - /var/lib/docker/volumes/vivat_redis_data/_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    networks:
+      - vivat-internal
 
   migrate:
     image: migrate/migrate:v4.18.3
@@ -65,6 +77,8 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    networks:
+      - vivat-internal
 
   api:
     build:
@@ -88,6 +102,10 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      vivat-internal:
+        aliases:
+          - vivat-api
 
   bot:
     build:
@@ -107,3 +125,12 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - vivat-internal
+
+networks:
+  # Only the web service is exposed to Coolify's shared Traefik network.
+  coolify:
+    external: true
+  vivat-internal:
+    internal: true
