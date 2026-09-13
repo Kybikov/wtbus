@@ -2245,7 +2245,8 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 
 	var defaultPriceMinor int64
 	var defaultPricingMode string
-	if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode); err != nil {
+	var tripCurrency string
+	if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency); err != nil {
 		app.writeResourceLookupError(w, err, "route")
 		return
 	}
@@ -2354,7 +2355,7 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 				tenant_id, route_id, vehicle_id, driver_id, kind, status, origin_name, destination_name,
 				starts_at, ends_at, capacity, price_minor, currency, pricing_mode, notes, custom_data
 			) VALUES ($1, $2, $3, $4, 'regular', 'assigned', $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), $14)
-		`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Origin, input.Destination, instance.startsAt, instance.endsAt, capacity, input.PriceMinor, tenant.BaseCurrency, input.PricingMode, input.Notes, encodedCustomData)
+		`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Origin, input.Destination, instance.startsAt, instance.endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData)
 		if err != nil {
 			var pgError *pgconn.PgError
 			if errors.As(err, &pgError) && pgError.Code == "23P01" {
@@ -2410,10 +2411,11 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fill in trip type, route, vehicle and driver"})
 		return
 	}
+	tripCurrency := tenant.BaseCurrency
 	if input.RouteID != "" {
 		var defaultPriceMinor int64
 		var defaultPricingMode string
-		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode); err != nil {
+		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency); err != nil {
 			app.writeResourceLookupError(w, err, "route")
 			return
 		}
@@ -2504,7 +2506,7 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		FROM created c
 		JOIN vehicles v ON v.id = c.vehicle_id
 		JOIN drivers d ON d.id = c.driver_id
-	`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, tenant.BaseCurrency, input.PricingMode, input.Notes, encodedCustomData).Scan(
+	`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData).Scan(
 		&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination,
 		&trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency,
 		&encodedCustomData, &trip.Vehicle, &trip.Driver,
@@ -2559,8 +2561,9 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fill in trip type, route, vehicle and driver"})
 		return
 	}
+	tripCurrency := tenant.BaseCurrency
 	if input.RouteID != "" {
-		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination); err != nil {
+		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, currency FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &tripCurrency); err != nil {
 			app.writeResourceLookupError(w, err, "route")
 			return
 		}
@@ -2619,13 +2622,13 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		WITH updated AS (
 			UPDATE trips SET route_id = NULLIF($1, '')::uuid, vehicle_id = $2, driver_id = $3, kind = $4::trip_kind,
 				origin_name = $5, destination_name = $6, starts_at = $7, ends_at = $8, capacity = $9, price_minor = $10, pricing_mode = $11,
-				notes = NULLIF($12, ''), custom_data = $13, updated_at = now()
-			WHERE id = $14 AND tenant_id = $15 AND status IN ('new', 'assigned')
+				currency = $12, notes = NULLIF($13, ''), custom_data = $14, updated_at = now()
+			WHERE id = $15 AND tenant_id = $16 AND status IN ('new', 'assigned')
 			RETURNING id, kind::text, status::text, origin_name, destination_name, starts_at, ends_at, capacity, price_minor, pricing_mode, currency, custom_data, vehicle_id, driver_id
 		)
 		SELECT u.id::text, u.kind, u.status, u.origin_name, u.destination_name, u.starts_at, u.ends_at, u.capacity, u.price_minor, u.pricing_mode, u.currency, u.custom_data, v.name, d.full_name
 		FROM updated u JOIN vehicles v ON v.id = u.vehicle_id JOIN drivers d ON d.id = u.driver_id
-	`, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, input.PricingMode, input.Notes, encodedCustomData, tripID, tenant.ID).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency, &responseCustomData, &trip.Vehicle, &trip.Driver)
+	`, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, input.PricingMode, tripCurrency, input.Notes, encodedCustomData, tripID, tenant.ID).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency, &responseCustomData, &trip.Vehicle, &trip.Driver)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "only new or assigned trips can be edited"})
 		return
