@@ -42,6 +42,7 @@ type app struct {
 	tenantSlug         string
 	dispatcherContact  string
 	subscriptionStatus string
+	systemMembershipID string
 	timezone           *time.Location
 }
 
@@ -208,12 +209,22 @@ func parseBotBindings(raw string, fallback botBinding) ([]botBinding, error) {
 func (app *app) loadTenant(ctx context.Context) error {
 	var timezone string
 	if err := app.db.QueryRow(ctx, `
-		SELECT tenant.id::text, tenant.name, tenant.timezone, tenant.subscription_status, COALESCE(branding.dispatcher_contact, '')
+		SELECT tenant.id::text, tenant.name, tenant.timezone, tenant.subscription_status, COALESCE(branding.dispatcher_contact, ''),
+			COALESCE((
+				SELECT membership.id::text
+				FROM memberships membership
+				JOIN users app_user ON app_user.id = membership.user_id
+				WHERE membership.tenant_id = tenant.id AND app_user.is_system
+				LIMIT 1
+			), '')
 		FROM tenants tenant
 		LEFT JOIN tenant_branding branding ON branding.tenant_id = tenant.id
 		WHERE tenant.slug = $1
-	`, app.tenantSlug).Scan(&app.tenantID, &app.tenantName, &timezone, &app.subscriptionStatus, &app.dispatcherContact); err != nil {
+	`, app.tenantSlug).Scan(&app.tenantID, &app.tenantName, &timezone, &app.subscriptionStatus, &app.dispatcherContact, &app.systemMembershipID); err != nil {
 		return err
+	}
+	if app.systemMembershipID == "" {
+		return errors.New("tenant system actor is missing")
 	}
 	location, err := time.LoadLocation(timezone)
 	if err != nil {
@@ -359,10 +370,19 @@ func (app *app) deliverPendingTelegramNotifications(ctx context.Context) error {
 			continue
 		}
 		if _, err := app.db.Exec(ctx, `
-			UPDATE telegram_notification_outbox
-			SET delivered_at = now(), locked_until = NULL
-			WHERE id = $1 AND tenant_id = $2 AND delivered_at IS NULL
-		`, notification.ID, app.tenantID); err != nil {
+			WITH delivered AS (
+				UPDATE telegram_notification_outbox
+				SET delivered_at = now(), locked_until = NULL
+				WHERE id = $1 AND tenant_id = $2 AND delivered_at IS NULL
+				RETURNING id::text
+			)
+			INSERT INTO activity_events (
+				tenant_id, actor_membership_id, actor_kind, action, entity_type, entity_id, details
+			)
+			SELECT $2, $3, 'system', 'telegram.notification.delivered', 'telegram_notification', delivered.id,
+				jsonb_build_object('kind', $4::text)
+			FROM delivered
+		`, notification.ID, app.tenantID, app.systemMembershipID, notification.Kind); err != nil {
 			return err
 		}
 	}
@@ -1546,7 +1566,7 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 		return createdBooking{}, err
 	}
 	defer tx.Rollback(ctx)
-	if err := expireBookingHoldsWith(ctx, tx, app.tenantID); err != nil {
+	if err := expireBookingHoldsWith(ctx, tx, app.tenantID, app.systemMembershipID); err != nil {
 		return createdBooking{}, fmt.Errorf("expire booking holds: %w", err)
 	}
 	day, err := time.ParseInLocation("2006-01-02", state.Date, app.timezone)
@@ -2118,19 +2138,30 @@ type sqlExecutor interface {
 }
 
 func (app *app) expireBookingHolds(ctx context.Context) error {
-	return expireBookingHoldsWith(ctx, app.db, app.tenantID)
+	return expireBookingHoldsWith(ctx, app.db, app.tenantID, app.systemMembershipID)
 }
 
-func expireBookingHoldsWith(ctx context.Context, executor sqlExecutor, tenantID string) error {
+func expireBookingHoldsWith(ctx context.Context, executor sqlExecutor, tenantID, systemMembershipID string) error {
 	_, err := executor.Exec(ctx, `
 		WITH expired AS (
 			UPDATE bookings SET status = 'expired', updated_at = now()
 			WHERE tenant_id = $1 AND status = 'awaiting_payment' AND payment_hold_expires_at <= now()
+			RETURNING id::text
+		), cancelled_payments AS (
+			UPDATE payments SET status = 'cancelled', updated_at = now()
+			WHERE tenant_id = $1 AND booking_id IN (SELECT id::uuid FROM expired) AND status IN ('pending', 'authorized')
 			RETURNING id
+		), totals AS (
+			SELECT count(*)::bigint AS booking_count FROM expired
 		)
-		UPDATE payments SET status = 'cancelled', updated_at = now()
-		WHERE tenant_id = $1 AND booking_id IN (SELECT id FROM expired) AND status IN ('pending', 'authorized')
-	`, tenantID)
+		INSERT INTO activity_events (
+			tenant_id, actor_membership_id, actor_kind, action, entity_type, details
+		)
+		SELECT $1, $2, 'system', 'booking.holds.expired', 'booking',
+			jsonb_build_object('count', totals.booking_count)
+		FROM totals
+		WHERE totals.booking_count > 0
+	`, tenantID, systemMembershipID)
 	return err
 }
 

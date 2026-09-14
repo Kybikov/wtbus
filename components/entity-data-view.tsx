@@ -71,6 +71,7 @@ type Props<T> = {
   dateValue?: (item: T) => string | undefined
   bulkActions?: React.ReactNode
   className?: string
+  isSelectable?: (item: T) => boolean
 }
 
 const modeLabels: Record<EntityViewMode, string> = {
@@ -128,6 +129,7 @@ export function EntityDataView<T>({
   dateValue,
   bulkActions,
   className,
+  isSelectable = () => true,
 }: Props<T>) {
   const [mode, setMode] = React.useState<EntityViewMode>(
     modes.includes(defaultMode) ? defaultMode : modes[0]
@@ -141,11 +143,15 @@ export function EntityDataView<T>({
       )
   )
   const visibleColumns = columns.filter((column) => visible.has(column.id))
+  const selectableItems = items.filter(isSelectable)
   const allSelected =
-    items.length > 0 && items.every((item) => selected.has(getId(item)))
+    selectableItems.length > 0 &&
+    selectableItems.every((item) => selected.has(getId(item)))
   const toggleAll = (checked: boolean) =>
-    onSelectedChange(checked ? new Set(items.map(getId)) : new Set())
-  const toggleOne = (id: string, checked: boolean) => {
+    onSelectedChange(checked ? new Set(selectableItems.map(getId)) : new Set())
+  const toggleOne = (item: T, checked: boolean) => {
+    if (!isSelectable(item)) return
+    const id = getId(item)
     const next = new Set(selected)
     if (checked) next.add(id)
     else next.delete(id)
@@ -251,6 +257,7 @@ export function EntityDataView<T>({
                     <Checkbox
                       aria-label="Выбрать все записи"
                       checked={allSelected}
+                      disabled={selectableItems.length === 0}
                       onCheckedChange={toggleAll}
                     />
                   </TableHead>
@@ -282,8 +289,9 @@ export function EntityDataView<T>({
                           <Checkbox
                             aria-label={`Выбрать ${getLabel(item)}`}
                             checked={selected.has(id)}
+                            disabled={!isSelectable(item)}
                             onCheckedChange={(checked) =>
-                              toggleOne(id, checked)
+                              toggleOne(item, checked)
                             }
                           />
                         </TableCell>

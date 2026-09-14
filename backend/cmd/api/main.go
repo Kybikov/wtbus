@@ -93,6 +93,10 @@ func main() {
 		logger.Error("ensure bootstrap owner", "error", err)
 		os.Exit(1)
 	}
+	if err := app.ensureSystemActors(ctx); err != nil {
+		logger.Error("ensure system actors", "error", err)
+		os.Exit(1)
+	}
 	if app.seedDemoData {
 		if err := app.ensureLocalDemoTrips(ctx); err != nil {
 			logger.Error("ensure local demo trips", "error", err)
@@ -317,6 +321,63 @@ func (app *application) ensureBootstrapOwner(ctx context.Context) error {
 	}
 	if app.bootstrapReset {
 		app.log.Info("bootstrap owner password reset")
+	}
+	return nil
+}
+
+type systemActorStore interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func systemActorEmail(tenantID string) string {
+	return "automation+" + strings.ReplaceAll(tenantID, "-", "") + "@system.local"
+}
+
+func ensureSystemActor(ctx context.Context, store systemActorStore, tenantID string) (string, error) {
+	var userID string
+	if err := store.QueryRow(ctx, `
+		INSERT INTO users (email, display_name, is_system)
+		VALUES ($1, 'Автомат', true)
+		ON CONFLICT (email) DO UPDATE
+		SET display_name = EXCLUDED.display_name, is_system = true, updated_at = now()
+		RETURNING id::text
+	`, systemActorEmail(tenantID)).Scan(&userID); err != nil {
+		return "", fmt.Errorf("create system user: %w", err)
+	}
+	var membershipID string
+	if err := store.QueryRow(ctx, `
+		INSERT INTO memberships (tenant_id, user_id, role, is_active)
+		VALUES ($1, $2, 'admin', true)
+		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = 'admin', is_active = true
+		RETURNING id::text
+	`, tenantID, userID).Scan(&membershipID); err != nil {
+		return "", fmt.Errorf("create system membership: %w", err)
+	}
+	return membershipID, nil
+}
+
+func (app *application) ensureSystemActors(ctx context.Context) error {
+	rows, err := app.db.Query(ctx, `SELECT id::text FROM tenants`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	tenantIDs := make([]string, 0)
+	for rows.Next() {
+		var tenantID string
+		if err := rows.Scan(&tenantID); err != nil {
+			return err
+		}
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, tenantID := range tenantIDs {
+		if _, err := ensureSystemActor(ctx, app.db, tenantID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -880,9 +941,12 @@ type teamMemberResponse struct {
 	Email        string     `json:"email"`
 	Role         string     `json:"role"`
 	IsActive     bool       `json:"isActive"`
+	IsSystem     bool       `json:"isSystem"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
 	DriverID     *string    `json:"driverId,omitempty"`
+	ActionCount  int64      `json:"actionCount"`
+	LastActionAt *time.Time `json:"lastActionAt,omitempty"`
 }
 
 type createTeamMemberRequest struct {
@@ -918,6 +982,16 @@ func canManageTeamRole(actorRole, memberRole, nextRole string) bool {
 	return actorRole == "admin" && (memberRole == "dispatcher" || memberRole == "driver") && (nextRole == "dispatcher" || nextRole == "driver")
 }
 
+func canDeleteTeamMember(actorRole, memberRole string, memberActive bool) bool {
+	if actorRole == "owner" {
+		return validateTeamRole(memberRole)
+	}
+	if actorRole != "admin" {
+		return false
+	}
+	return !memberActive || memberRole == "dispatcher" || memberRole == "driver"
+}
+
 func (app *application) activeDriverID(ctx context.Context, tenantID, membershipID string) (string, error) {
 	var driverID string
 	err := app.db.QueryRow(ctx, `
@@ -934,9 +1008,11 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `
-		SELECT m.id::text, u.id::text, u.display_name, u.email, m.role::text, m.is_active, m.created_at,
+		SELECT m.id::text, u.id::text, u.display_name, u.email, m.role::text, m.is_active, u.is_system, m.created_at,
 			(SELECT max(s.last_seen_at) FROM user_sessions s WHERE s.membership_id = m.id AND s.revoked_at IS NULL AND s.expires_at > now())
-			, (SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id)
+			, (SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id),
+			(SELECT count(*) FROM activity_events event WHERE event.actor_membership_id = m.id),
+			(SELECT max(event.created_at) FROM activity_events event WHERE event.actor_membership_id = m.id)
 		FROM memberships m
 		JOIN users u ON u.id = m.user_id
 		WHERE m.tenant_id = $1
@@ -951,7 +1027,7 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 	items := make([]teamMemberResponse, 0)
 	for rows.Next() {
 		var item teamMemberResponse
-		if err := rows.Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.CreatedAt, &item.LastSeenAt, &item.DriverID); err != nil {
+		if err := rows.Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.LastSeenAt, &item.DriverID, &item.ActionCount, &item.LastActionAt); err != nil {
 			app.log.Error("scan team", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load team"})
 			return
@@ -1119,11 +1195,11 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	defer tx.Rollback(r.Context())
 	var current teamMemberResponse
 	err = tx.QueryRow(r.Context(), `
-		SELECT m.id::text, u.id::text, u.display_name, u.email, m.role::text, m.is_active, m.created_at,
+		SELECT m.id::text, u.id::text, u.display_name, u.email, m.role::text, m.is_active, u.is_system, m.created_at,
 			(SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id)
 		FROM memberships m JOIN users u ON u.id = m.user_id
 		WHERE m.id = $1 AND m.tenant_id = $2 FOR UPDATE
-	`, membershipID, tenant.ID).Scan(&current.MembershipID, &current.UserID, &current.DisplayName, &current.Email, &current.Role, &current.IsActive, &current.CreatedAt, &current.DriverID)
+	`, membershipID, tenant.ID).Scan(&current.MembershipID, &current.UserID, &current.DisplayName, &current.Email, &current.Role, &current.IsActive, &current.IsSystem, &current.CreatedAt, &current.DriverID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "team member not found"})
 		return
@@ -1141,7 +1217,7 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	if input.IsActive != nil {
 		nextActive = *input.IsActive
 	}
-	if !canManageTeamRole(actor.Role, current.Role, nextRole) || (current.MembershipID == actor.MembershipID && !nextActive) {
+	if current.IsSystem || !canManageTeamRole(actor.Role, current.Role, nextRole) || (current.MembershipID == actor.MembershipID && !nextActive) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot make this access change"})
 		return
 	}
@@ -1169,9 +1245,9 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	err = tx.QueryRow(r.Context(), `
 		UPDATE memberships SET role = $3::membership_role, is_active = $4
 		WHERE id = $1 AND tenant_id = $2
-		RETURNING id::text, user_id::text, (SELECT display_name FROM users WHERE id = user_id), (SELECT email FROM users WHERE id = user_id), role::text, is_active, created_at,
+		RETURNING id::text, user_id::text, (SELECT display_name FROM users WHERE id = user_id), (SELECT email FROM users WHERE id = user_id), role::text, is_active, (SELECT is_system FROM users WHERE id = user_id), created_at,
 			(SELECT d.id::text FROM drivers d WHERE d.membership_id = memberships.id)
-	`, membershipID, tenant.ID, nextRole, nextActive).Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.CreatedAt, &item.DriverID)
+	`, membershipID, tenant.ID, nextRole, nextActive).Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.DriverID)
 	if err != nil {
 		app.log.Error("update team membership", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
@@ -1239,13 +1315,14 @@ func (app *application) deleteTeamMember(w http.ResponseWriter, r *http.Request)
 	defer tx.Rollback(r.Context())
 
 	var memberRole string
-	var memberActive bool
+	var memberActive, memberSystem bool
 	err = tx.QueryRow(r.Context(), `
-		SELECT role::text, is_active
-		FROM memberships
-		WHERE id = $1 AND tenant_id = $2
+		SELECT membership.role::text, membership.is_active, app_user.is_system
+		FROM memberships membership
+		JOIN users app_user ON app_user.id = membership.user_id
+		WHERE membership.id = $1 AND membership.tenant_id = $2
 		FOR UPDATE
-	`, membershipID, tenant.ID).Scan(&memberRole, &memberActive)
+	`, membershipID, tenant.ID).Scan(&memberRole, &memberActive, &memberSystem)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "team member not found"})
 		return
@@ -1255,7 +1332,7 @@ func (app *application) deleteTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
 		return
 	}
-	if !canManageTeamRole(actor.Role, memberRole, memberRole) {
+	if memberSystem || !canDeleteTeamMember(actor.Role, memberRole, memberActive) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot delete this team member"})
 		return
 	}
@@ -3117,6 +3194,11 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'owner')`, tenantID, userID); err != nil {
 		app.log.Error("create tenant owner membership", "error", err, "tenant", input.Slug)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not provision tenant"})
+		return
+	}
+	if _, err := ensureSystemActor(r.Context(), tx, tenantID); err != nil {
+		app.log.Error("create tenant system actor", "error", err, "tenant", input.Slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not provision tenant"})
 		return
 	}

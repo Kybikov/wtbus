@@ -9,7 +9,7 @@ alwaysApply: false
 - Use shadcn/ui primitives for controls, forms, tables, dialogs, sheets, menus, tabs, alerts, badges, progress and skeleton states. Do not hand-build equivalents from raw elements.
 - Fetch React Bits components from its current registry. Use motion only when it explains state or hierarchy and always honor reduced motion.
 - Put the page title and description in `AppShell`. Never repeat either in page content.
-- Put page-local search immediately after the page identity in the top bar. Keep cross-entity search in the `Command` palette (`Ctrl/Cmd+K`).
+- Show one search control in the top bar. Page-local search replaces the visible global-search control; keep cross-entity search available in the `Command` palette with `Ctrl/Cmd+K`.
 - Use the shared entity view for database-backed collections. Table is the default; enable gallery, kanban or calendar only when the data supports that view.
 - Tables expose useful columns by default and let the user reveal the remaining API/database fields. Keep numeric and time columns tabular.
 - Collection rows support left-side checkbox selection, bulk actions and a right-click context menu with the same core actions available through visible controls.

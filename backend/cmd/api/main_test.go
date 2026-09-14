@@ -6,6 +6,37 @@ import (
 	"time"
 )
 
+func TestCanDeleteTeamMember(t *testing.T) {
+	tests := []struct {
+		name         string
+		actorRole    string
+		memberRole   string
+		memberActive bool
+		want         bool
+	}{
+		{name: "owner can delete inactive owner", actorRole: "owner", memberRole: "owner", want: true},
+		{name: "admin can delete inactive owner", actorRole: "admin", memberRole: "owner", want: true},
+		{name: "admin cannot delete active owner", actorRole: "admin", memberRole: "owner", memberActive: true, want: false},
+		{name: "admin can delete active dispatcher", actorRole: "admin", memberRole: "dispatcher", memberActive: true, want: true},
+		{name: "dispatcher cannot delete driver", actorRole: "dispatcher", memberRole: "driver", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := canDeleteTeamMember(test.actorRole, test.memberRole, test.memberActive); got != test.want {
+				t.Fatalf("canDeleteTeamMember(%q, %q, %t) = %t, want %t", test.actorRole, test.memberRole, test.memberActive, got, test.want)
+			}
+		})
+	}
+}
+
+func TestSystemActorEmail(t *testing.T) {
+	got := systemActorEmail("12345678-1234-1234-1234-123456789abc")
+	want := "automation+12345678123412341234123456789abc@system.local"
+	if got != want {
+		t.Fatalf("systemActorEmail() = %q, want %q", got, want)
+	}
+}
+
 func TestNormalizeProvisionTenantRequest(t *testing.T) {
 	tests := []struct {
 		name  string

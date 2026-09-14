@@ -625,7 +625,7 @@ export function AppShell({
               </p>
             </div>
             {localSearch ? (
-              <label className="hidden h-9 w-[min(22rem,30vw)] min-w-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 md:flex">
+              <label className="hidden h-9 w-44 min-w-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 md:flex">
                 <HugeiconsIcon
                   className="shrink-0 text-muted-foreground"
                   icon={Search01Icon}
@@ -644,19 +644,21 @@ export function AppShell({
                 />
               </label>
             ) : null}
-            <Button
-              aria-haspopup="dialog"
-              aria-label="Глобальный поиск"
-              className="hidden h-9 justify-start rounded-xl text-muted-foreground md:inline-flex"
-              onClick={() => setSearchOpen(true)}
-              variant="outline"
-            >
-              <HugeiconsIcon icon={Search01Icon} size={16} />
-              <span className="hidden xl:inline">Глобальный поиск</span>
-              <kbd className="rounded-md border border-border px-1.5 py-0.5 text-xs">
-                ⌘K
-              </kbd>
-            </Button>
+            {!localSearch ? (
+              <Button
+                aria-haspopup="dialog"
+                aria-label="Глобальный поиск"
+                className="hidden h-9 justify-start rounded-xl text-muted-foreground md:inline-flex"
+                onClick={() => setSearchOpen(true)}
+                variant="outline"
+              >
+                <HugeiconsIcon icon={Search01Icon} size={16} />
+                <span className="hidden xl:inline">Глобальный поиск</span>
+                <kbd className="rounded-md border border-border px-1.5 py-0.5 text-xs">
+                  ⌘K
+                </kbd>
+              </Button>
+            ) : null}
             <p className="max-w-24 truncate text-sm font-semibold md:hidden">
               {pageTitle}
             </p>
@@ -672,25 +674,24 @@ export function AppShell({
                 <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
               </Button>
             ) : null}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-label="Поиск рейса или клиента"
-                    className={cn(
-                      "md:hidden",
-                      localSearch && "max-[460px]:hidden"
-                    )}
-                    onClick={() => setSearchOpen(true)}
-                    size="icon"
-                    variant="ghost"
-                  />
-                }
-              >
-                <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
-              </TooltipTrigger>
-              <TooltipContent>Поиск</TooltipContent>
-            </Tooltip>
+            {!localSearch ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-label="Поиск рейса или клиента"
+                      className="md:hidden"
+                      onClick={() => setSearchOpen(true)}
+                      size="icon"
+                      variant="ghost"
+                    />
+                  }
+                >
+                  <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
+                </TooltipTrigger>
+                <TooltipContent>Поиск</TooltipContent>
+              </Tooltip>
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {pageActions ? (

@@ -34,9 +34,12 @@ type TeamMember = {
   email: string
   role: Role
   isActive: boolean
+  isSystem: boolean
   createdAt: string
   lastSeenAt?: string
   driverId?: string
+  actionCount: number
+  lastActionAt?: string
 }
 
 type Me = {
@@ -91,8 +94,8 @@ function errorFrom(payload: unknown, fallback: string) {
     : fallback
 }
 
-function humanDate(value?: string) {
-  if (!value) return "Ещё не входил"
+function humanDate(value?: string, empty = "Ещё не входил") {
+  if (!value) return empty
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? "Нет данных"
@@ -169,9 +172,25 @@ export function TeamManager() {
     (member: TeamMember) =>
       Boolean(
         me &&
+        !member.isSystem &&
         (me.role === "owner" ||
           (me.role === "admin" &&
             (member.role === "dispatcher" || member.role === "driver")))
+      ),
+    [me]
+  )
+
+  const canDelete = React.useCallback(
+    (member: TeamMember) =>
+      Boolean(
+        me &&
+        !member.isSystem &&
+        member.membershipId !== me.membershipId &&
+        (me.role === "owner" ||
+          (me.role === "admin" &&
+            (!member.isActive ||
+              member.role === "dispatcher" ||
+              member.role === "driver")))
       ),
     [me]
   )
@@ -280,7 +299,13 @@ export function TeamManager() {
     const normalized = query.trim().toLocaleLowerCase("ru-RU")
     if (!normalized) return members
     return members.filter((member) =>
-      [member.displayName, member.email, roleLabels[member.role]].some(
+      [
+        member.displayName,
+        member.email,
+        member.isSystem
+          ? "системный автомат автоматизация"
+          : roleLabels[member.role],
+      ].some(
         (value) => value.toLocaleLowerCase("ru-RU").includes(normalized)
       )
     )
@@ -299,8 +324,11 @@ export function TeamManager() {
               {member.membershipId === me?.membershipId ? (
                 <Badge variant="secondary">Вы</Badge>
               ) : null}
+              {member.isSystem ? <Badge variant="ghost">Система</Badge> : null}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{member.email}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {member.isSystem ? "Внутренняя автоматизация" : member.email}
+            </p>
           </div>
         ),
       },
@@ -308,38 +336,68 @@ export function TeamManager() {
         id: "status",
         label: "Статус",
         value: (member) => (
-          <Badge variant={member.isActive ? "default" : "secondary"}>
-            {member.isActive ? "Активен" : "Отключён"}
+          <Badge
+            variant={
+              member.isSystem || member.isActive ? "default" : "secondary"
+            }
+          >
+            {member.isSystem
+              ? "Работает"
+              : member.isActive
+                ? "Активен"
+                : "Отключён"}
           </Badge>
         ),
       },
       {
         id: "role",
         label: "Роль",
-        value: (member) => (
-          <FieldSelect
-            aria-label={`Роль ${member.displayName}`}
-            disabled={!canManage(member) || changingId === member.membershipId}
-            onValueChange={(value) =>
-              void updateMember(member, { role: value as Role }).then((ok) => {
-                if (ok) void load()
-              })
-            }
-            options={(canManage(member) ? roles : [member.role]).map(
-              (role) => ({
-                value: role,
-                label: roleLabels[role],
-              })
-            )}
-            triggerClassName="h-9 min-w-40 text-sm"
-            value={member.role}
-          />
-        ),
+        value: (member) =>
+          member.isSystem ? (
+            <Badge variant="ghost">Автоматизация</Badge>
+          ) : (
+            <FieldSelect
+              aria-label={`Роль ${member.displayName}`}
+              disabled={
+                !canManage(member) || changingId === member.membershipId
+              }
+              onValueChange={(value) =>
+                void updateMember(member, { role: value as Role }).then(
+                  (ok) => {
+                    if (ok) void load()
+                  }
+                )
+              }
+              options={(canManage(member) ? roles : [member.role]).map(
+                (role) => ({
+                  value: role,
+                  label: roleLabels[role],
+                })
+              )}
+              triggerClassName="h-9 min-w-40 text-sm"
+              value={member.role}
+            />
+          ),
       },
       {
         id: "lastSeen",
         label: "Последний вход",
-        value: (member) => humanDate(member.lastSeenAt),
+        value: (member) =>
+          member.isSystem ? "Вход запрещён" : humanDate(member.lastSeenAt),
+      },
+      {
+        id: "actionCount",
+        label: "Действий",
+        value: (member) => (member.isSystem ? member.actionCount : "—"),
+        className: "tabular-nums",
+      },
+      {
+        id: "lastActionAt",
+        label: "Последнее действие",
+        value: (member) =>
+          member.isSystem
+            ? humanDate(member.lastActionAt, "Ещё нет действий")
+            : "—",
       },
       {
         id: "createdAt",
@@ -385,13 +443,15 @@ export function TeamManager() {
       {
         label: "Удалить из команды",
         destructive: true,
-        disabled: (member) =>
-          !canManage(member) || member.membershipId === me?.membershipId,
+        disabled: (member) => !canDelete(member),
         onSelect: setDeleteTarget,
       },
     ],
-    [canManage, load, me?.membershipId]
+    [canDelete, canManage, load, me?.membershipId]
   )
+
+  const humanMembers = members.filter((member) => !member.isSystem)
+  const systemMember = members.find((member) => member.isSystem)
 
   return (
     <AppShell
@@ -406,7 +466,7 @@ export function TeamManager() {
           Добавить сотрудника
         </Button>
       }
-      pageDescription={`${members.filter((member) => member.isActive).length} активных из ${members.length}`}
+      pageDescription={`${humanMembers.filter((member) => member.isActive).length} активных из ${humanMembers.length}${systemMember ? " · автомат работает" : ""}`}
       pageTitle="Команда"
       utilities={<ThemeCustomizer />}
     >
@@ -451,8 +511,11 @@ export function TeamManager() {
           emptyText="Сотрудники не найдены."
           getId={(member) => member.membershipId}
           getLabel={(member) => member.displayName}
-          groupBy={(member) => roleLabels[member.role]}
+          groupBy={(member) =>
+            member.isSystem ? "Автоматизация" : roleLabels[member.role]
+          }
           items={filteredMembers}
+          isSelectable={(member) => !member.isSystem}
           loading={loading}
           modes={["table", "kanban", "gallery"]}
           onSelectedChange={setSelected}
@@ -462,15 +525,29 @@ export function TeamManager() {
                 <div>
                   <p className="font-semibold">{member.displayName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {member.email}
+                    {member.isSystem
+                      ? "Внутренняя автоматизация"
+                      : member.email}
                   </p>
                 </div>
-                <Badge variant={member.isActive ? "default" : "secondary"}>
-                  {member.isActive ? "Активен" : "Отключён"}
+                <Badge
+                  variant={
+                    member.isSystem || member.isActive
+                      ? "default"
+                      : "secondary"
+                  }
+                >
+                  {member.isSystem
+                    ? "Работает"
+                    : member.isActive
+                      ? "Активен"
+                      : "Отключён"}
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                {roleLabels[member.role]} · {humanDate(member.lastSeenAt)}
+                {member.isSystem
+                  ? `Автоматизация · ${member.actionCount} действий · ${humanDate(member.lastActionAt, "ещё нет действий")}`
+                  : `${roleLabels[member.role]} · ${humanDate(member.lastSeenAt)}`}
               </p>
             </div>
           )}
