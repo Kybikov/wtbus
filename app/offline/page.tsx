@@ -14,8 +14,8 @@ export default function OfflinePage() {
           Нет соединения
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Проверьте интернет и повторите. Сохранённые точки GPS будут отправлены
-          автоматически после восстановления сети.
+          Проверьте интернет и откройте водительское приложение снова, чтобы
+          отправить сохранённые GPS-точки. На этом экране GPS не записывается.
         </p>
         <Link
           className={cn(buttonVariants({ size: "lg" }), "mt-7 w-full")}

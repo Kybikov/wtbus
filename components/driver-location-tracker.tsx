@@ -5,12 +5,14 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Car01Icon, Clock01Icon, Route01Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
+import { useDriverGPS } from "@/hooks/use-driver-gps"
 
 type FleetTrip = {
   id: string
   status: "assigned" | "in_progress"
   origin: string
   destination: string
+  startsAt: string
 }
 
 type Vehicle = {
@@ -36,17 +38,7 @@ type DriverBranding = {
   primaryColor: string
 }
 
-type PendingGPSPoint = {
-  vehicleId: string
-  tripId: string
-  latitude: number
-  longitude: number
-  accuracyMeters: number
-  recordedAt: string
-}
-
-const pendingPointsKey = "vivat.pending-gps-points.v1"
-const maxPendingPoints = 120
+type DriverIdentity = { tenantSlug: string; membershipId: string; role: string }
 
 function isFleetResponse(value: unknown): value is FleetResponse {
   return (
@@ -120,47 +112,6 @@ function formatMoney(amountMinor: number, currency: string) {
   }).format(amountMinor / 100)
 }
 
-function readPendingPoints(): PendingGPSPoint[] {
-  try {
-    const value: unknown = JSON.parse(
-      window.localStorage.getItem(pendingPointsKey) ?? "[]"
-    )
-    if (!Array.isArray(value)) return []
-    return value
-      .filter(
-        (point): point is PendingGPSPoint =>
-          typeof point === "object" &&
-          point !== null &&
-          "vehicleId" in point &&
-          typeof point.vehicleId === "string" &&
-          "tripId" in point &&
-          typeof point.tripId === "string" &&
-          "latitude" in point &&
-          typeof point.latitude === "number" &&
-          "longitude" in point &&
-          typeof point.longitude === "number" &&
-          "accuracyMeters" in point &&
-          typeof point.accuracyMeters === "number" &&
-          "recordedAt" in point &&
-          typeof point.recordedAt === "string"
-      )
-      .slice(-maxPendingPoints)
-  } catch {
-    return []
-  }
-}
-
-function writePendingPoints(points: PendingGPSPoint[]) {
-  try {
-    window.localStorage.setItem(
-      pendingPointsKey,
-      JSON.stringify(points.slice(-maxPendingPoints))
-    )
-  } catch {
-    // Some private browsing modes disable local storage; GPS transmission still works while online.
-  }
-}
-
 export function DriverLocationTracker() {
   const [vehicles, setVehicles] = React.useState<Vehicle[]>([])
   const [cashSummary, setCashSummary] =
@@ -170,26 +121,71 @@ export function DriverLocationTracker() {
   const [cashLoading, setCashLoading] = React.useState(true)
   const [confirmingCash, setConfirmingCash] = React.useState(false)
   const [updatingTripStatus, setUpdatingTripStatus] = React.useState(false)
-  const [tracking, setTracking] = React.useState(false)
-  const [sending, setSending] = React.useState(false)
-  const [lastSent, setLastSent] = React.useState<Date | null>(null)
-  const [pendingCount, setPendingCount] = React.useState(0)
-  const [online, setOnline] = React.useState(true)
+  const [identity, setIdentity] = React.useState<DriverIdentity | null>(null)
   const [error, setError] = React.useState<string | null>(null)
-  const watchID = React.useRef<number | null>(null)
-  const lastTransmitAt = React.useRef(0)
-
-  const selectedVehicle = vehicles[0]
+  const loadInFlight = React.useRef(false)
+  const selectedVehicle = [...vehicles].sort(
+    (a, b) =>
+      Number(b.activeTrip?.status === "in_progress") -
+        Number(a.activeTrip?.status === "in_progress") ||
+      Date.parse(a.activeTrip?.startsAt ?? "") -
+        Date.parse(b.activeTrip?.startsAt ?? "")
+  )[0]
+  const gps = useDriverGPS(
+    identity && selectedVehicle?.activeTrip
+      ? {
+          scope: identity.tenantSlug + ":" + identity.membershipId,
+          membershipId: identity.membershipId,
+          vehicleId: selectedVehicle.id,
+          tripId: selectedVehicle.activeTrip.id,
+        }
+      : null
+  )
+  const {
+    tracking,
+    locating: sending,
+    lastSent,
+    pending: pendingCount,
+    online,
+  } = gps
 
   const loadFleet = React.useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    if (loadInFlight.current) return
+    loadInFlight.current = true
     try {
-      const response = await fetch("/api/fleet", { cache: "no-store" })
+      const sessionResponse = await fetch("/api/auth/me", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      })
+      const session = await sessionResponse.json().catch(() => null)
+      if (
+        !sessionResponse.ok ||
+        session?.role !== "driver" ||
+        typeof session?.membershipId !== "string" ||
+        typeof session?.tenantSlug !== "string"
+      ) {
+        if (
+          sessionResponse.status === 401 ||
+          sessionResponse.status === 403 ||
+          (sessionResponse.ok && session?.role !== "driver")
+        ) {
+          setIdentity(null)
+          setVehicles([])
+        }
+        throw new Error(
+          "Не удалось подтвердить доступ водителя. Проверьте связь или войдите снова."
+        )
+      }
+      const response = await fetch("/api/fleet", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      })
       const payload: unknown = await response.json()
       if (!response.ok || !isFleetResponse(payload))
         throw new Error("Не удалось получить список автомобиля.")
       setVehicles(payload.items)
+      setIdentity(session)
+      setError(null)
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -197,6 +193,7 @@ export function DriverLocationTracker() {
           : "Не удалось получить список автомобиля."
       )
     } finally {
+      loadInFlight.current = false
       setLoading(false)
     }
   }, [])
@@ -204,7 +201,10 @@ export function DriverLocationTracker() {
   const loadCashSummary = React.useCallback(async () => {
     setCashLoading(true)
     try {
-      const response = await fetch("/api/driver-cash", { cache: "no-store" })
+      const response = await fetch("/api/driver-cash", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      })
       const payload: unknown = await response.json().catch(() => null)
       if (!response.ok || !isDriverCashSummaryResponse(payload))
         throw new Error("Не удалось получить сумму наличных.")
@@ -225,7 +225,21 @@ export function DriverLocationTracker() {
       void loadFleet()
       void loadCashSummary()
     }, 0)
-    return () => window.clearTimeout(timer)
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void loadFleet()
+        void loadCashSummary()
+      }
+    }
+    const poll = window.setInterval(refresh, 30_000)
+    window.addEventListener("online", refresh)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearInterval(poll)
+      window.removeEventListener("online", refresh)
+      document.removeEventListener("visibilitychange", refresh)
+    }
   }, [loadCashSummary, loadFleet])
 
   React.useEffect(() => {
@@ -240,167 +254,6 @@ export function DriverLocationTracker() {
       .catch(() => undefined)
     return () => controller.abort()
   }, [])
-
-  const transmitPoint = React.useCallback(async (point: PendingGPSPoint) => {
-    const response = await fetch("/api/gps-points", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(point),
-    })
-    const payload: unknown = await response.json().catch(() => null)
-    if (!response.ok) {
-      const message =
-        typeof payload === "object" &&
-        payload !== null &&
-        "error" in payload &&
-        typeof payload.error === "string"
-          ? payload.error
-          : "Не удалось передать геолокацию."
-      throw new Error(message)
-    }
-  }, [])
-
-  const flushPendingPoints = React.useCallback(async () => {
-    if (!navigator.onLine || loading) return
-    const pending = readPendingPoints()
-    const currentTripID = selectedVehicle?.activeTrip?.id
-    const eligible = currentTripID
-      ? pending.filter(
-          (point) =>
-            point.vehicleId === selectedVehicle.id &&
-            point.tripId === currentTripID
-        )
-      : []
-
-    if (eligible.length !== pending.length) writePendingPoints(eligible)
-    setPendingCount(eligible.length)
-    if (eligible.length === 0) return
-
-    let sent = 0
-    for (const point of eligible) {
-      try {
-        await transmitPoint(point)
-        sent += 1
-      } catch {
-        break
-      }
-    }
-    const remaining = eligible.slice(sent)
-    writePendingPoints(remaining)
-    setPendingCount(remaining.length)
-    if (sent > 0) setLastSent(new Date())
-  }, [loading, selectedVehicle, transmitPoint])
-
-  React.useEffect(() => {
-    const initialization = window.setTimeout(() => {
-      setOnline(navigator.onLine)
-      void flushPendingPoints()
-    }, 0)
-
-    function handleOnline() {
-      setOnline(true)
-      setError(null)
-      void flushPendingPoints()
-    }
-    function handleOffline() {
-      setOnline(false)
-    }
-
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-    return () => {
-      window.clearTimeout(initialization)
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [flushPendingPoints])
-
-  const sendPosition = React.useCallback(
-    async (position: GeolocationPosition) => {
-      if (!selectedVehicle?.id || !selectedVehicle.activeTrip?.id) return
-      setSending(true)
-      setError(null)
-      const point: PendingGPSPoint = {
-        vehicleId: selectedVehicle.id,
-        tripId: selectedVehicle.activeTrip.id,
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracyMeters: position.coords.accuracy,
-        recordedAt: new Date(position.timestamp).toISOString(),
-      }
-      try {
-        await transmitPoint(point)
-        lastTransmitAt.current = Date.now()
-        setLastSent(new Date())
-      } catch (reason) {
-        if (!navigator.onLine || reason instanceof TypeError) {
-          const pending = [...readPendingPoints(), point]
-          writePendingPoints(pending)
-          setPendingCount(Math.min(pending.length, maxPendingPoints))
-          setOnline(false)
-        } else {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Не удалось передать геолокацию."
-          )
-        }
-      } finally {
-        setSending(false)
-      }
-    },
-    [selectedVehicle, transmitPoint]
-  )
-
-  const onPosition = React.useCallback(
-    (position: GeolocationPosition) => {
-      if (Date.now() - lastTransmitAt.current >= 25_000)
-        void sendPosition(position)
-    },
-    [sendPosition]
-  )
-
-  function locationError(positionError: GeolocationPositionError) {
-    setError(
-      positionError.code === positionError.PERMISSION_DENIED
-        ? "Доступ к геолокации выключен. Разрешите его в настройках браузера и повторите."
-        : "Не удалось определить координаты. Проверьте GPS и интернет."
-    )
-    setTracking(false)
-  }
-
-  function sendOnce() {
-    if (!navigator.geolocation) {
-      setError("Этот браузер не поддерживает геолокацию.")
-      return
-    }
-    navigator.geolocation.getCurrentPosition(onPosition, locationError, {
-      enableHighAccuracy: true,
-      timeout: 15_000,
-      maximumAge: 5_000,
-    })
-  }
-
-  function toggleTracking() {
-    if (!navigator.geolocation) {
-      setError("Этот браузер не поддерживает геолокацию.")
-      return
-    }
-    if (tracking) {
-      if (watchID.current !== null)
-        navigator.geolocation.clearWatch(watchID.current)
-      watchID.current = null
-      setTracking(false)
-      return
-    }
-    lastTransmitAt.current = 0
-    watchID.current = navigator.geolocation.watchPosition(
-      onPosition,
-      locationError,
-      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 10_000 }
-    )
-    setTracking(true)
-  }
 
   async function changeTripStatus(status: "in_progress" | "completed") {
     const tripID = selectedVehicle?.activeTrip?.id
@@ -418,11 +271,20 @@ export function DriverLocationTracker() {
     setUpdatingTripStatus(true)
     setError(null)
     try {
-      const response = await fetch(`/api/trips?id=${encodeURIComponent(tripID)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      })
+      if (status === "completed" && !(await gps.prepareCompletion())) {
+        throw new Error(
+          "Сначала отправьте сохранённые GPS-точки. Восстановите связь и повторите завершение рейса."
+        )
+      }
+      const response = await fetch(
+        `/api/trips?id=${encodeURIComponent(tripID)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+          signal: AbortSignal.timeout(12_000),
+        }
+      )
       const payload: unknown = await response.json().catch(() => null)
       if (!response.ok) {
         const message =
@@ -457,6 +319,7 @@ export function DriverLocationTracker() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tripId: cashSummary.tripId }),
+        signal: AbortSignal.timeout(12_000),
       })
       const payload: unknown = await response.json().catch(() => null)
       if (!response.ok || !isDriverCashSummaryResponse(payload)) {
@@ -480,14 +343,6 @@ export function DriverLocationTracker() {
       setConfirmingCash(false)
     }
   }
-
-  React.useEffect(
-    () => () => {
-      if (watchID.current !== null)
-        navigator.geolocation.clearWatch(watchID.current)
-    },
-    []
-  )
 
   return (
     <main className="min-h-svh bg-background px-4 py-5 text-foreground sm:px-6">
@@ -574,7 +429,8 @@ export function DriverLocationTracker() {
                 ) : selectedVehicle.activeTrip.status === "in_progress" ? (
                   <>
                     <p className="mt-3 text-sm leading-5 text-muted-foreground">
-                      Проверьте сумму перед подтверждением. Без этого рейс нельзя завершить.
+                      Проверьте сумму перед подтверждением. Без этого рейс
+                      нельзя завершить.
                     </p>
                     <Button
                       className="mt-4 w-full"
@@ -599,8 +455,7 @@ export function DriverLocationTracker() {
           <div className="mt-7 rounded-2xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
             <p>Нет назначенного рейса.</p>
             <p className="mt-1 text-xs">
-              Когда диспетчер назначит вас на рейс, он появится здесь
-              автоматически.
+              Назначения обновляются каждые 30 секунд, пока приложение открыто.
             </p>
             <Button
               className="mt-4"
@@ -614,16 +469,27 @@ export function DriverLocationTracker() {
           </div>
         )}
 
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
+        {error || gps.error ? (
+          <div
+            role="alert"
+            className="mt-4 rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {error || gps.error}
+            {gps.authRequired ? (
+              <a className="mt-2 block underline" href="/login?next=/driver">
+                Войти снова
+              </a>
+            ) : null}
           </div>
         ) : null}
         {!online || pendingCount > 0 ? (
-          <div className="mt-4 rounded-2xl border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-foreground">
+          <div
+            role="status"
+            className="mt-4 rounded-2xl border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-foreground"
+          >
             <p className="font-semibold">
               {online
-                ? "Отправляем сохранённые точки"
+                ? "Точки ожидают отправки"
                 : "Нет сети — точки сохраняются на телефоне"}
             </p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -638,7 +504,11 @@ export function DriverLocationTracker() {
           <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
             <span
               className={
-                tracking
+                tracking &&
+                gps.fresh &&
+                online &&
+                pendingCount === 0 &&
+                !gps.error
                   ? "size-2 rounded-full bg-emerald-500"
                   : "size-2 rounded-full bg-muted-foreground/50"
               }
@@ -646,18 +516,56 @@ export function DriverLocationTracker() {
             <HugeiconsIcon icon={Clock01Icon} size={15} />
             Последняя отправка: {timeLabel(lastSent)}
           </div>
-          <div className="grid gap-3">
+          <div
+            className="mb-4 space-y-2 text-sm text-muted-foreground"
+            role="status"
+          >
+            <p>
+              {tracking
+                ? gps.fresh
+                  ? "GPS включён"
+                  : "GPS включён · ожидаем свежую позицию"
+                : "GPS остановлен"}
+              {gps.accuracy !== null
+                ? ` · точность ±${Math.round(gps.accuracy)} м`
+                : ""}
+            </p>
+            {gps.notice ? <p>{gps.notice}</p> : null}
+            {tracking ? (
+              <p>
+                {gps.wakeLocked
+                  ? "Экран удерживается включённым."
+                  : "Держите экран включённым: браузер не разрешил удержание экрана."}
+              </p>
+            ) : null}
+          </div>
+          <div className="grid gap-3 [&_button]:min-h-11">
             <Button
-              disabled={loading || !selectedVehicle?.activeTrip || sending}
-              onClick={sendOnce}
+              disabled={
+                loading ||
+                !identity ||
+                !selectedVehicle?.activeTrip ||
+                sending ||
+                updatingTripStatus ||
+                gps.authRequired
+              }
+              onClick={gps.sendOnce}
               size="lg"
               variant="outline"
             >
               {sending ? "Передаём координаты…" : "Передать точку сейчас"}
             </Button>
             <Button
-              disabled={loading || !selectedVehicle?.activeTrip}
-              onClick={toggleTracking}
+              disabled={
+                !tracking &&
+                (loading ||
+                  !identity ||
+                  !selectedVehicle?.activeTrip ||
+                  sending ||
+                  updatingTripStatus ||
+                  gps.authRequired)
+              }
+              onClick={tracking ? gps.stop : gps.start}
               size="lg"
             >
               {tracking ? "Остановить передачу" : "Начать передачу GPS"}
@@ -667,6 +575,8 @@ export function DriverLocationTracker() {
             При активной передаче координаты отправляются не чаще одного раза в
             25 секунд. Остановить можно в любой момент. Добавьте приложение на
             главный экран телефона, чтобы открывать его как обычное приложение.
+            При блокировке экрана или сворачивании GPS может приостановиться. Во
+            время рейса держите приложение открытым и телефон на зарядке.
           </p>
         </div>
       </div>

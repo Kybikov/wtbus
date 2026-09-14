@@ -103,8 +103,8 @@ function dateTime(value: string, timeZone: string) {
   }).format(new Date(value))
 }
 
-function relativeTime(value: string) {
-  const minutes = Math.round((Date.now() - new Date(value).getTime()) / 60_000)
+function relativeTime(value: string, now: number) {
+  const minutes = Math.round((now - new Date(value).getTime()) / 60_000)
   if (minutes < 1) return "только что"
   if (minutes < 60) return `${minutes} мин назад`
   const hours = Math.floor(minutes / 60)
@@ -121,6 +121,8 @@ function statusLabel(status?: FleetTrip["status"]) {
 }
 
 export function FleetOperations() {
+  const requestInFlight = React.useRef(false)
+  const [now, setNow] = React.useState(0)
   const [fleet, setFleet] = React.useState<Vehicle[]>([])
   const [timezone, setTimezone] = React.useState("Europe/Warsaw")
   const [loading, setLoading] = React.useState(true)
@@ -133,11 +135,16 @@ export function FleetOperations() {
   const [error, setError] = React.useState<string | null>(null)
 
   const load = React.useCallback(async (manual = false) => {
+    if (requestInFlight.current) return
+    requestInFlight.current = true
     if (manual) setRefreshing(true)
     else setLoading(true)
     setError(null)
     try {
-      const response = await fetch("/api/fleet", { cache: "no-store" })
+      const response = await fetch("/api/fleet", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      })
       const payload: unknown = await response.json()
       if (!response.ok || !isFleetResponse(payload)) {
         throw new Error("Не удалось загрузить автопарк.")
@@ -151,17 +158,31 @@ export function FleetOperations() {
           : "Не удалось загрузить автопарк."
       )
     } finally {
+      requestInFlight.current = false
       setLoading(false)
       setRefreshing(false)
     }
   }, [])
 
   React.useEffect(() => {
-    const bootstrap = window.setTimeout(() => void load(), 0)
-    const timer = window.setInterval(() => void load(true), 30_000)
+    const bootstrap = window.setTimeout(() => {
+      setNow(Date.now())
+      void load()
+    }, 0)
+    const clock = window.setInterval(() => setNow(Date.now()), 15_000)
+    const refresh = () => {
+      setNow(Date.now())
+      if (document.visibilityState === "visible") void load(true)
+    }
+    const timer = window.setInterval(refresh, 30_000)
+    document.addEventListener("visibilitychange", refresh)
+    window.addEventListener("online", refresh)
     return () => {
       window.clearTimeout(bootstrap)
       window.clearInterval(timer)
+      window.clearInterval(clock)
+      document.removeEventListener("visibilitychange", refresh)
+      window.removeEventListener("online", refresh)
     }
   }, [load])
 
@@ -277,7 +298,11 @@ export function FleetOperations() {
   const moving = fleet.filter(
     (vehicle) => vehicle.activeTrip?.status === "in_progress"
   ).length
-  const reporting = fleet.filter((vehicle) => vehicle.lastLocation).length
+  const reporting = fleet.filter(
+    (vehicle) =>
+      vehicle.lastLocation &&
+      now - Date.parse(vehicle.lastLocation.recordedAt) <= 120_000
+  ).length
   const mapPoints = fleet.flatMap((vehicle) =>
     vehicle.lastLocation
       ? [
@@ -287,6 +312,7 @@ export function FleetOperations() {
             latitude: vehicle.lastLocation.latitude,
             longitude: vehicle.lastLocation.longitude,
             recordedAt: vehicle.lastLocation.recordedAt,
+            stale: now - Date.parse(vehicle.lastLocation.recordedAt) > 120_000,
           },
         ]
       : []
@@ -341,7 +367,7 @@ export function FleetOperations() {
               {reporting} / {fleet.length}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              авто уже передали точку
+              авто передали точку за последние 2 минуты
             </p>
           </div>
           <div className="rounded-2xl border border-border bg-background/35 p-4">
@@ -547,7 +573,9 @@ export function FleetOperations() {
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Точность{" "}
-                        {Math.round(vehicle.lastLocation.accuracyMeters ?? 0)} м
+                        {vehicle.lastLocation.accuracyMeters == null
+                          ? "неизвестна"
+                          : `±${Math.round(vehicle.lastLocation.accuracyMeters)} м`}
                       </p>
                     </>
                   ) : (
@@ -561,9 +589,11 @@ export function FleetOperations() {
                   <span
                     className={cn(
                       "size-2 rounded-full",
-                      vehicle.lastLocation
+                      vehicle.lastLocation &&
+                        now - Date.parse(vehicle.lastLocation.recordedAt) <=
+                          120_000
                         ? "bg-emerald-500"
-                        : "bg-muted-foreground/50"
+                        : "bg-amber-600"
                     )}
                   />
                   <div>
@@ -573,7 +603,7 @@ export function FleetOperations() {
                     <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                       <HugeiconsIcon icon={Clock01Icon} size={13} />
                       {vehicle.lastLocation
-                        ? relativeTime(vehicle.lastLocation.recordedAt)
+                        ? `${now - Date.parse(vehicle.lastLocation.recordedAt) > 120_000 ? "GPS устарел · " : ""}${relativeTime(vehicle.lastLocation.recordedAt, now)}`
                         : "нет сигнала"}
                     </p>
                   </div>

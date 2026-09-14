@@ -8,6 +8,7 @@ export type FleetMapPosition = {
   latitude: number
   longitude: number
   recordedAt: string
+  stale?: boolean
 }
 
 const LiveFleetLocationMap = dynamic(

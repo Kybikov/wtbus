@@ -28,6 +28,7 @@ jobs:
       - name: Validate web application
         run: |
           npm ci
+          npm test
           npm run typecheck
           npm run lint
           npm run build

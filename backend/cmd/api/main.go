@@ -731,7 +731,7 @@ func (app *application) me(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication is required"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"tenantSlug": identity.TenantSlug, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email})
+	writeJSON(w, http.StatusOK, map[string]string{"tenantSlug": identity.TenantSlug, "membershipId": identity.MembershipID, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email})
 }
 
 func (app *application) logout(w http.ResponseWriter, r *http.Request) {
@@ -1880,6 +1880,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			FROM trips t
 			WHERE t.tenant_id = $1 AND t.vehicle_id = v.id
 			  AND t.status IN ('assigned', 'in_progress')
+			  AND ($2 = '' OR t.driver_id = NULLIF($2, '')::uuid)
 			ORDER BY CASE WHEN t.status = 'in_progress' THEN 0 ELSE 1 END, t.starts_at ASC
 			LIMIT 1
 		) active_trip ON true
@@ -4785,6 +4786,8 @@ func (app *application) confirmBookingPayment(w http.ResponseWriter, r *http.Req
 }
 
 type gpsPointRequest struct {
+	ClientPointID  string     `json:"clientPointId"`
+	MembershipID   string     `json:"membershipId"`
 	VehicleID      string     `json:"vehicleId"`
 	TripID         string     `json:"tripId"`
 	Latitude       float64    `json:"latitude"`
@@ -4802,12 +4805,22 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 	var input gpsPointRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil || strings.TrimSpace(input.VehicleID) == "" || input.Latitude < -90 || input.Latitude > 90 || input.Longitude < -180 || input.Longitude > 180 {
+	if err := decoder.Decode(&input); err != nil || !validGPSPoint(input, time.Now()) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle and valid coordinates are required"})
 		return
 	}
+	actor, _ := identityFromContext(r.Context())
+	if input.MembershipID != "" && input.MembershipID != actor.MembershipID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "GPS membership no longer matches the session"})
+		return
+	}
 	var vehicleExists bool
-	if err := app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM vehicles WHERE id=$1 AND tenant_id=$2 AND is_active)`, input.VehicleID, tenant.ID).Scan(&vehicleExists); err != nil || !vehicleExists {
+	if err := app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM vehicles WHERE id=$1 AND tenant_id=$2 AND is_active)`, input.VehicleID, tenant.ID).Scan(&vehicleExists); err != nil {
+		app.log.Error("check GPS vehicle", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not check GPS vehicle; retry later"})
+		return
+	}
+	if !vehicleExists {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle is unavailable"})
 		return
 	}
@@ -4837,7 +4850,12 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 				WHERE id=$1 AND tenant_id=$2 AND vehicle_id=$3
 				  AND (NULLIF($4, '')::uuid IS NULL OR (driver_id = NULLIF($4, '')::uuid AND status IN ('assigned', 'in_progress')))
 			)
-		`, input.TripID, tenant.ID, input.VehicleID, driverID).Scan(&tripExists); err != nil || !tripExists {
+		`, input.TripID, tenant.ID, input.VehicleID, driverID).Scan(&tripExists); err != nil {
+			app.log.Error("check GPS trip", "error", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not check GPS trip; retry later"})
+			return
+		}
+		if !tripExists {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip is unavailable for this vehicle"})
 			return
 		}
@@ -4851,7 +4869,23 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var id int64
-	err := app.db.QueryRow(r.Context(), `INSERT INTO gps_points (tenant_id,vehicle_id,trip_id,recorded_at,latitude,longitude,accuracy_meters) VALUES ($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7) RETURNING id`, tenant.ID, input.VehicleID, input.TripID, recordedAt, input.Latitude, input.Longitude, input.AccuracyMeters).Scan(&id)
+	err := app.db.QueryRow(r.Context(), `
+		INSERT INTO gps_points (tenant_id,vehicle_id,trip_id,recorded_at,latitude,longitude,accuracy_meters,client_point_id,membership_id)
+		VALUES ($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid)
+		ON CONFLICT (tenant_id, client_point_id) WHERE client_point_id IS NOT NULL
+		DO UPDATE SET client_point_id = EXCLUDED.client_point_id
+		WHERE gps_points.vehicle_id = EXCLUDED.vehicle_id
+		  AND gps_points.trip_id IS NOT DISTINCT FROM EXCLUDED.trip_id
+		  AND gps_points.membership_id IS NOT DISTINCT FROM EXCLUDED.membership_id
+		  AND gps_points.recorded_at = EXCLUDED.recorded_at
+		  AND gps_points.latitude = EXCLUDED.latitude AND gps_points.longitude = EXCLUDED.longitude
+		  AND gps_points.accuracy_meters IS NOT DISTINCT FROM EXCLUDED.accuracy_meters
+		RETURNING id
+	`, tenant.ID, input.VehicleID, input.TripID, recordedAt, input.Latitude, input.Longitude, input.AccuracyMeters, input.ClientPointID, actor.MembershipID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "GPS point identifier was already used for different data"})
+		return
+	}
 	if err != nil {
 		app.log.Error("record gps", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record location"})

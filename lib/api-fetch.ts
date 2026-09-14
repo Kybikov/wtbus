@@ -4,7 +4,8 @@ const demoTenantPath = "/api/v1/tenants/vivat-bus"
 
 async function resolveTenantScopedInput(
   input: RequestInfo | URL,
-  session: string | undefined
+  session: string | undefined,
+  signal?: AbortSignal | null
 ) {
   if (!session || (typeof input !== "string" && !(input instanceof URL)))
     return input
@@ -16,6 +17,7 @@ async function resolveTenantScopedInput(
       new URL("/api/v1/auth/me", url.origin),
       {
         cache: "no-store",
+        signal,
         headers: {
           Authorization: `Bearer ${session}`,
           Accept: "application/json",
@@ -51,7 +53,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
     headers.set("Authorization", `Bearer ${session}`)
   }
 
-  return fetch(await resolveTenantScopedInput(input, session), {
+  return fetch(await resolveTenantScopedInput(input, session, init?.signal), {
     ...init,
     headers,
   })

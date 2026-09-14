@@ -16,7 +16,7 @@ import {
 import { useTheme } from "next-themes"
 
 import { AppShell } from "@/components/app-shell"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import {
   Dialog,

@@ -365,7 +365,16 @@ export function AppShell({
   const pathname = usePathname()
   const router = useRouter()
   const preferences = useSidebarPreferences()
-  const [sidebarOpen, setSidebarOpen] = React.useState(true)
+  const [sidebarOverride, setSidebarOverride] = React.useState<{
+    mode: string
+    open: boolean
+  } | null>(null)
+  const sidebarOpen =
+    sidebarOverride?.mode === preferences.sidebarMode
+      ? sidebarOverride.open
+      : preferences.sidebarMode !== "icon"
+  const setSidebarOpen = (open: boolean) =>
+    setSidebarOverride({ mode: preferences.sidebarMode, open })
   const [brand, setBrand] = React.useState(defaultShellBrand)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -382,10 +391,6 @@ export function AppShell({
     TransferRequestPreview[]
   >([])
 
-  React.useEffect(
-    () => setSidebarOpen(preferences.sidebarMode !== "icon"),
-    [preferences.sidebarMode]
-  )
   React.useEffect(() => {
     const controller = new AbortController()
     void Promise.all([
@@ -775,7 +780,7 @@ export function AppShell({
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void signOut} variant="destructive">
+                <DropdownMenuItem onClick={() => void signOut()} variant="destructive">
                   Выйти
                 </DropdownMenuItem>
               </DropdownMenuContent>

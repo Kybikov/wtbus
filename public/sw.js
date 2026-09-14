@@ -1,5 +1,5 @@
-const CACHE_NAME = "vivat-bus-shell-v1"
-const APP_SHELL = ["/offline", "/brand/vivat-bus.png"]
+const CACHE_NAME = "vivat-bus-shell-v3"
+const APP_SHELL = ["/offline.html", "/brand/vivat-bus.png"]
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -23,7 +23,7 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/offline"))
+      fetch(event.request).catch(() => caches.match("/offline.html"))
     )
     return
   }
@@ -38,7 +38,11 @@ self.addEventListener("fetch", (event) => {
           }
           return response
         })
-        return cached || fresh
+        if (cached) {
+          event.waitUntil(fresh.catch(() => undefined))
+          return cached
+        }
+        return fresh
       })
     )
   }

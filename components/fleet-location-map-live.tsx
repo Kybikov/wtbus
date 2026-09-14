@@ -24,11 +24,11 @@ function initialCenter(points: FleetMapPosition[]): [number, number] {
 
 function FitFleetBounds({ points }: { points: FleetMapPosition[] }) {
   const map = useMap()
-  const locationKey = points
-    .map((point) => `${point.id}:${point.latitude}:${point.longitude}`)
-    .join("|")
+  const fitted = React.useRef(false)
 
   React.useEffect(() => {
+    if (fitted.current) return
+    fitted.current = true
     if (points.length === 1) {
       map.setView([points[0].latitude, points[0].longitude], 12, {
         animate: true,
@@ -41,7 +41,7 @@ function FitFleetBounds({ points }: { points: FleetMapPosition[] }) {
       ),
       { padding: [32, 32], maxZoom: 10, animate: true }
     )
-  }, [locationKey, map, points])
+  }, [map, points])
 
   return null
 }
@@ -86,8 +86,12 @@ export function LiveFleetLocationMap({
               <p className="mt-1 text-xs text-slate-600">
                 {point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}
               </p>
+              <p className="mt-1 text-xs">
+                {point.stale ? "GPS устарел · " : "Последняя точка · "}
+                {new Date(point.recordedAt).toLocaleTimeString("ru-RU")}
+              </p>
               <a
-                className="mt-3 inline-flex font-semibold text-blue-700 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-blue-600/40"
+                className="mt-3 inline-flex font-semibold text-blue-700 underline underline-offset-4 focus:ring-2 focus:ring-blue-600/40 focus:outline-none"
                 href={externalMapURL(point)}
                 rel="noreferrer"
                 target="_blank"

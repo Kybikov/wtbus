@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error },
         {
-          status: [400, 401, 402, 403, 404, 409].includes(upstream.status)
+          status: [400, 401, 402, 403, 404, 409, 422, 429].includes(upstream.status)
             ? upstream.status
             : 502,
         }
