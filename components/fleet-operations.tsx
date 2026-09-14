@@ -321,36 +321,29 @@ export function FleetOperations() {
   )
 
   return (
-    <AppShell pageTitle="Автопарк" utilities={<ThemeCustomizer />}>
-      <div className="mx-auto max-w-[1600px] space-y-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-              Транспорт и геолокация
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Последняя переданная точка каждого автомобиля. Экран обновляется
-              каждые 30 секунд.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {canManage ? (
-              <Button disabled={saving} onClick={startCreate} size="lg">
-                <HugeiconsIcon icon={Add01Icon} size={18} />
-                Добавить автомобиль
-              </Button>
-            ) : null}
-            <Button
-              disabled={refreshing || saving}
-              onClick={() => void load(true)}
-              size="lg"
-              variant="outline"
-            >
-              {refreshing ? "Обновляем…" : "Обновить"}
+    <AppShell
+      pageActions={
+        <div className="flex gap-2">
+          {canManage ? (
+            <Button disabled={saving} onClick={startCreate}>
+              <HugeiconsIcon icon={Add01Icon} size={18} />
+              Добавить автомобиль
             </Button>
-          </div>
+          ) : null}
+          <Button
+            disabled={refreshing || saving}
+            onClick={() => void load(true)}
+            variant="outline"
+          >
+            {refreshing ? "Обновляем…" : "Обновить"}
+          </Button>
         </div>
-
+      }
+      pageDescription="Последняя GPS-точка каждого автомобиля · обновление раз в 30 секунд"
+      pageTitle="Транспорт и геолокация"
+      utilities={<ThemeCustomizer />}
+    >
+      <div className="mx-auto max-w-[1600px] space-y-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-border bg-background/35 p-4">
             <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">

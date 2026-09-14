@@ -176,29 +176,23 @@ export function AvailabilityManager() {
   }
 
   return (
-    <AppShell pageTitle="Недоступность" utilities={<ThemeCustomizer />}>
+    <AppShell
+      pageActions={
+        <Button
+          onClick={() => {
+            setForm(defaultBlockForm())
+            setOpen(true)
+          }}
+        >
+          <HugeiconsIcon icon={Add01Icon} size={18} />
+          Добавить блокировку
+        </Button>
+      }
+      pageDescription={`Блокировки продаж и планирования${timezone ? ` · ${timezone}` : ""}`}
+      pageTitle="Недоступные даты"
+      utilities={<ThemeCustomizer />}
+    >
       <section className="mx-auto max-w-[1200px] space-y-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-              Недоступные даты
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Блокировка не даёт создать рейс или продать место в боте на этот
-              интервал{timezone ? ` · ${timezone}` : ""}.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              setForm(defaultBlockForm())
-              setOpen(true)
-            }}
-            size="lg"
-          >
-            <HugeiconsIcon icon={Add01Icon} size={18} />
-            Добавить блокировку
-          </Button>
-        </div>
         {error ? (
           <div
             className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"

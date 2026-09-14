@@ -1,15 +1,29 @@
 "use client"
 
-import { sessionFetch } from "@/lib/session-navigation"
-
 import * as React from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 
 import { AppShell } from "@/components/app-shell"
+import {
+  EntityDataView,
+  type EntityAction,
+  type EntityColumn,
+} from "@/components/entity-data-view"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { FieldSelect } from "@/components/ui/field-select"
+import { Input } from "@/components/ui/input"
+import { sessionFetch } from "@/lib/session-navigation"
 
 type Role = "owner" | "admin" | "dispatcher" | "driver"
 
@@ -25,7 +39,12 @@ type TeamMember = {
   driverId?: string
 }
 
-type Me = { role: Role; displayName: string; email: string }
+type Me = {
+  membershipId: string
+  role: Role
+  displayName: string
+  email: string
+}
 
 const roleLabels: Record<Role, string> = {
   owner: "Владелец",
@@ -54,6 +73,8 @@ function isMe(value: unknown): value is Me {
   return (
     typeof value === "object" &&
     value !== null &&
+    "membershipId" in value &&
+    typeof value.membershipId === "string" &&
     "role" in value &&
     typeof value.role === "string" &&
     "email" in value &&
@@ -87,6 +108,14 @@ function manageableRoles(role: Role): Role[] {
     : ["dispatcher", "driver"]
 }
 
+const emptyForm = {
+  displayName: "",
+  email: "",
+  password: "",
+  role: "dispatcher" as Role,
+  driverPhone: "",
+}
+
 export function TeamManager() {
   const [members, setMembers] = React.useState<TeamMember[]>([])
   const [me, setMe] = React.useState<Me | null>(null)
@@ -94,15 +123,14 @@ export function TeamManager() {
   const [showForm, setShowForm] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [changingId, setChangingId] = React.useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<TeamMember | null>(
+    null
+  )
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  const [query, setQuery] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
-  const [form, setForm] = React.useState({
-    displayName: "",
-    email: "",
-    password: "",
-    role: "dispatcher" as Role,
-    driverPhone: "",
-  })
+  const [form, setForm] = React.useState(emptyForm)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -137,6 +165,17 @@ export function TeamManager() {
     return () => window.clearTimeout(timer)
   }, [load])
 
+  const canManage = React.useCallback(
+    (member: TeamMember) =>
+      Boolean(
+        me &&
+        (me.role === "owner" ||
+          (me.role === "admin" &&
+            (member.role === "dispatcher" || member.role === "driver")))
+      ),
+    [me]
+  )
+
   async function createMember(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
@@ -151,17 +190,9 @@ export function TeamManager() {
       const payload: unknown = await response.json()
       if (!response.ok)
         throw new Error(errorFrom(payload, "Не удалось добавить сотрудника."))
-      setForm({
-        displayName: "",
-        email: "",
-        password: "",
-        role: "dispatcher",
-        driverPhone: "",
-      })
+      setForm(emptyForm)
       setShowForm(false)
-      setNotice(
-        "Сотрудник добавлен. Передайте ему ссылку на вход и пароль безопасным способом."
-      )
+      setNotice("Сотрудник добавлен. Передайте пароль безопасным способом.")
       await load()
     } catch (reason) {
       setError(
@@ -176,11 +207,12 @@ export function TeamManager() {
 
   async function updateMember(
     member: TeamMember,
-    change: { role?: Role; isActive?: boolean }
+    change: { role?: Role; isActive?: boolean },
+    quiet = false
   ) {
     setChangingId(member.membershipId)
     setError(null)
-    setNotice(null)
+    if (!quiet) setNotice(null)
     try {
       const response = await sessionFetch(
         `/api/team?id=${encodeURIComponent(member.membershipId)}`,
@@ -193,56 +225,192 @@ export function TeamManager() {
       const payload: unknown = await response.json()
       if (!response.ok)
         throw new Error(errorFrom(payload, "Не удалось изменить доступ."))
-      setNotice(
-        change.isActive === false
-          ? "Доступ сотрудника остановлен, его активные сессии завершены."
-          : "Права сотрудника обновлены."
-      )
-      await load()
+      if (!quiet) setNotice("Доступ сотрудника обновлён.")
+      return true
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Не удалось изменить доступ."
       )
+      return false
     } finally {
       setChangingId(null)
     }
   }
 
-  const canManage = (member: TeamMember) => {
-    if (!me) return false
-    return (
-      me.role === "owner" ||
-      (me.role === "admin" &&
-        (member.role === "dispatcher" || member.role === "driver"))
-    )
+  async function deleteMember(member: TeamMember) {
+    setChangingId(member.membershipId)
+    setError(null)
+    try {
+      const response = await sessionFetch(
+        `/api/team?id=${encodeURIComponent(member.membershipId)}`,
+        { method: "DELETE" }
+      )
+      const payload: unknown = await response.json()
+      if (!response.ok)
+        throw new Error(errorFrom(payload, "Не удалось удалить сотрудника."))
+      setNotice(`${member.displayName} удалён из команды.`)
+      return true
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось удалить сотрудника."
+      )
+      return false
+    } finally {
+      setChangingId(null)
+    }
   }
-  const roles = me ? manageableRoles(me.role) : []
+
+  async function updateSelected(isActive: boolean) {
+    const targets = members.filter(
+      (member) => selected.has(member.membershipId) && canManage(member)
+    )
+    let updated = 0
+    for (const member of targets) {
+      if (!(await updateMember(member, { isActive }, true))) break
+      updated += 1
+    }
+    setSelected(new Set())
+    setNotice(`Обновлено сотрудников: ${updated}.`)
+    await load()
+  }
+
+  const filteredMembers = React.useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("ru-RU")
+    if (!normalized) return members
+    return members.filter((member) =>
+      [member.displayName, member.email, roleLabels[member.role]].some(
+        (value) => value.toLocaleLowerCase("ru-RU").includes(normalized)
+      )
+    )
+  }, [members, query])
+
+  const roles = React.useMemo(() => (me ? manageableRoles(me.role) : []), [me])
+  const columns = React.useMemo<EntityColumn<TeamMember>[]>(
+    () => [
+      {
+        id: "name",
+        label: "Сотрудник",
+        value: (member) => (
+          <div className="min-w-48">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">{member.displayName}</span>
+              {member.membershipId === me?.membershipId ? (
+                <Badge variant="secondary">Вы</Badge>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{member.email}</p>
+          </div>
+        ),
+      },
+      {
+        id: "status",
+        label: "Статус",
+        value: (member) => (
+          <Badge variant={member.isActive ? "default" : "secondary"}>
+            {member.isActive ? "Активен" : "Отключён"}
+          </Badge>
+        ),
+      },
+      {
+        id: "role",
+        label: "Роль",
+        value: (member) => (
+          <FieldSelect
+            aria-label={`Роль ${member.displayName}`}
+            disabled={!canManage(member) || changingId === member.membershipId}
+            onValueChange={(value) =>
+              void updateMember(member, { role: value as Role }).then((ok) => {
+                if (ok) void load()
+              })
+            }
+            options={(canManage(member) ? roles : [member.role]).map(
+              (role) => ({
+                value: role,
+                label: roleLabels[role],
+              })
+            )}
+            triggerClassName="h-9 min-w-40 text-sm"
+            value={member.role}
+          />
+        ),
+      },
+      {
+        id: "lastSeen",
+        label: "Последний вход",
+        value: (member) => humanDate(member.lastSeenAt),
+      },
+      {
+        id: "createdAt",
+        label: "Добавлен",
+        value: (member) => humanDate(member.createdAt),
+        defaultVisible: false,
+      },
+      {
+        id: "userId",
+        label: "ID пользователя",
+        value: (member) => member.userId,
+        defaultVisible: false,
+      },
+      {
+        id: "membershipId",
+        label: "ID доступа",
+        value: (member) => member.membershipId,
+        defaultVisible: false,
+      },
+      {
+        id: "driverId",
+        label: "ID водителя",
+        value: (member) => member.driverId ?? "—",
+        defaultVisible: false,
+      },
+    ],
+    [canManage, changingId, load, me?.membershipId, roles]
+  )
+
+  const actions = React.useMemo<EntityAction<TeamMember>[]>(
+    () => [
+      {
+        label: "Включить / отключить",
+        disabled: (member) =>
+          !canManage(member) || member.membershipId === me?.membershipId,
+        onSelect: (member) =>
+          void updateMember(member, { isActive: !member.isActive }).then(
+            (ok) => {
+              if (ok) void load()
+            }
+          ),
+      },
+      {
+        label: "Удалить из команды",
+        destructive: true,
+        disabled: (member) =>
+          !canManage(member) || member.membershipId === me?.membershipId,
+        onSelect: setDeleteTarget,
+      },
+    ],
+    [canManage, load, me?.membershipId]
+  )
 
   return (
-    <AppShell pageTitle="Команда" utilities={<ThemeCustomizer />}>
-      <div className="mx-auto max-w-4xl space-y-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-              Доступы сотрудников
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Здесь выдаются роли для работы в компании. Вход и все рабочие
-              данные остаются внутри пространства вашей компании.
-            </p>
-          </div>
-          <Button
-            disabled={loading || !me}
-            onClick={() => {
-              setError(null)
-              setNotice(null)
-              setShowForm((current) => !current)
-            }}
-          >
-            <HugeiconsIcon icon={Add01Icon} size={17} />
-            {showForm ? "Скрыть форму" : "Добавить сотрудника"}
-          </Button>
-        </div>
+    <AppShell
+      localSearch={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Сотрудник, email или роль",
+      }}
+      pageActions={
+        <Button disabled={loading || !me} onClick={() => setShowForm(true)}>
+          <HugeiconsIcon icon={Add01Icon} size={17} />
+          Добавить сотрудника
+        </Button>
+      }
+      pageDescription={`${members.filter((member) => member.isActive).length} активных из ${members.length}`}
+      pageTitle="Команда"
+      utilities={<ThemeCustomizer />}
+    >
+      <div className="space-y-4">
         {error ? (
           <div
             className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
@@ -252,26 +420,81 @@ export function TeamManager() {
           </div>
         ) : null}
         {notice ? (
-          <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-400">
+          <div
+            className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-400"
+            role="status"
+          >
             {notice}
           </div>
         ) : null}
-        {showForm ? (
-          <form
-            className="surface-card grid gap-4 p-5 sm:grid-cols-2"
-            onSubmit={createMember}
-          >
-            <div className="sm:col-span-2">
-              <h2 className="font-bold">Новый сотрудник</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Пароль создаёт новый локальный аккаунт. Для уже существующего
-                пользователя пароль не меняется.
+        <EntityDataView
+          actions={actions}
+          bulkActions={
+            <>
+              <Button
+                onClick={() => void updateSelected(true)}
+                size="sm"
+                variant="outline"
+              >
+                Включить
+              </Button>
+              <Button
+                onClick={() => void updateSelected(false)}
+                size="sm"
+                variant="outline"
+              >
+                Отключить
+              </Button>
+            </>
+          }
+          columns={columns}
+          emptyText="Сотрудники не найдены."
+          getId={(member) => member.membershipId}
+          getLabel={(member) => member.displayName}
+          groupBy={(member) => roleLabels[member.role]}
+          items={filteredMembers}
+          loading={loading}
+          modes={["table", "kanban", "gallery"]}
+          onSelectedChange={setSelected}
+          renderCard={(member) => (
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{member.displayName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {member.email}
+                  </p>
+                </div>
+                <Badge variant={member.isActive ? "default" : "secondary"}>
+                  {member.isActive ? "Активен" : "Отключён"}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {roleLabels[member.role]} · {humanDate(member.lastSeenAt)}
               </p>
             </div>
+          )}
+          selected={selected}
+        />
+      </div>
+
+      <Dialog onOpenChange={setShowForm} open={showForm}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Новый сотрудник</DialogTitle>
+            <DialogDescription>
+              Создайте доступ и назначьте рабочую роль.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-4 sm:grid-cols-2"
+            id="team-member-form"
+            onSubmit={createMember}
+          >
             <label className="grid gap-2 text-sm font-semibold">
               Имя
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              <Input
+                autoComplete="name"
                 disabled={saving}
                 maxLength={120}
                 onChange={(event) =>
@@ -286,10 +509,9 @@ export function TeamManager() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Рабочий email
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              <Input
+                autoComplete="email"
                 disabled={saving}
-                type="email"
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -297,16 +519,16 @@ export function TeamManager() {
                   }))
                 }
                 required
+                type="email"
                 value={form.email}
               />
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Временный пароль
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              <Input
+                autoComplete="new-password"
                 disabled={saving}
                 minLength={12}
-                type="password"
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -314,6 +536,7 @@ export function TeamManager() {
                   }))
                 }
                 required
+                type="password"
                 value={form.password}
               />
               <span className="text-xs font-normal text-muted-foreground">
@@ -343,8 +566,7 @@ export function TeamManager() {
             {form.role === "driver" ? (
               <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
                 Телефон водителя
-                <input
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                <Input
                   disabled={saving}
                   inputMode="tel"
                   onChange={(event) =>
@@ -357,126 +579,61 @@ export function TeamManager() {
                   required
                   value={form.driverPhone}
                 />
-                <span className="text-xs font-normal text-muted-foreground">
-                  Создаёт водительский профиль и связывает его с этим аккаунтом.
-                </span>
               </label>
             ) : null}
-            <div className="flex justify-end gap-2 sm:col-span-2">
-              <Button
-                disabled={saving}
-                onClick={() => setShowForm(false)}
-                type="button"
-                variant="ghost"
-              >
-                Отмена
-              </Button>
-              <Button disabled={saving} type="submit">
-                {saving ? "Добавляем…" : "Выдать доступ"}
-              </Button>
-            </div>
           </form>
-        ) : null}
-        <section className="surface-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <div>
-              <h2 className="font-bold">Сотрудники</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {loading
-                  ? "Загружаем доступы…"
-                  : `${members.filter((member) => member.isActive).length} активных из ${members.length}`}
-              </p>
-            </div>
-          </div>
-          <div className="divide-y divide-border">
-            {!loading && members.length === 0 ? (
-              <p className="p-5 text-sm text-muted-foreground">
-                Сотрудников пока нет.
-              </p>
-            ) : null}
-            {members.map((member) => {
-              const editable = canManage(member)
-              const self = me?.email === member.email
-              return (
-                <article
-                  className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_12rem_10rem] md:items-center"
-                  key={member.membershipId}
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold">{member.displayName}</h3>
-                      <span
-                        className={
-                          member.isActive
-                            ? "rounded-full bg-emerald-500/12 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400"
-                            : "rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground"
-                        }
-                      >
-                        {member.isActive ? "Активен" : "Отключён"}
-                      </span>
-                      {self ? (
-                        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                          Вы
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 truncate text-sm text-muted-foreground">
-                      {member.email}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Последний вход: {humanDate(member.lastSeenAt)}
-                    </p>
-                  </div>
-                  <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
-                    Роль
-                    <FieldSelect
-                      aria-label={`Роль ${member.displayName}`}
-                      disabled={!editable || changingId === member.membershipId}
-                      onValueChange={(value) =>
-                        void updateMember(member, {
-                          role: value as Role,
-                        })
-                      }
-                      options={(editable ? roles : [member.role]).map(
-                        (role) => ({ value: role, label: roleLabels[role] })
-                      )}
-                      triggerClassName="h-10 text-sm font-semibold"
-                      value={member.role}
-                    />
-                  </label>
-                  <div className="flex justify-start md:justify-end">
-                    {editable ? (
-                      <Button
-                        disabled={
-                          changingId === member.membershipId ||
-                          (self && member.isActive)
-                        }
-                        onClick={() =>
-                          void updateMember(member, {
-                            isActive: !member.isActive,
-                          })
-                        }
-                        size="sm"
-                        variant={member.isActive ? "outline" : "default"}
-                      >
-                        {changingId === member.membershipId
-                          ? "Сохраняем…"
-                          : member.isActive
-                            ? "Отключить"
-                            : "Включить"}
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        Нет прав на изменение
-                      </span>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      </div>
+          <DialogFooter>
+            <Button
+              disabled={saving}
+              onClick={() => setShowForm(false)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button disabled={saving} form="team-member-form" type="submit">
+              {saving ? "Добавляем…" : "Выдать доступ"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={Boolean(deleteTarget)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Удалить сотрудника?</DialogTitle>
+            <DialogDescription>
+              Доступ {deleteTarget?.displayName} будет удалён, активные сессии
+              завершатся. История рейсов сохранится.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setDeleteTarget(null)} variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={
+                !deleteTarget || changingId === deleteTarget.membershipId
+              }
+              onClick={() => {
+                if (!deleteTarget) return
+                void deleteMember(deleteTarget).then((ok) => {
+                  if (ok) {
+                    setDeleteTarget(null)
+                    void load()
+                  }
+                })
+              }}
+              variant="destructive"
+            >
+              Удалить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   )
 }

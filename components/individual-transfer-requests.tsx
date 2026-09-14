@@ -7,7 +7,6 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Calendar01Icon,
   RefreshIcon,
-  Search01Icon,
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
@@ -177,29 +176,27 @@ export function IndividualTransferRequests() {
   }
 
   return (
-    <AppShell pageTitle="Индивидуальные заявки" utilities={<ThemeCustomizer />}>
+    <AppShell
+      localSearch={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Пассажир, телефон или маршрут",
+      }}
+      pageActions={
+        <Button
+          disabled={loading}
+          onClick={() => void load()}
+          variant="outline"
+        >
+          <HugeiconsIcon icon={RefreshIcon} size={17} />
+          Обновить
+        </Button>
+      }
+      pageDescription="Запросы из Telegram на индивидуальный маршрут"
+      pageTitle="Индивидуальные заявки"
+      utilities={<ThemeCustomizer />}
+    >
       <div className="mx-auto max-w-[1600px] space-y-5">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-              Индивидуальные заявки
-            </h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Запросы из Telegram на поездку по индивидуальному маршруту.
-              Сначала подтвердите возможность, затем создайте рейс в
-              планировщике.
-            </p>
-          </div>
-          <Button
-            disabled={loading}
-            onClick={() => void load()}
-            variant="outline"
-          >
-            <HugeiconsIcon icon={RefreshIcon} size={17} />
-            Обновить
-          </Button>
-        </div>
-
         {error ? (
           <div
             className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
@@ -215,21 +212,7 @@ export function IndividualTransferRequests() {
         ) : null}
 
         <section className="surface-card p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_13rem]">
-            <label className="relative block">
-              <span className="sr-only">Поиск заявок</span>
-              <HugeiconsIcon
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-                icon={Search01Icon}
-                size={17}
-              />
-              <input
-                className="h-11 w-full rounded-xl border border-border bg-background pr-3 pl-10 text-base outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Пассажир, телефон или маршрут"
-                value={query}
-              />
-            </label>
+          <div className="grid gap-3 md:grid-cols-[13rem]">
             <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
               Статус
               <FieldSelect

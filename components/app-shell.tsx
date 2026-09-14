@@ -14,7 +14,6 @@ import {
   Notification01Icon,
   Route01Icon,
   Search01Icon,
-  Settings01Icon,
   Ticket01Icon,
   UserGroupIcon,
   Wallet01Icon,
@@ -37,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Input } from "@/components/ui/input"
 import {
   Sidebar,
   SidebarContent,
@@ -68,6 +68,13 @@ type NavigationItem = {
 type AppShellProps = {
   children: React.ReactNode
   pageTitle: string
+  pageDescription?: string
+  localSearch?: {
+    value: string
+    onChange: (value: string) => void
+    placeholder: string
+    label?: string
+  }
   utilities?: React.ReactNode
   pageActions?: React.ReactNode
 }
@@ -161,12 +168,6 @@ const navigation: NavigationItem[] = [
     label: "Команда",
     roles: managementRoles,
   },
-  {
-    href: "/settings",
-    icon: Settings01Icon,
-    label: "Настройки",
-    roles: managementRoles,
-  },
   { href: "/driver", icon: Car01Icon, label: "Мой рейс", roles: ["driver"] },
 ]
 const defaultShellBrand: ShellBrand = {
@@ -177,17 +178,17 @@ const defaultShellBrand: ShellBrand = {
   role: "owner",
 }
 const pageDescriptions: Record<string, string> = {
-  "Обзор": "Оперативная картина на сегодня",
-  "Рейсы": "Планирование и контроль выездов",
-  "Маршруты": "Шаблоны регулярных направлений",
-  "Недоступность": "Периоды недоступности ресурсов",
-  "Автопарк": "Транспорт и состояние машин",
-  "Клиенты": "Пассажиры и история обращений",
-  "Бронирования": "Заявки, оплаты и статусы",
+  Обзор: "Оперативная картина на сегодня",
+  Рейсы: "Планирование и контроль выездов",
+  Маршруты: "Шаблоны регулярных направлений",
+  Недоступность: "Периоды недоступности ресурсов",
+  Автопарк: "Транспорт и состояние машин",
+  Клиенты: "Пассажиры и история обращений",
+  Бронирования: "Заявки, оплаты и статусы",
   "Индивидуальные заявки": "Запросы на поездки точка — точка",
-  "Финансы": "Доходы, расходы и наличные",
-  "Команда": "Сотрудники и роли доступа",
-  "Настройки": "Настройки компании и реквизиты",
+  Финансы: "Доходы, расходы и наличные",
+  Команда: "Сотрудники и роли доступа",
+  Настройки: "Настройки компании и реквизиты",
   "Мой рейс": "Рабочий рейс водителя",
 }
 const hasItems = <T,>(value: unknown): value is { items: T[] } =>
@@ -255,14 +256,14 @@ function BrandMark({
   return (
     <span
       className={cn(
-        "relative grid place-items-center overflow-hidden rounded-xl bg-black",
+        "relative grid place-items-center overflow-hidden rounded-xl bg-black p-1",
         className
       )}
     >
       {brand.logoUrl ? (
         <Image
           alt={brand.tenantName}
-          className="h-full w-full object-contain"
+          className="object-contain p-1"
           fill
           sizes="44px"
           src={brand.logoUrl}
@@ -325,7 +326,7 @@ function VivatSidebar({
       className="app-sidebar"
       variant={variant === "default" ? "floating" : variant}
     >
-      <SidebarHeader>
+      <SidebarHeader className="h-16 justify-center p-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -333,8 +334,8 @@ function VivatSidebar({
               size="lg"
               tooltip="Vivat Bus"
             >
-              <BrandMark brand={brand} className="size-9" />
-              <span className="flex min-w-0 flex-col gap-0.5 leading-none">
+              <BrandMark brand={brand} className="size-10 shrink-0" />
+              <span className="flex min-w-0 flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
                 <span className="truncate font-bold">{brand.tenantName}</span>
                 <span className="truncate text-xs font-normal text-muted-foreground">
                   Диспетчерская
@@ -361,6 +362,8 @@ function VivatSidebar({
 export function AppShell({
   children,
   pageTitle,
+  pageDescription,
+  localSearch,
   utilities,
   pageActions,
 }: AppShellProps) {
@@ -379,6 +382,8 @@ export function AppShell({
     setSidebarOverride({ mode: preferences.sidebarMode, open })
   const [brand, setBrand] = React.useState(defaultShellBrand)
   const [searchOpen, setSearchOpen] = React.useState(false)
+  const [localSearchMobileOpen, setLocalSearchMobileOpen] =
+    React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
   const [searchLoading, setSearchLoading] = React.useState(false)
   const [searchError, setSearchError] = React.useState<string | null>(null)
@@ -582,13 +587,15 @@ export function AppShell({
     window.dispatchEvent(new Event("vivat-open-interface-settings"))
   }
   const signOut = async () => {
-    await sessionFetch("/api/auth/logout", { method: "POST" }).catch(() => undefined)
+    await sessionFetch("/api/auth/logout", { method: "POST" }).catch(
+      () => undefined
+    )
     window.location.replace("/login")
   }
 
   return (
     <SidebarProvider
-      className="app-shell-frame min-h-svh bg-background p-2 text-foreground sm:p-3 lg:p-4"
+      className="app-shell-frame min-h-svh gap-2 bg-background p-2 text-foreground"
       onOpenChange={setSidebarOpen}
       open={sidebarOpen}
       style={
@@ -605,44 +612,75 @@ export function AppShell({
         variant={preferences.sidebarVariant}
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
-        <header className="app-topbar flex h-14 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:px-5">
+        <header className="app-topbar relative flex h-16 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <SidebarTrigger
               aria-label="Открыть навигацию"
               className="inline-flex size-9 rounded-lg"
             />
-            <Link className="shrink-0 md:hidden" href="/">
-              <BrandMark brand={brand} className="size-9" />
-            </Link>
-            <div className="hidden min-w-0 border-r border-border pr-3 lg:block">
-              <p className="truncate text-xs font-medium text-muted-foreground">
-                Операции <span className="px-1 text-border">/</span> {pageTitle}
-              </p>
-              <p className="truncate text-sm font-semibold">
-                {pageDescriptions[pageTitle] ?? pageTitle}
+            <div className="hidden min-w-0 border-r border-border pr-3 md:block">
+              <p className="truncate text-sm font-semibold">{pageTitle}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {pageDescription ?? pageDescriptions[pageTitle] ?? pageTitle}
               </p>
             </div>
+            {localSearch ? (
+              <label className="hidden h-9 w-[min(22rem,30vw)] min-w-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 md:flex">
+                <HugeiconsIcon
+                  className="shrink-0 text-muted-foreground"
+                  icon={Search01Icon}
+                  size={16}
+                />
+                <span className="sr-only">
+                  {localSearch.label ?? "Поиск на странице"}
+                </span>
+                <Input
+                  aria-label={localSearch.label ?? "Поиск на странице"}
+                  className="h-8 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                  onChange={(event) => localSearch.onChange(event.target.value)}
+                  placeholder={localSearch.placeholder}
+                  type="search"
+                  value={localSearch.value}
+                />
+              </label>
+            ) : null}
             <Button
               aria-haspopup="dialog"
-              className="hidden h-9 min-w-[17.5rem] justify-start rounded-lg text-muted-foreground md:inline-flex"
+              aria-label="Глобальный поиск"
+              className="hidden h-9 justify-start rounded-xl text-muted-foreground md:inline-flex"
               onClick={() => setSearchOpen(true)}
               variant="outline"
             >
               <HugeiconsIcon icon={Search01Icon} size={16} />
-              <span>Поиск рейса или клиента</span>
-              <kbd className="ml-auto rounded-md border border-border px-1.5 py-0.5 text-xs">
+              <span className="hidden xl:inline">Глобальный поиск</span>
+              <kbd className="rounded-md border border-border px-1.5 py-0.5 text-xs">
                 ⌘K
               </kbd>
             </Button>
-            <p className="truncate font-semibold max-[420px]:hidden md:hidden">
+            <p className="max-w-24 truncate text-sm font-semibold md:hidden">
               {pageTitle}
             </p>
+            {localSearch ? (
+              <Button
+                aria-expanded={localSearchMobileOpen}
+                aria-label="Поиск на странице"
+                className="md:hidden"
+                onClick={() => setLocalSearchMobileOpen((open) => !open)}
+                size="icon"
+                variant="ghost"
+              >
+                <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
+              </Button>
+            ) : null}
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     aria-label="Поиск рейса или клиента"
-                    className="max-[420px]:hidden md:hidden"
+                    className={cn(
+                      "md:hidden",
+                      localSearch && "max-[460px]:hidden"
+                    )}
                     onClick={() => setSearchOpen(true)}
                     size="icon"
                     variant="ghost"
@@ -656,7 +694,9 @@ export function AppShell({
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {pageActions ? (
-              <div className="flex items-center gap-2">{pageActions}</div>
+              <div className="flex items-center gap-2 max-sm:[&_a]:size-9 max-sm:[&_a]:overflow-hidden max-sm:[&_a]:px-0 max-sm:[&_a]:text-[0px] max-sm:[&_button]:size-9 max-sm:[&_button]:overflow-hidden max-sm:[&_button]:px-0 max-sm:[&_button]:text-[0px] max-sm:[&_svg]:size-4">
+                {pageActions}
+              </div>
             ) : null}
             <DropdownMenu
               onOpenChange={(open) => {
@@ -692,9 +732,7 @@ export function AppShell({
                 className="w-[min(23rem,calc(100vw-2rem))] p-2"
               >
                 <div className="flex items-center justify-between gap-3 px-2 py-1">
-                  <p className="p-0 text-sm font-semibold">
-                    Уведомления
-                  </p>
+                  <p className="p-0 text-sm font-semibold">Уведомления</p>
                   <Button
                     onClick={() => void loadNotifications()}
                     size="xs"
@@ -781,18 +819,39 @@ export function AppShell({
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void signOut()} variant="destructive">
+                <DropdownMenuItem
+                  onClick={() => void signOut()}
+                  variant="destructive"
+                >
                   Выйти
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          {localSearch && localSearchMobileOpen ? (
+            <div className="absolute top-[calc(100%+.5rem)] right-0 left-0 z-40 rounded-[var(--app-radius)] border border-border bg-popover p-2 shadow-xl md:hidden">
+              <div className="flex items-center gap-2 rounded-xl border border-input bg-input/40 px-3">
+                <HugeiconsIcon
+                  className="shrink-0 text-muted-foreground"
+                  icon={Search01Icon}
+                  size={16}
+                />
+                <Input
+                  aria-label={localSearch.label ?? "Поиск на странице"}
+                  autoFocus
+                  className="h-10 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                  onChange={(event) => localSearch.onChange(event.target.value)}
+                  placeholder={localSearch.placeholder}
+                  type="search"
+                  value={localSearch.value}
+                />
+              </div>
+            </div>
+          ) : null}
         </header>
         {utilities ? <div className="hidden">{utilities}</div> : null}
         <ScrollArea className="dashboard-content min-h-0 flex-1">
-          <div className="px-2 py-3 sm:px-3 sm:py-4 lg:px-4 lg:py-5">
-            {children}
-          </div>
+          <div className="px-2 py-3 sm:px-3 sm:py-4">{children}</div>
         </ScrollArea>
       </SidebarInset>
       <CommandDialog

@@ -1,0 +1,117 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Run only against a disposable, migrated local database. The fixture does not
+// create tenant_payment_configs: cash collection must work without an IBAN.
+func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
+	url := os.Getenv("CASH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("set CASH_TEST_DATABASE_URL to a migrated local test database")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	slug := fmt.Sprintf("cash-test-%d", time.Now().UnixNano())
+	var tenantID, userID, memberID, driverID, vehicleID, tripID, customerID string
+	row := func(query string, destination *string, arguments ...any) {
+		t.Helper()
+		if err := db.QueryRow(ctx, query, arguments...).Scan(destination); err != nil {
+			t.Fatal(err)
+		}
+	}
+	row(`INSERT INTO tenants(slug,name) VALUES($1,'Cash Test') RETURNING id::text`, &tenantID, slug)
+	defer func() {
+		if _, err := db.Exec(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID); err != nil {
+			t.Error(err)
+		}
+		if userID != "" {
+			if _, err := db.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	row(`INSERT INTO users(email,display_name) VALUES($1,'Cash driver') RETURNING id::text`, &userID, slug+"@test.invalid")
+	row(`INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'driver') RETURNING id::text`, &memberID, tenantID, userID)
+	row(`INSERT INTO drivers(tenant_id,membership_id,full_name,phone_e164) VALUES($1,$2,'Cash driver','+380500000011') RETURNING id::text`, &driverID, tenantID, memberID)
+	row(`INSERT INTO vehicles(tenant_id,name,registration_number,vehicle_class,capacity) VALUES($1,'Cash bus','CASH-TEST','bus',8) RETURNING id::text`, &vehicleID, tenantID)
+	row(`INSERT INTO trips(tenant_id,vehicle_id,driver_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,price_minor,currency) VALUES($1,$2,$3,'individual','assigned','A','B',now()-interval '10 minutes',now()+interval '2 hours',8,1250,'EUR') RETURNING id::text`, &tripID, tenantID, vehicleID, driverID)
+	row(`INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Cash passenger','+380500000012') RETURNING id::text`, &customerID, tenantID)
+
+	app := &application{db: db, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	request := func(method string, body any, actor identity, handler http.HandlerFunc) *httptest.ResponseRecorder {
+		encoded, _ := json.Marshal(body)
+		r := httptest.NewRequest(method, "/", bytes.NewReader(encoded))
+		r.SetPathValue("slug", slug)
+		r = r.WithContext(context.WithValue(r.Context(), identityContextKey{}, actor))
+		w := httptest.NewRecorder()
+		handler(w, r)
+		return w
+	}
+
+	manager := identity{TenantID: tenantID, TenantSlug: slug, Role: "owner"}
+	created := request("POST", createBookingRequest{
+		TripID: tripID, CustomerID: customerID, Seats: 2,
+		PassengerName: "Cash passenger", PassengerPhone: "+380500000012", PassengerBirthDate: "1990-01-01",
+	}, manager, app.createBooking)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create cash booking status %d: %s", created.Code, created.Body)
+	}
+	var bookingResult struct {
+		Item struct {
+			Status     string `json:"status"`
+			PriceMinor int64  `json:"priceMinor"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &bookingResult); err != nil {
+		t.Fatal(err)
+	}
+	if bookingResult.Item.Status != "cash_on_boarding" || bookingResult.Item.PriceMinor != 2500 {
+		t.Fatalf("unexpected cash booking: %s", created.Body)
+	}
+	var paymentConfigurations int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM tenant_payment_configs WHERE tenant_id=$1`, tenantID).Scan(&paymentConfigurations); err != nil {
+		t.Fatal(err)
+	}
+	if paymentConfigurations != 0 {
+		t.Fatal("test fixture unexpectedly has a payment configuration")
+	}
+	if _, err := db.Exec(ctx, `UPDATE trips SET status='in_progress' WHERE id=$1`, tripID); err != nil {
+		t.Fatal(err)
+	}
+
+	driver := identity{UserID: userID, MembershipID: memberID, TenantID: tenantID, TenantSlug: slug, Role: "driver"}
+	summary := request("GET", nil, driver, app.driverCashSummary)
+	if summary.Code != http.StatusOK || !bytes.Contains(summary.Body.Bytes(), []byte(`"amountMinor":2500`)) {
+		t.Fatalf("cash summary status %d: %s", summary.Code, summary.Body)
+	}
+	received := request("POST", confirmDriverCashReceivedRequest{TripID: tripID}, driver, app.confirmDriverCashReceived)
+	if received.Code != http.StatusOK {
+		t.Fatalf("confirm cash status %d: %s", received.Code, received.Body)
+	}
+	var recorded int64
+	if err := db.QueryRow(ctx, `SELECT amount_minor FROM driver_cash_ledger WHERE tenant_id=$1 AND trip_id=$2 AND kind='cash_collected'`, tenantID, tripID).Scan(&recorded); err != nil {
+		t.Fatal(err)
+	}
+	if recorded != 2500 {
+		t.Fatalf("recorded cash = %d, want 2500", recorded)
+	}
+}

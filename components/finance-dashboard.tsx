@@ -240,18 +240,13 @@ export function FinanceDashboard() {
     ])
   )
   return (
-    <AppShell pageTitle="Финансы" utilities={<ThemeCustomizer />}>
+    <AppShell
+      pageDescription="Выручка, касса водителей и расходы"
+      pageTitle="Деньги в работе"
+      utilities={<ThemeCustomizer />}
+    >
       <div className="mx-auto max-w-[1600px] space-y-5">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-              Деньги в работе
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Подтверждённые бронирования, касса водителей и сдача за выбранный
-              период.
-            </p>
-          </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-semibold text-muted-foreground">
               С

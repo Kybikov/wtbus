@@ -150,17 +150,12 @@ export function CompanySettings() {
   }
 
   return (
-    <AppShell pageTitle="Настройки" utilities={<ThemeCustomizer />}>
+    <AppShell
+      pageDescription="Бренд, реквизиты и подписка компании"
+      pageTitle="Настройки компании"
+      utilities={<ThemeCustomizer />}
+    >
       <div className="mx-auto max-w-3xl space-y-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-            Бренд и подписка
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Эти параметры применяются к пространству вашей компании. Личные
-            плотность и радиус остаются настройками сотрудника.
-          </p>
-        </div>
         {error ? (
           <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
             {error}

@@ -4,12 +4,27 @@ import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Add01Icon, Edit02Icon, Search01Icon } from "@hugeicons/core-free-icons"
+import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
+import {
+  EntityDataView,
+  type EntityColumn,
+} from "@/components/entity-data-view"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { FieldSelect } from "@/components/ui/field-select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 
 type Customer = {
   id: string
@@ -211,13 +226,21 @@ export function CustomerDirectory() {
     skipped: number
     issues: { row: number; message: string }[]
   } | null>(null)
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setAppliedQuery(query.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
 
   const load = React.useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const [response, fieldsResponse] = await Promise.all([
-        sessionFetch(`/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`),
+        sessionFetch(
+          `/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`
+        ),
         sessionFetch("/api/custom-fields", { cache: "no-store" }),
       ])
       const [payload, fieldsPayload]: [unknown, unknown] = await Promise.all([
@@ -408,82 +431,141 @@ export function CustomerDirectory() {
     }
   }
 
+  const columns: EntityColumn<Customer>[] = [
+    {
+      id: "name",
+      label: "Клиент",
+      value: (customer) => (
+        <span className="font-semibold">
+          {customer.fullName || "Без имени"}
+        </span>
+      ),
+      text: (customer) => customer.fullName,
+    },
+    {
+      id: "phone",
+      label: "Телефон",
+      value: (customer) => customer.phone,
+      text: (customer) => customer.phone,
+    },
+    {
+      id: "email",
+      label: "Email",
+      value: (customer) => customer.email || "—",
+      text: (customer) => customer.email ?? "",
+    },
+    {
+      id: "trips",
+      label: "Поездки",
+      value: (customer) => (
+        <span className="tabular-nums">
+          {formatTripCount(customer.tripCount)}
+        </span>
+      ),
+    },
+    {
+      id: "ltv",
+      label: "LTV",
+      value: (customer) => (
+        <span className="tabular-nums">
+          {formatCustomerLifetimeValue(customer.lifetimeValue)}
+        </span>
+      ),
+    },
+    {
+      id: "telegram",
+      label: "Telegram",
+      defaultVisible: false,
+      value: (customer) =>
+        customer.telegramId ? String(customer.telegramId) : "Не привязан",
+    },
+    {
+      id: "notes",
+      label: "Комментарий",
+      defaultVisible: false,
+      value: (customer) => customer.notes || "—",
+    },
+    {
+      id: "id",
+      label: "ID",
+      defaultVisible: false,
+      value: (customer) => <code className="text-xs">{customer.id}</code>,
+    },
+    ...customFields.map<EntityColumn<Customer>>((field) => ({
+      id: `custom-${field.key}`,
+      label: field.label,
+      defaultVisible: false,
+      value: (customer) =>
+        customValueToText(customer.customData?.[field.key]) || "—",
+    })),
+  ]
+
+  const openEditor = (customer: Customer) => {
+    setForm(formFromCustomer(customer))
+    setEditingID(customer.id)
+    setFormError(null)
+    setOpen(true)
+  }
+
   return (
     <>
-      <AppShell pageTitle="Клиенты" utilities={<ThemeCustomizer />}>
-        <div className="mx-auto max-w-[1600px] space-y-5">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-            <div>
-              <h1 className="text-2xl font-bold tracking-[-.035em] sm:text-3xl">
-                Клиентская база
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {total} клиентов в CRM. Поиск работает по имени, телефону и
-                email.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <input
-                accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (file) void importFile(file)
-                  event.currentTarget.value = ""
-                }}
-                ref={importInput}
-                type="file"
-              />
-              <Button
-                disabled={importing}
-                onClick={() => importInput.current?.click()}
-                size="lg"
-                variant="outline"
-              >
-                {importing ? "Импортируем…" : "Импорт CSV / XLSX"}
-              </Button>
-              <Button
-                disabled={exporting}
-                onClick={() => void exportCustomers()}
-                size="lg"
-                variant="outline"
-              >
-                {exporting ? "Выгружаем…" : "Экспорт XLSX"}
-              </Button>
-              <Button
-                onClick={() => {
-                  setForm(emptyForm)
-                  setEditingID(null)
-                  setFormError(null)
-                  setOpen(true)
-                }}
-                size="lg"
-              >
-                <HugeiconsIcon icon={Add01Icon} size={18} />
-                Добавить клиента
-              </Button>
-            </div>
-          </div>
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setAppliedQuery(query)
-            }}
-          >
-            <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3">
-              <HugeiconsIcon icon={Search01Icon} size={17} />
-              <input
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Имя, телефон или email"
-                value={query}
-              />
-            </div>
-            <Button type="submit" variant="outline">
-              Найти
+      <AppShell
+        localSearch={{
+          value: query,
+          onChange: setQuery,
+          placeholder: "Имя, телефон или email",
+          label: "Поиск клиентов",
+        }}
+        pageActions={
+          <div className="flex items-center gap-2">
+            <input
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void importFile(file)
+                event.currentTarget.value = ""
+              }}
+              ref={importInput}
+              type="file"
+            />
+            <Button
+              className="hidden xl:inline-flex"
+              disabled={importing}
+              onClick={() => importInput.current?.click()}
+              size="sm"
+              variant="outline"
+            >
+              {importing ? "Импортируем…" : "Импорт"}
             </Button>
-          </form>
+            <Button
+              className="hidden lg:inline-flex"
+              disabled={exporting}
+              onClick={() => void exportCustomers()}
+              size="sm"
+              variant="outline"
+            >
+              {exporting ? "Выгружаем…" : "Экспорт"}
+            </Button>
+            <Button
+              onClick={() => {
+                setForm(emptyForm)
+                setEditingID(null)
+                setFormError(null)
+                setOpen(true)
+              }}
+              size="sm"
+            >
+              <HugeiconsIcon icon={Add01Icon} size={17} />
+              <span className="hidden sm:inline">Клиент</span>
+            </Button>
+          </div>
+        }
+        pageDescription={`${total} клиентов · контакты, поездки и история обращений`}
+        pageTitle="Клиенты"
+        utilities={<ThemeCustomizer />}
+      >
+        <div className="mx-auto max-w-[1600px] space-y-5">
           {error ? (
             <div
               className="rounded-xl border border-destructive/35 bg-destructive/10 p-3 text-sm"
@@ -509,148 +591,130 @@ export function CustomerDirectory() {
               ) : null}
             </div>
           ) : null}
-          <section className="surface-card divide-y divide-border">
-            {loading ? (
-              <p className="p-8 text-center text-sm text-muted-foreground">
-                Загружаем клиентов…
-              </p>
-            ) : customers.length ? (
-              customers.map((customer) => (
-                <article className="p-4" key={customer.id}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="font-bold">
-                        {customer.fullName || "Без имени"}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {customer.phone}
-                        {customer.email ? ` · ${customer.email}` : ""}
-                      </p>
-                      {Object.entries(customer.customData ?? {}).length ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {Object.entries(customer.customData ?? {})
-                            .map(
-                              ([key, value]) =>
-                                `${customFields.find((field) => field.key === key)?.label ?? key}: ${customValueToText(value)}`
-                            )
-                            .join(" · ")}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="min-w-[11rem] text-sm tabular-nums">
-                        <p className="font-semibold">
-                          {formatTripCount(customer.tripCount)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          LTV:{" "}
-                          {formatCustomerLifetimeValue(customer.lifetimeValue)}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {customer.telegramId
-                          ? `Telegram ID: ${customer.telegramId}`
-                          : "Telegram не привязан"}
-                      </p>
-                      <Button
-                        onClick={() => void toggleHistory(customer.id)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {expandedHistoryID === customer.id
-                          ? "Скрыть историю"
-                          : "История"}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setForm(formFromCustomer(customer))
-                          setEditingID(customer.id)
-                          setFormError(null)
-                          setOpen(true)
-                        }}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <HugeiconsIcon icon={Edit02Icon} size={15} />
-                        Изменить
-                      </Button>
-                    </div>
-                  </div>
-                  {expandedHistoryID === customer.id ? (
-                    <div className="mt-4 border-t border-border pt-3">
-                      <p className="text-sm font-semibold">
-                        История бронирований
-                      </p>
-                      {historyLoadingID === customer.id ? (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Загружаем историю…
-                        </p>
-                      ) : historyError ? (
-                        <p
-                          className="mt-2 text-sm text-destructive"
-                          role="alert"
-                        >
-                          {historyError}
-                        </p>
-                      ) : historyByCustomer[customer.id]?.length ? (
-                        <ul className="mt-2 divide-y divide-border">
-                          {historyByCustomer[customer.id].map((booking) => (
-                            <li
-                              className="flex flex-col gap-1 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
-                              key={booking.id}
-                            >
-                              <span className="font-medium">
-                                {booking.origin} → {booking.destination}
-                              </span>
-                              <span className="text-muted-foreground tabular-nums">
-                                {new Date(booking.startsAt).toLocaleString(
-                                  "ru-RU",
-                                  {
-                                    day: "2-digit",
-                                    month: "2-digit",
-                                    year: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
-                                )}
-                                {` · ${booking.seats} мест · ${formatCustomerMoney(booking.priceMinor, booking.currency)} · ${bookingStatusLabel(booking.status)}`}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          У клиента пока нет бронирований.
-                        </p>
-                      )}
-                    </div>
-                  ) : null}
-                </article>
-              ))
-            ) : (
-              <p className="p-8 text-center text-sm text-muted-foreground">
-                Клиентов не найдено.
-              </p>
+          <EntityDataView
+            actions={[
+              { label: "Редактировать", onSelect: openEditor },
+              {
+                label: expandedHistoryID
+                  ? "Скрыть историю"
+                  : "Показать историю",
+                onSelect: (customer) => void toggleHistory(customer.id),
+              },
+            ]}
+            columns={columns}
+            emptyText="Клиентов не найдено."
+            getId={(customer) => customer.id}
+            getLabel={(customer) => customer.fullName || customer.phone}
+            items={customers}
+            loading={loading}
+            loadingText="Загружаем клиентов…"
+            modes={["table", "gallery"]}
+            onSelectedChange={setSelected}
+            renderCard={(customer) => (
+              <div className="space-y-3">
+                <div>
+                  <p className="font-semibold">
+                    {customer.fullName || "Без имени"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {customer.phone}
+                  </p>
+                </div>
+                <div className="flex items-end justify-between gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {formatTripCount(customer.tripCount)}
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums">
+                    {formatCustomerLifetimeValue(customer.lifetimeValue)}
+                  </span>
+                </div>
+              </div>
             )}
-          </section>
+            selected={selected}
+          />
+          {customers.map((customer) =>
+            expandedHistoryID === customer.id ? (
+              <section
+                className="surface-card p-4"
+                key={`history-${customer.id}`}
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold">
+                    История: {customer.fullName || customer.phone}
+                  </h2>
+                  <Button
+                    onClick={() => void toggleHistory(customer.id)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    Закрыть
+                  </Button>
+                </div>
+                {expandedHistoryID === customer.id ? (
+                  <div className="mt-4 border-t border-border pt-3">
+                    <p className="text-sm font-semibold">
+                      История бронирований
+                    </p>
+                    {historyLoadingID === customer.id ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Загружаем историю…
+                      </p>
+                    ) : historyError ? (
+                      <p className="mt-2 text-sm text-destructive" role="alert">
+                        {historyError}
+                      </p>
+                    ) : historyByCustomer[customer.id]?.length ? (
+                      <ul className="mt-2 divide-y divide-border">
+                        {historyByCustomer[customer.id].map((booking) => (
+                          <li
+                            className="flex flex-col gap-1 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                            key={booking.id}
+                          >
+                            <span className="font-medium">
+                              {booking.origin} → {booking.destination}
+                            </span>
+                            <span className="text-muted-foreground tabular-nums">
+                              {new Date(booking.startsAt).toLocaleString(
+                                "ru-RU",
+                                {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                }
+                              )}
+                              {` · ${booking.seats} мест · ${formatCustomerMoney(booking.priceMinor, booking.currency)} · ${bookingStatusLabel(booking.status)}`}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        У клиента пока нет бронирований.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </section>
+            ) : null
+          )}
         </div>
       </AppShell>
-      {open ? (
-        <div
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-end bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6"
-          role="dialog"
-        >
-          <form
-            className="w-full rounded-t-[var(--app-radius)] border border-border bg-card p-5 sm:max-w-lg sm:rounded-[var(--app-radius)]"
-            onSubmit={submit}
-          >
-            <h2 className="text-xl font-bold">
-              {editingID ? "Изменить клиента" : "Новый клиент"}
-            </h2>
+      <Dialog onOpenChange={setOpen} open={open}>
+        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+          <form onSubmit={submit}>
+            <DialogHeader>
+              <DialogTitle>
+                {editingID ? "Изменить клиента" : "Новый клиент"}
+              </DialogTitle>
+              <DialogDescription>
+                Контактные данные и поля клиентской базы.
+              </DialogDescription>
+            </DialogHeader>
             <div className="mt-5 grid gap-3">
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+              <Input
+                className="h-11"
                 maxLength={160}
                 onChange={(e) =>
                   setForm((v) => ({ ...v, fullName: e.target.value }))
@@ -658,8 +722,8 @@ export function CustomerDirectory() {
                 placeholder="Имя клиента"
                 value={form.fullName}
               />
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+              <Input
+                className="h-11"
                 onChange={(e) =>
                   setForm((v) => ({ ...v, phone: e.target.value }))
                 }
@@ -667,8 +731,8 @@ export function CustomerDirectory() {
                 required
                 value={form.phone}
               />
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+              <Input
+                className="h-11"
                 onChange={(e) =>
                   setForm((v) => ({ ...v, email: e.target.value }))
                 }
@@ -676,8 +740,8 @@ export function CustomerDirectory() {
                 type="email"
                 value={form.email}
               />
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+              <Input
+                className="h-11"
                 inputMode="numeric"
                 onChange={(e) =>
                   setForm((v) => ({ ...v, telegramId: e.target.value }))
@@ -685,8 +749,8 @@ export function CustomerDirectory() {
                 placeholder="Telegram ID (необязательно)"
                 value={form.telegramId}
               />
-              <textarea
-                className="min-h-20 rounded-xl border border-border bg-background p-3 text-sm"
+              <Textarea
+                className="min-h-20"
                 onChange={(e) =>
                   setForm((v) => ({ ...v, notes: e.target.value }))
                 }
@@ -728,24 +792,23 @@ export function CustomerDirectory() {
                     />
                   ) : field.fieldType === "boolean" ? (
                     <span className="flex h-11 items-center gap-3 rounded-xl border border-border bg-background px-3 font-normal">
-                      <input
+                      <Checkbox
                         checked={form.customData[field.key] === true}
-                        onChange={(event) =>
+                        onCheckedChange={(checked) =>
                           setForm((current) => ({
                             ...current,
                             customData: {
                               ...current.customData,
-                              [field.key]: event.target.checked,
+                              [field.key]: checked === true,
                             },
                           }))
                         }
-                        type="checkbox"
                       />
                       Да
                     </span>
                   ) : (
-                    <input
-                      className="h-11 rounded-xl border border-border bg-background px-3 font-normal"
+                    <Input
+                      className="h-11"
                       onChange={(event) =>
                         setForm((current) => ({
                           ...current,
@@ -778,7 +841,7 @@ export function CustomerDirectory() {
                 {formError}
               </p>
             ) : null}
-            <div className="mt-5 flex justify-end gap-2">
+            <DialogFooter className="mt-5">
               <Button
                 disabled={saving}
                 onClick={() => {
@@ -797,10 +860,10 @@ export function CustomerDirectory() {
                     ? "Сохранить изменения"
                     : "Создать клиента"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
-        </div>
-      ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

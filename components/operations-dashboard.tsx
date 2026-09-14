@@ -18,7 +18,7 @@ import {
 import { useTheme } from "next-themes"
 
 import { AppShell } from "@/components/app-shell"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import {
   Dialog,
@@ -106,6 +106,47 @@ type Dashboard = {
   expectedRevenueMinor: number
   trips: DashboardTrip[]
   vehicles: DashboardVehicle[]
+}
+
+type FleetLocation = {
+  latitude: number
+  longitude: number
+  accuracyMeters?: number
+  recordedAt: string
+}
+
+type FleetTrip = {
+  id: string
+  status: string
+  origin: string
+  destination: string
+  startsAt: string
+  endsAt: string
+}
+
+type FleetVehicle = {
+  id: string
+  name: string
+  registrationNumber: string
+  driver?: string
+  activeTrip?: FleetTrip
+  lastLocation?: FleetLocation
+}
+
+function isFleet(value: unknown): value is { items: FleetVehicle[] } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "items" in value &&
+    Array.isArray(value.items)
+  )
+}
+
+function timelineProgress(value: number, trip: FleetTrip) {
+  const start = new Date(trip.startsAt).getTime()
+  const end = new Date(trip.endsAt).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0
+  return Math.max(0, Math.min(100, ((value - start) / (end - start)) * 100))
 }
 
 const tripStatusMeta: Record<
@@ -198,7 +239,7 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <ToggleGroup
-      className="grid w-full grid-flow-col auto-cols-fr rounded-xl border border-border bg-background/40 p-1"
+      className="grid w-full auto-cols-fr grid-flow-col rounded-xl border border-border bg-background/40 p-1"
       onValueChange={(next) => {
         const value = next[0]
         if (value) onChange(value as T)
@@ -242,7 +283,8 @@ export function ThemeCustomizer() {
   React.useEffect(() => {
     const show = () => setOpen(true)
     window.addEventListener("vivat-open-interface-settings", show)
-    return () => window.removeEventListener("vivat-open-interface-settings", show)
+    return () =>
+      window.removeEventListener("vivat-open-interface-settings", show)
   }, [])
 
   React.useEffect(() => {
@@ -552,7 +594,8 @@ export function ThemeCustomizer() {
             </div>
           </div>
           <p className="mt-5 border-t border-border pt-3 text-xs leading-4 text-muted-foreground">
-            Настройки сохраняются в профиле и синхронизируются между устройствами.
+            Настройки сохраняются в профиле и синхронизируются между
+            устройствами.
           </p>
         </div>
       </DialogContent>
@@ -606,6 +649,7 @@ function Metric({
 
 export function OperationsDashboard() {
   const [dashboard, setDashboard] = React.useState<Dashboard | null>(null)
+  const [fleet, setFleet] = React.useState<FleetVehicle[]>([])
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [nowMillis, setNowMillis] = React.useState(0)
@@ -624,8 +668,14 @@ export function OperationsDashboard() {
 
     async function loadDashboard() {
       try {
-        const response = await sessionFetch("/api/dashboard", { cache: "no-store" })
-        const payload: unknown = await response.json()
+        const [response, fleetResponse] = await Promise.all([
+          sessionFetch("/api/dashboard", { cache: "no-store" }),
+          sessionFetch("/api/fleet", { cache: "no-store" }),
+        ])
+        const [payload, fleetPayload]: [unknown, unknown] = await Promise.all([
+          response.json(),
+          fleetResponse.json(),
+        ])
         if (!response.ok || !isDashboard(payload)) {
           const message =
             typeof payload === "object" &&
@@ -638,6 +688,9 @@ export function OperationsDashboard() {
         }
         if (disposed) return
         setDashboard(payload)
+        setFleet(
+          fleetResponse.ok && isFleet(fleetPayload) ? fleetPayload.items : []
+        )
         setLoadError(null)
       } catch (error: unknown) {
         if (disposed) return
@@ -675,20 +728,11 @@ export function OperationsDashboard() {
           Создать рейс
         </Link>
       }
-      pageTitle="Обзор"
+      pageDescription="Рейсы, загрузка, GPS и команда в течение дня"
+      pageTitle="Оперативная сводка"
       utilities={<ThemeCustomizer />}
     >
       <div className="space-y-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-0.035em] sm:text-3xl">
-              Оперативная сводка
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Контролируйте рейсы, загрузку и команду в течение дня.
-            </p>
-          </div>
-        </div>
         {loadError ? (
           <div
             className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
@@ -746,6 +790,150 @@ export function OperationsDashboard() {
                 : "—"
             }
           />
+        </section>
+        <section
+          aria-labelledby="active-trips-heading"
+          className="surface-card overflow-hidden"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div>
+              <h2 className="font-bold" id="active-trips-heading">
+                Активные рейсы
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Призрачный автобус — план сейчас, яркий — момент последнего GPS
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              Обновление каждые 30 секунд
+            </span>
+          </div>
+          <div className="divide-y divide-border">
+            {!isLoading &&
+            fleet.filter((vehicle) => vehicle.activeTrip).length === 0 ? (
+              <p className="px-5 py-7 text-sm text-muted-foreground">
+                Сейчас нет назначенных или активных рейсов.
+              </p>
+            ) : null}
+            {fleet
+              .filter((vehicle) => vehicle.activeTrip)
+              .map((vehicle) => {
+                const trip = vehicle.activeTrip as FleetTrip
+                const planned = timelineProgress(nowMillis, trip)
+                const recordedAt = vehicle.lastLocation
+                  ? new Date(vehicle.lastLocation.recordedAt).getTime()
+                  : Number.NaN
+                const actual = Number.isFinite(recordedAt)
+                  ? timelineProgress(recordedAt, trip)
+                  : 0
+                const signalAge = Number.isFinite(recordedAt)
+                  ? Math.max(0, Math.round((nowMillis - recordedAt) / 60_000))
+                  : null
+                const mapsHref = vehicle.lastLocation
+                  ? `https://www.google.com/maps/search/?api=1&query=${vehicle.lastLocation.latitude},${vehicle.lastLocation.longitude}`
+                  : null
+                return (
+                  <article
+                    className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(13rem,.8fr)_minmax(18rem,1.5fr)_auto] lg:items-center"
+                    key={vehicle.id}
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">{vehicle.name}</p>
+                        <span className="rounded-full bg-sky-500/12 px-2 py-0.5 text-xs font-semibold text-sky-600 dark:text-sky-400">
+                          {trip.status === "in_progress"
+                            ? "В пути"
+                            : "Назначен"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {trip.origin} → {trip.destination}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {vehicle.driver || vehicle.registrationNumber}
+                      </p>
+                    </div>
+                    <div>
+                      <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>
+                          {formatTime(
+                            trip.startsAt,
+                            dashboard?.timezone ?? "Europe/Berlin"
+                          )}
+                        </span>
+                        <span>
+                          {formatTime(
+                            trip.endsAt,
+                            dashboard?.timezone ?? "Europe/Berlin"
+                          )}
+                        </span>
+                      </div>
+                      <div className="relative h-3 rounded-full bg-muted">
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-full bg-primary/25"
+                          style={{ width: `${planned}%` }}
+                        />
+                        <span
+                          aria-label={`План ${Math.round(planned)}%`}
+                          className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-dashed border-primary/60 bg-background/80 text-primary/55"
+                          style={{ left: `${planned}%` }}
+                          title={`План: ${Math.round(planned)}%`}
+                        >
+                          <HugeiconsIcon icon={Car01Icon} size={16} />
+                        </span>
+                        {vehicle.lastLocation ? (
+                          <span
+                            aria-label={`Последний GPS ${Math.round(actual)}% временной шкалы`}
+                            className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-[left] duration-500"
+                            style={{ left: `${actual}%` }}
+                            title="Последняя GPS-точка на временной шкале"
+                          >
+                            <HugeiconsIcon icon={Car01Icon} size={16} />
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span
+                          className={cn(
+                            "font-semibold",
+                            signalAge !== null && signalAge <= 2
+                              ? "text-emerald-500"
+                              : "text-amber-500"
+                          )}
+                        >
+                          {signalAge === null
+                            ? "GPS ещё не получен"
+                            : signalAge <= 1
+                              ? "GPS сейчас"
+                              : `GPS ${signalAge} мин назад`}
+                        </span>
+                        <span className="text-muted-foreground">
+                          План выполнен на {Math.round(planned)}%
+                        </span>
+                      </div>
+                    </div>
+                    {mapsHref ? (
+                      <a
+                        className={buttonVariants({
+                          size: "sm",
+                          variant: "outline",
+                        })}
+                        href={mapsHref}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Открыть в Google Maps
+                        <HugeiconsIcon icon={ArrowUpRight01Icon} size={15} />
+                      </a>
+                    ) : (
+                      <Button disabled size="sm" variant="outline">
+                        Нет GPS
+                      </Button>
+                    )}
+                  </article>
+                )
+              })}
+          </div>
         </section>
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(19rem,0.8fr)]">
           <article className="surface-card overflow-hidden">

@@ -184,6 +184,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.requireActiveSubscription(app.createTeamMember)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.updateTeamMember)))
+	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.deleteTeamMember)))
 	mux.HandleFunc("POST /api/v1/control/tenants", app.provisionTenant)
 	mux.HandleFunc("PUT /api/v1/tenants/{slug}/subscription", app.updateSubscription)
 	return app.recover(app.securityHeaders(app.cors(mux)))
@@ -1212,6 +1213,88 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+func (app *application) deleteTeamMember(w http.ResponseWriter, r *http.Request) {
+	actor, authenticated := identityFromContext(r.Context())
+	if !authenticated {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication is required"})
+		return
+	}
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	membershipID := strings.TrimSpace(r.PathValue("membershipID"))
+	if membershipID == actor.MembershipID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot delete your own access"})
+		return
+	}
+
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var memberRole string
+	var memberActive bool
+	err = tx.QueryRow(r.Context(), `
+		SELECT role::text, is_active
+		FROM memberships
+		WHERE id = $1 AND tenant_id = $2
+		FOR UPDATE
+	`, membershipID, tenant.ID).Scan(&memberRole, &memberActive)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "team member not found"})
+		return
+	}
+	if err != nil {
+		app.log.Error("load team member for deletion", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
+		return
+	}
+	if !canManageTeamRole(actor.Role, memberRole, memberRole) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot delete this team member"})
+		return
+	}
+	if memberRole == "owner" && memberActive {
+		var activeOwners int
+		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM memberships WHERE tenant_id = $1 AND role = 'owner' AND is_active`, tenant.ID).Scan(&activeOwners); err != nil {
+			app.log.Error("count owners before deletion", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
+			return
+		}
+		if activeOwners <= 1 {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "the company must keep at least one active owner"})
+			return
+		}
+	}
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE drivers SET is_active = false, updated_at = now()
+		WHERE tenant_id = $1 AND membership_id = $2
+	`, tenant.ID, membershipID); err != nil {
+		app.log.Error("deactivate deleted team driver", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
+		return
+	}
+	command, err := tx.Exec(r.Context(), `DELETE FROM memberships WHERE id = $1 AND tenant_id = $2`, membershipID, tenant.ID)
+	if err != nil {
+		app.log.Error("delete team membership", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
+		return
+	}
+	if command.RowsAffected() != 1 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "team member not found"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		app.log.Error("commit team member deletion", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete team member"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": membershipID})
 }
 
 type tenant struct {

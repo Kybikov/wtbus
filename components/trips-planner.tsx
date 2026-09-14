@@ -3,7 +3,6 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
-import Link from "next/link"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Add01Icon,
@@ -806,29 +805,18 @@ export function TripsPlanner() {
 
   return (
     <>
-      <AppShell pageTitle="Рейсы" utilities={<ThemeCustomizer />}>
+      <AppShell
+        pageActions={
+          <Button onClick={openCreateTrip}>
+            <HugeiconsIcon icon={Add01Icon} size={18} />
+            Создать рейс
+          </Button>
+        }
+        pageDescription="Транспорт, водители и расписание без накладок"
+        pageTitle="Планирование рейсов"
+        utilities={<ThemeCustomizer />}
+      >
         <div className="mx-auto max-w-[1800px] space-y-5">
-          <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
-            <div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Link className="hover:text-foreground" href="/">
-                  Обзор
-                </Link>
-                <span>/</span>
-                <span>Рейсы</span>
-              </div>
-              <h1 className="mt-2 text-2xl font-bold tracking-[-0.035em] sm:text-3xl">
-                Планирование рейсов
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Назначайте транспорт без накладок и держите день под контролем.
-              </p>
-            </div>
-            <Button onClick={openCreateTrip} size="lg">
-              <HugeiconsIcon icon={Add01Icon} size={18} />
-              Создать рейс
-            </Button>
-          </div>
           {notice ? (
             <div className="flex items-center justify-between rounded-2xl border border-primary/35 bg-primary/10 px-4 py-3 text-sm">
               <span>{notice}</span>

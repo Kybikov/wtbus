@@ -46,7 +46,38 @@ export async function GET() {
   }
 }
 
-async function forwardWrite(request: NextRequest, method: "POST" | "PATCH") {
+async function forwardWrite(
+  request: NextRequest,
+  method: "POST" | "PATCH" | "DELETE"
+) {
+  const id = request.nextUrl.searchParams.get("id")
+  if ((method === "PATCH" || method === "DELETE") && !id)
+    return NextResponse.json({ error: "Не указан сотрудник." }, { status: 400 })
+
+  if (method === "DELETE") {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5_000)
+    try {
+      const response = await apiFetch(
+        `${baseURL}/${encodeURIComponent(id as string)}`,
+        { method, cache: "no-store", signal: controller.signal }
+      )
+      const body: unknown = await response.json().catch(() => null)
+      if (!response.ok)
+        return NextResponse.json(
+          { error: errorFrom(body, "Не удалось удалить сотрудника.") },
+          { status: responseStatus(response.status) }
+        )
+      return NextResponse.json(body)
+    } catch {
+      return NextResponse.json(
+        { error: "Сервис команды временно недоступен." },
+        { status: 503 }
+      )
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   if (!request.headers.get("content-type")?.includes("application/json"))
     return NextResponse.json({ error: "Ожидается JSON." }, { status: 415 })
   let payload: unknown
@@ -58,7 +89,6 @@ async function forwardWrite(request: NextRequest, method: "POST" | "PATCH") {
       { status: 400 }
     )
   }
-  const id = request.nextUrl.searchParams.get("id")
   if (method === "PATCH" && !id)
     return NextResponse.json({ error: "Не указан сотрудник." }, { status: 400 })
 
@@ -103,4 +133,8 @@ export function POST(request: NextRequest) {
 
 export function PATCH(request: NextRequest) {
   return forwardWrite(request, "PATCH")
+}
+
+export function DELETE(request: NextRequest) {
+  return forwardWrite(request, "DELETE")
 }
