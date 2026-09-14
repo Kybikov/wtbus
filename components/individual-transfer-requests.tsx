@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -109,7 +111,7 @@ export function IndividualTransferRequests() {
       const params = new URLSearchParams({ limit: "100" })
       if (status) params.set("status", status)
       if (query.trim()) params.set("q", query.trim())
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/individual-transfer-requests?${params.toString()}`,
         { cache: "no-store" }
       )
@@ -147,7 +149,7 @@ export function IndividualTransferRequests() {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/individual-transfer-requests?id=${encodeURIComponent(item.id)}`,
         {
           method: "PATCH",

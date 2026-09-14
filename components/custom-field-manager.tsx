@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon, Edit02Icon } from "@hugeicons/core-free-icons"
@@ -156,7 +158,7 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
   const load = React.useCallback(async () => {
     setLoading(true)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/custom-fields?entity=${encodeURIComponent(entity)}`,
         { cache: "no-store" }
       )
@@ -225,7 +227,7 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
           : [],
     }
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         editingID
           ? `/api/custom-fields?id=${encodeURIComponent(editingID)}`
           : "/api/custom-fields",

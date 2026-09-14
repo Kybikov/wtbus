@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import Link from "next/link"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -106,7 +108,7 @@ export function RouteCatalog() {
     setError(null)
 
     try {
-      const response = await fetch("/api/routes", { cache: "no-store" })
+      const response = await sessionFetch("/api/routes", { cache: "no-store" })
       const payload: unknown = await response.json()
 
       if (!response.ok || !isRoutes(payload)) {
@@ -177,7 +179,7 @@ export function RouteCatalog() {
       : "Не удалось создать маршрут."
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await sessionFetch(endpoint, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -210,7 +212,7 @@ export function RouteCatalog() {
     setError(null)
 
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/routes?id=${encodeURIComponent(route.id)}`,
         {
           method: "PATCH",

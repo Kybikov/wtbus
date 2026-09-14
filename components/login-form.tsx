@@ -6,6 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { LockPasswordIcon, Login03Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
+import { safeReturnPath } from "@/lib/session-navigation"
 
 type CompanyChoice = {
   slug: string
@@ -86,7 +87,7 @@ export function LoginForm() {
         return
       }
       const next = new URLSearchParams(window.location.search).get("next")
-      router.replace(next && next.startsWith("/") ? next : "/")
+      router.replace(safeReturnPath(next))
       router.refresh()
     } catch (reason) {
       setError(
@@ -115,7 +116,7 @@ export function LoginForm() {
         throw new Error(payloadError(payload, "Не удалось выбрать компанию."))
       }
       const next = new URLSearchParams(window.location.search).get("next")
-      router.replace(next && next.startsWith("/") ? next : "/")
+      router.replace(safeReturnPath(next))
       router.refresh()
     } catch (reason) {
       setError(

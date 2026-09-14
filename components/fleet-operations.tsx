@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -141,7 +143,7 @@ export function FleetOperations() {
     else setLoading(true)
     setError(null)
     try {
-      const response = await fetch("/api/fleet", {
+      const response = await sessionFetch("/api/fleet", {
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       })
@@ -187,7 +189,7 @@ export function FleetOperations() {
   }, [load])
 
   React.useEffect(() => {
-    void fetch("/api/auth/me", { cache: "no-store" })
+    void sessionFetch("/api/auth/me", { cache: "no-store" })
       .then(async (response) => ({
         response,
         payload: await response.json().catch(() => null),
@@ -244,7 +246,7 @@ export function FleetOperations() {
       ? "Не удалось обновить автомобиль."
       : "Не удалось добавить автомобиль."
     try {
-      const response = await fetch(endpoint, {
+      const response = await sessionFetch(endpoint, {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -264,7 +266,7 @@ export function FleetOperations() {
     setSaving(true)
     setError(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/fleet?id=${encodeURIComponent(vehicle.id)}`,
         {
           method: "PATCH",

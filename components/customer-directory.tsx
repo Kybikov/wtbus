@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon, Edit02Icon, Search01Icon } from "@hugeicons/core-free-icons"
@@ -215,8 +217,8 @@ export function CustomerDirectory() {
     setError(null)
     try {
       const [response, fieldsResponse] = await Promise.all([
-        fetch(`/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`),
-        fetch("/api/custom-fields", { cache: "no-store" }),
+        sessionFetch(`/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`),
+        sessionFetch("/api/custom-fields", { cache: "no-store" }),
       ])
       const [payload, fieldsPayload]: [unknown, unknown] = await Promise.all([
         response.json(),
@@ -260,7 +262,7 @@ export function CustomerDirectory() {
         : undefined
       const customData = buildCustomData(customFields, form.customData)
       const isEditing = editingID !== null
-      const response = await fetch(
+      const response = await sessionFetch(
         isEditing
           ? `/api/customers?id=${encodeURIComponent(editingID)}`
           : "/api/customers",
@@ -307,7 +309,7 @@ export function CustomerDirectory() {
     try {
       const body = new FormData()
       body.set("file", file)
-      const response = await fetch("/api/customers/import", {
+      const response = await sessionFetch("/api/customers/import", {
         method: "POST",
         body,
       })
@@ -350,7 +352,7 @@ export function CustomerDirectory() {
     setExporting(true)
     setError(null)
     try {
-      const response = await fetch("/api/customers?export=xlsx", {
+      const response = await sessionFetch("/api/customers?export=xlsx", {
         cache: "no-store",
       })
       if (!response.ok) throw new Error("Не удалось выгрузить базу клиентов.")
@@ -384,7 +386,7 @@ export function CustomerDirectory() {
 
     setHistoryLoadingID(customerID)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/customers/${encodeURIComponent(customerID)}`,
         { cache: "no-store" }
       )

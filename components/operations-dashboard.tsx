@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import Link from "next/link"
@@ -301,7 +303,7 @@ export function ThemeCustomizer() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/preferences", {
+        const response = await sessionFetch("/api/preferences", {
           signal: controller.signal,
         })
         const payload: unknown = await response.json().catch(() => null)
@@ -324,7 +326,7 @@ export function ThemeCustomizer() {
 
   React.useEffect(() => {
     const controller = new AbortController()
-    void fetch("/api/branding", { signal: controller.signal })
+    void sessionFetch("/api/branding", { signal: controller.signal })
       .then(async (response) => {
         const payload: unknown = await response.json()
         if (
@@ -426,7 +428,7 @@ export function ThemeCustomizer() {
       })
     )
     const timer = window.setTimeout(() => {
-      void fetch("/api/preferences", {
+      void sessionFetch("/api/preferences", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(preferences),
@@ -622,7 +624,7 @@ export function OperationsDashboard() {
 
     async function loadDashboard() {
       try {
-        const response = await fetch("/api/dashboard", { cache: "no-store" })
+        const response = await sessionFetch("/api/dashboard", { cache: "no-store" })
         const payload: unknown = await response.json()
         if (!response.ok || !isDashboard(payload)) {
           const message =

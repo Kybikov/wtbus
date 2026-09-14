@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import {
   GPSDeliveryError,
@@ -131,7 +133,7 @@ export function useDriverGPS(target: GPSTarget | null) {
         requests.add(controller)
         const timeout = window.setTimeout(() => controller.abort(), 12_000)
         try {
-          const response = await fetch("/api/gps-points", {
+          const response = await sessionFetch("/api/gps-points", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(point),

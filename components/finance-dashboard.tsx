@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Calendar01Icon, Wallet01Icon } from "@hugeicons/core-free-icons"
@@ -96,11 +98,11 @@ export function FinanceDashboard() {
     setError(null)
     try {
       const [summaryResponse, resourcesResponse] = await Promise.all([
-        fetch(
+        sessionFetch(
           `/api/finance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
           { cache: "no-store" }
         ),
-        fetch("/api/trip-resources", { cache: "no-store" }),
+        sessionFetch("/api/trip-resources", { cache: "no-store" }),
       ])
       const summaryPayload: unknown = await summaryResponse.json()
       const resourcesPayload: unknown = await resourcesResponse.json()
@@ -147,7 +149,7 @@ export function FinanceDashboard() {
     setSaving(true)
     setError(null)
     try {
-      const response = await fetch("/api/finance", {
+      const response = await sessionFetch("/api/finance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -193,7 +195,7 @@ export function FinanceDashboard() {
     setExpenseSaving(true)
     setError(null)
     try {
-      const response = await fetch("/api/finance?action=expense", {
+      const response = await sessionFetch("/api/finance?action=expense", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

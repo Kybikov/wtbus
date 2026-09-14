@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Car01Icon, Clock01Icon, Route01Icon } from "@hugeicons/core-free-icons"
@@ -153,7 +155,7 @@ export function DriverLocationTracker() {
     if (loadInFlight.current) return
     loadInFlight.current = true
     try {
-      const sessionResponse = await fetch("/api/auth/me", {
+      const sessionResponse = await sessionFetch("/api/auth/me", {
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       })
@@ -176,7 +178,7 @@ export function DriverLocationTracker() {
           "Не удалось подтвердить доступ водителя. Проверьте связь или войдите снова."
         )
       }
-      const response = await fetch("/api/fleet", {
+      const response = await sessionFetch("/api/fleet", {
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       })
@@ -201,7 +203,7 @@ export function DriverLocationTracker() {
   const loadCashSummary = React.useCallback(async () => {
     setCashLoading(true)
     try {
-      const response = await fetch("/api/driver-cash", {
+      const response = await sessionFetch("/api/driver-cash", {
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       })
@@ -244,7 +246,7 @@ export function DriverLocationTracker() {
 
   React.useEffect(() => {
     const controller = new AbortController()
-    void fetch("/api/branding", { signal: controller.signal })
+    void sessionFetch("/api/branding", { signal: controller.signal })
       .then(async (response) => {
         const payload: unknown = await response.json().catch(() => null)
         if (!response.ok || !isDriverBranding(payload)) return
@@ -276,7 +278,7 @@ export function DriverLocationTracker() {
           "Сначала отправьте сохранённые GPS-точки. Восстановите связь и повторите завершение рейса."
         )
       }
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/trips?id=${encodeURIComponent(tripID)}`,
         {
           method: "PATCH",
@@ -315,7 +317,7 @@ export function DriverLocationTracker() {
     setConfirmingCash(true)
     setError(null)
     try {
-      const response = await fetch("/api/driver-cash", {
+      const response = await sessionFetch("/api/driver-cash", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tripId: cashSummary.tripId }),

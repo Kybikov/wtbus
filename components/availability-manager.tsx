@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -91,8 +93,8 @@ export function AvailabilityManager() {
     setError(null)
     try {
       const [blocksResponse, resourcesResponse] = await Promise.all([
-        fetch("/api/availability-blocks", { cache: "no-store" }),
-        fetch("/api/trip-resources", { cache: "no-store" }),
+        sessionFetch("/api/availability-blocks", { cache: "no-store" }),
+        sessionFetch("/api/trip-resources", { cache: "no-store" }),
       ])
       const [blocksPayload, resourcesPayload]: [unknown, unknown] =
         await Promise.all([blocksResponse.json(), resourcesResponse.json()])
@@ -128,7 +130,7 @@ export function AvailabilityManager() {
     setSaving(true)
     setError(null)
     try {
-      const response = await fetch("/api/availability-blocks", {
+      const response = await sessionFetch("/api/availability-blocks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -154,7 +156,7 @@ export function AvailabilityManager() {
     setSaving(true)
     setError(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/availability-blocks?id=${encodeURIComponent(block.id)}`,
         { method: "DELETE" }
       )

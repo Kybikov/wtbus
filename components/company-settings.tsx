@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
@@ -76,7 +78,7 @@ export function CompanySettings() {
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const response = await fetch("/api/branding", {
+          const response = await sessionFetch("/api/branding", {
             signal: controller.signal,
           })
           const payload: unknown = await response.json()
@@ -108,7 +110,7 @@ export function CompanySettings() {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch("/api/branding", {
+      const response = await sessionFetch("/api/branding", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(branding),

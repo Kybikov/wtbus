@@ -503,7 +503,7 @@ func (app *application) recordFailedLogin(ctx context.Context, key string) (bool
 func (app *application) authenticate(r *http.Request) (identity, string, error) {
 	token, ok := sessionTokenFromRequest(r)
 	if !ok {
-		return identity{}, "", errors.New("missing session")
+		return identity{}, "", pgx.ErrNoRows
 	}
 	hash := sha256.Sum256([]byte(token))
 	var result identity
@@ -530,7 +530,7 @@ func (app *application) requireRoles(roles ...string) func(http.HandlerFunc) htt
 		return func(w http.ResponseWriter, r *http.Request) {
 			identity, _, err := app.authenticate(r)
 			if err != nil {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication is required"})
+				writeAuthenticationError(w, err)
 				return
 			}
 			slug := strings.ToLower(strings.TrimSpace(r.PathValue("slug")))
@@ -728,7 +728,7 @@ func (app *application) selectCompany(w http.ResponseWriter, r *http.Request) {
 func (app *application) me(w http.ResponseWriter, r *http.Request) {
 	identity, _, err := app.authenticate(r)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication is required"})
+		writeAuthenticationError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"tenantSlug": identity.TenantSlug, "membershipId": identity.MembershipID, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email})
@@ -737,7 +737,7 @@ func (app *application) me(w http.ResponseWriter, r *http.Request) {
 func (app *application) logout(w http.ResponseWriter, r *http.Request) {
 	identity, token, err := app.authenticate(r)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication is required"})
+		writeAuthenticationError(w, err)
 		return
 	}
 	hash := sha256.Sum256([]byte(token))

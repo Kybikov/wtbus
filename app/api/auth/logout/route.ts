@@ -12,7 +12,10 @@ export async function POST() {
     await apiFetch(`${apiBaseURL}/api/v1/auth/logout`, {
       method: "POST",
       cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
     })
+  } catch {
+    // The browser must still drop its cookie when the upstream is unavailable.
   } finally {
     response.cookies.set({
       name: "vivat_session",

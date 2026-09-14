@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import Link from "next/link"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -443,7 +445,7 @@ export function TripsPlanner() {
       setLoadError(null)
 
       try {
-        const response = await fetch(
+        const response = await sessionFetch(
           `/api/trips?date=${encodeURIComponent(day.iso)}`,
           {
             signal: controller.signal,
@@ -481,8 +483,8 @@ export function TripsPlanner() {
       setResourceError(null)
       try {
         const [response, fieldsResponse] = await Promise.all([
-          fetch("/api/trip-resources", { signal: controller.signal }),
-          fetch("/api/custom-fields?entity=trip", {
+          sessionFetch("/api/trip-resources", { signal: controller.signal }),
+          sessionFetch("/api/custom-fields?entity=trip", {
             signal: controller.signal,
           }),
         ])
@@ -593,7 +595,7 @@ export function TripsPlanner() {
     setIsSubmitting(true)
 
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         isSchedule
           ? "/api/trips/schedule"
           : isEditing
@@ -662,7 +664,7 @@ export function TripsPlanner() {
     setSelectedTripError(null)
     setIsStatusSubmitting(true)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/trips?id=${encodeURIComponent(selectedTrip.id)}`,
         {
           method: "PATCH",
@@ -759,7 +761,7 @@ export function TripsPlanner() {
     setIsRescheduling(true)
     setLoadError(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/trips?id=${encodeURIComponent(trip.id)}`,
         {
           method: "PUT",

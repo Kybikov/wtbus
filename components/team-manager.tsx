@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon } from "@hugeicons/core-free-icons"
@@ -106,8 +108,8 @@ export function TeamManager() {
     setLoading(true)
     try {
       const [teamResponse, meResponse] = await Promise.all([
-        fetch("/api/team", { cache: "no-store" }),
-        fetch("/api/auth/me", { cache: "no-store" }),
+        sessionFetch("/api/team", { cache: "no-store" }),
+        sessionFetch("/api/auth/me", { cache: "no-store" }),
       ])
       const [teamPayload, mePayload]: [unknown, unknown] = await Promise.all([
         teamResponse.json(),
@@ -141,7 +143,7 @@ export function TeamManager() {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch("/api/team", {
+      const response = await sessionFetch("/api/team", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -180,7 +182,7 @@ export function TeamManager() {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/team?id=${encodeURIComponent(member.membershipId)}`,
         {
           method: "PATCH",

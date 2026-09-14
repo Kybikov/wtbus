@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
@@ -56,7 +58,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
     const controller = new AbortController()
     void (async () => {
       try {
-        const response = await fetch("/api/payment-settings", {
+        const response = await sessionFetch("/api/payment-settings", {
           signal: controller.signal,
         })
         const payload: unknown = await response.json()
@@ -83,7 +85,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch("/api/payment-settings", {
+      const response = await sessionFetch("/api/payment-settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),

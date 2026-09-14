@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -236,7 +238,7 @@ export function BookingRegistry() {
     if (query.trim()) params.set("q", query.trim())
     if (date) params.set("date", date)
     try {
-      const response = await fetch(`/api/bookings?${params.toString()}`, {
+      const response = await sessionFetch(`/api/bookings?${params.toString()}`, {
         cache: "no-store",
       })
       const payload: unknown = await response.json()
@@ -271,11 +273,11 @@ export function BookingRegistry() {
       try {
         const [tripsResponse, customersResponse, fieldsResponse] =
           await Promise.all([
-            fetch(`/api/trips?date=${encodeURIComponent(bookingForm.date)}`, {
+            sessionFetch(`/api/trips?date=${encodeURIComponent(bookingForm.date)}`, {
               signal: controller.signal,
             }),
-            fetch("/api/customers?limit=100", { signal: controller.signal }),
-            fetch("/api/custom-fields?entity=booking", {
+            sessionFetch("/api/customers?limit=100", { signal: controller.signal }),
+            sessionFetch("/api/custom-fields?entity=booking", {
               signal: controller.signal,
             }),
           ])
@@ -352,7 +354,7 @@ export function BookingRegistry() {
     }
     setIsCreating(true)
     try {
-      const response = await fetch("/api/bookings", {
+      const response = await sessionFetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -398,7 +400,7 @@ export function BookingRegistry() {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/bookings?id=${encodeURIComponent(booking.id)}`,
         {
           method: "PATCH",
@@ -427,7 +429,7 @@ export function BookingRegistry() {
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         `/api/bookings?id=${encodeURIComponent(booking.id)}&action=confirm-payment`,
         { method: "POST" }
       )

@@ -1,5 +1,7 @@
 "use client"
 
+import { sessionFetch } from "@/lib/session-navigation"
+
 import * as React from "react"
 import Image from "next/image"
 import Link from "next/link"
@@ -394,8 +396,8 @@ export function AppShell({
   React.useEffect(() => {
     const controller = new AbortController()
     void Promise.all([
-      fetch("/api/branding", { signal: controller.signal }),
-      fetch("/api/auth/me", { signal: controller.signal }),
+      sessionFetch("/api/branding", { signal: controller.signal }),
+      sessionFetch("/api/auth/me", { signal: controller.signal }),
     ])
       .then(async ([brandingResponse, identityResponse]) => {
         const branding: unknown = await brandingResponse
@@ -472,10 +474,10 @@ export function AppShell({
       setSearchLoading(true)
       setSearchError(null)
       void Promise.all([
-        fetch(`/api/customers?q=${encodeURIComponent(query)}&limit=6`, {
+        sessionFetch(`/api/customers?q=${encodeURIComponent(query)}&limit=6`, {
           signal: controller.signal,
         }),
-        fetch(`/api/bookings?q=${encodeURIComponent(query)}&limit=8`, {
+        sessionFetch(`/api/bookings?q=${encodeURIComponent(query)}&limit=8`, {
           signal: controller.signal,
         }),
       ])
@@ -544,7 +546,7 @@ export function AppShell({
     setNotificationsLoading(true)
     setNotificationError(null)
     try {
-      const response = await fetch(
+      const response = await sessionFetch(
         "/api/individual-transfer-requests?status=new&limit=5",
         { cache: "no-store" }
       )
@@ -580,9 +582,8 @@ export function AppShell({
     window.dispatchEvent(new Event("vivat-open-interface-settings"))
   }
   const signOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined)
-    router.replace("/login")
-    router.refresh()
+    await sessionFetch("/api/auth/logout", { method: "POST" }).catch(() => undefined)
+    window.location.replace("/login")
   }
 
   return (
