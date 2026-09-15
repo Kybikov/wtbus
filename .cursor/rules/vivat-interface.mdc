@@ -7,7 +7,7 @@ alwaysApply: false
 # Vivat Bus interface rules
 
 - Use shadcn/ui primitives for controls, forms, tables, dialogs, sheets, menus, tabs, alerts, badges, progress and skeleton states. Do not hand-build equivalents from raw elements.
-- Fetch React Bits components from its current registry. Use motion only when it explains state or hierarchy and always honor reduced motion.
+- React Bits Pro registries are configured in `components.json`. Inspect current `@reactbits-pro` App UI blocks before building page-level UI, install the closest block through the shadcn CLI, then adapt its local source to Vivat's tokens and domain behavior. Use motion only when it explains state or hierarchy and always honor reduced motion.
 - Put the page title and description in `AppShell`. Never repeat either in page content.
 - Show one search control in the top bar. Page-local search replaces the visible global-search control; keep cross-entity search available in the `Command` palette with `Ctrl/Cmd+K`.
 - Use the shared entity view for database-backed collections. Table is the default; enable gallery, kanban or calendar only when the data supports that view.

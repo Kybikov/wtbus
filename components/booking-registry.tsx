@@ -739,8 +739,14 @@ export function BookingRegistry() {
               booking.customerName ??
               booking.customerPhone
             }
-            groupBy={(booking) => statusLabels[booking.status]}
+            groupBy={(booking) => booking.status}
             items={items}
+            kanbanGroups={(Object.keys(statusLabels) as BookingStatus[]).map(
+              (bookingStatus) => ({
+                id: bookingStatus,
+                label: statusLabels[bookingStatus],
+              })
+            )}
             loading={loading}
             loadingText="Загружаем бронирования…"
             modes={["table", "kanban", "calendar", "gallery"]}

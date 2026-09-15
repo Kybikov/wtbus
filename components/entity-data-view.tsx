@@ -2,15 +2,11 @@
 
 import * as React from "react"
 
+import ReactBitsKanban, {
+  type ReactBitsKanbanColumn,
+} from "@/components/kanban-3"
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   ContextMenu,
@@ -75,6 +71,13 @@ type Props<T> = {
   defaultMode?: EntityViewMode
   renderCard?: (item: T) => React.ReactNode
   groupBy?: (item: T) => string
+  kanbanGroups?: ReactBitsKanbanColumn[]
+  canMoveInKanban?: (item: T) => boolean
+  canMoveToKanbanGroup?: (item: T, group: string) => boolean
+  onKanbanGroupChange?: (
+    item: T,
+    group: string
+  ) => boolean | void | Promise<boolean | void>
   dateValue?: (item: T) => string | undefined
   bulkActions?: React.ReactNode
   className?: string
@@ -133,6 +136,10 @@ export function EntityDataView<T>({
   defaultMode = "table",
   renderCard,
   groupBy,
+  kanbanGroups,
+  canMoveInKanban,
+  canMoveToKanbanGroup,
+  onKanbanGroupChange,
   dateValue,
   bulkActions,
   className,
@@ -362,51 +369,34 @@ export function EntityDataView<T>({
             </Table>
           </div>
         ) : mode === "kanban" ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              ...new Set(items.map((item) => groupBy?.(item) ?? "Без группы")),
-            ].map((group) => (
-              <Card className="min-w-0 gap-3 py-3" key={group} size="sm">
-                <CardHeader className="px-3">
-                  <CardTitle className="text-sm font-semibold">
-                    {group}
-                  </CardTitle>
-                  <CardAction className="text-xs text-muted-foreground tabular-nums">
-                    {
-                      items.filter(
-                        (item) => (groupBy?.(item) ?? "Без группы") === group
-                      ).length
-                    }
-                  </CardAction>
-                </CardHeader>
-                <CardContent className="space-y-2 px-3">
-                  {items
-                    .filter(
-                      (item) => (groupBy?.(item) ?? "Без группы") === group
-                    )
-                    .map((item) => (
-                      <ContextMenu key={getId(item)}>
-                        <ContextMenuTrigger
-                          render={
-                            <Card
-                              className="gap-0 rounded-xl bg-background p-3 shadow-none ring-border"
-                              size="sm"
-                            />
-                          }
-                        >
-                          {card(item)}
-                        </ContextMenuTrigger>
-                        <EntityMenu
-                          actions={actions}
-                          item={item}
-                          label={getLabel(item)}
-                        />
-                      </ContextMenu>
-                    ))}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <ReactBitsKanban
+            canMove={canMoveInKanban}
+            canMoveTo={canMoveToKanbanGroup}
+            columns={
+              kanbanGroups ??
+              [
+                ...new Set(
+                  items.map((item) => groupBy?.(item) ?? "Без группы")
+                ),
+              ].map((group) => ({ id: group, label: group }))
+            }
+            emptyText="Нет записей"
+            getGroup={(item) => groupBy?.(item) ?? "Без группы"}
+            getId={getId}
+            getLabel={getLabel}
+            items={items}
+            onMove={onKanbanGroupChange}
+            renderCard={(item) => (
+              <ContextMenu>
+                <ContextMenuTrigger render={<div />}>{card(item)}</ContextMenuTrigger>
+                <EntityMenu
+                  actions={actions}
+                  item={item}
+                  label={getLabel(item)}
+                />
+              </ContextMenu>
+            )}
+          />
         ) : mode === "calendar" ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {[...new Set(items.map((item) => dateValue?.(item) ?? "Без даты"))]

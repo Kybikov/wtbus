@@ -56,6 +56,12 @@ const roleLabels: Record<Role, string> = {
   driver: "Водитель",
 }
 
+const allRoles = Object.keys(roleLabels) as Role[]
+
+function isRole(value: string): value is Role {
+  return allRoles.includes(value as Role)
+}
+
 const roleDescriptions: Record<Role, string> = {
   owner: "Полный доступ, команда и настройки",
   admin: "Операции и настройки компании",
@@ -511,13 +517,33 @@ export function TeamManager() {
           emptyText="Сотрудники не найдены."
           getId={(member) => member.membershipId}
           getLabel={(member) => member.displayName}
-          groupBy={(member) =>
-            member.isSystem ? "Автоматизация" : roleLabels[member.role]
-          }
+          groupBy={(member) => (member.isSystem ? "automation" : member.role)}
           items={filteredMembers}
           isSelectable={(member) => !member.isSystem}
+          kanbanGroups={[
+            ...allRoles.map((role) => ({
+              id: role,
+              label: roleLabels[role],
+            })),
+            { id: "automation", label: "Автоматизация" },
+          ]}
           loading={loading}
           modes={["table", "kanban", "gallery"]}
+          canMoveInKanban={(member) =>
+            !member.isSystem &&
+            member.membershipId !== me?.membershipId &&
+            changingId !== member.membershipId &&
+            canManage(member)
+          }
+          canMoveToKanbanGroup={(_, group) =>
+            isRole(group) && roles.includes(group)
+          }
+          onKanbanGroupChange={async (member, group) => {
+            if (!isRole(group)) return false
+            const updated = await updateMember(member, { role: group })
+            if (updated) await load()
+            return updated
+          }}
           onSelectedChange={setSelected}
           renderCard={(member) => (
             <div className="space-y-3">
