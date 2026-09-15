@@ -104,6 +104,21 @@ type TransferRequestPreview = {
 }
 type SidebarMode = "default" | "icon" | "full"
 type SidebarVariant = "default" | "inset" | "floating"
+type SidebarPreferences = {
+  sidebarMode: SidebarMode
+  sidebarVariant: SidebarVariant
+}
+type SidebarOverride = {
+  mode: SidebarMode
+  open: boolean
+}
+
+const defaultSidebarPreferences: SidebarPreferences = {
+  sidebarMode: "default",
+  sidebarVariant: "default",
+}
+let rememberedSidebarPreferences = defaultSidebarPreferences
+let rememberedSidebarOverride: SidebarOverride | null = null
 
 const operationsRoles: MembershipRole[] = ["owner", "admin", "dispatcher"]
 const managementRoles: MembershipRole[] = ["owner", "admin"]
@@ -217,14 +232,13 @@ const initials = (name: string) =>
     .join("") || "АК"
 
 function useSidebarPreferences() {
-  const [value, setValue] = React.useState<{
-    sidebarMode: SidebarMode
-    sidebarVariant: SidebarVariant
-  }>({ sidebarMode: "default", sidebarVariant: "default" })
+  const [value, setValue] = React.useState<SidebarPreferences>(
+    rememberedSidebarPreferences
+  )
   React.useEffect(() => {
     const sync = () => {
       const data = document.documentElement.dataset
-      setValue({
+      const next: SidebarPreferences = {
         sidebarMode:
           data.sidebarMode === "icon" || data.sidebarMode === "full"
             ? data.sidebarMode
@@ -233,7 +247,9 @@ function useSidebarPreferences() {
           data.sidebarVariant === "inset" || data.sidebarVariant === "floating"
             ? data.sidebarVariant
             : "default",
-      })
+      }
+      rememberedSidebarPreferences = next
+      setValue(next)
     }
     sync()
     const observer = new MutationObserver(sync)
@@ -370,16 +386,20 @@ export function AppShell({
   const pathname = usePathname()
   const router = useRouter()
   const preferences = useSidebarPreferences()
-  const [sidebarOverride, setSidebarOverride] = React.useState<{
-    mode: string
-    open: boolean
-  } | null>(null)
+  const [sidebarOverride, setSidebarOverride] =
+    React.useState<SidebarOverride | null>(rememberedSidebarOverride)
   const sidebarOpen =
     sidebarOverride?.mode === preferences.sidebarMode
       ? sidebarOverride.open
       : preferences.sidebarMode !== "icon"
-  const setSidebarOpen = (open: boolean) =>
-    setSidebarOverride({ mode: preferences.sidebarMode, open })
+  const setSidebarOpen = React.useCallback(
+    (open: boolean) => {
+      const next = { mode: preferences.sidebarMode, open }
+      rememberedSidebarOverride = next
+      setSidebarOverride(next)
+    },
+    [preferences.sidebarMode]
+  )
   const [brand, setBrand] = React.useState(defaultShellBrand)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =

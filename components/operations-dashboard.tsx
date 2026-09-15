@@ -188,6 +188,42 @@ function isUIPreferences(value: unknown): value is UIPreferences {
   )
 }
 
+let rememberedUIPreferences: UIPreferences | null | undefined
+
+function getRememberedUIPreferences() {
+  if (rememberedUIPreferences !== undefined) return rememberedUIPreferences
+  if (typeof window === "undefined") return null
+
+  const saved = window.localStorage.getItem("vivat-ui-preferences")
+  if (!saved) {
+    rememberedUIPreferences = null
+    return null
+  }
+
+  try {
+    const stored = JSON.parse(saved) as Record<string, unknown>
+    const preferences: unknown = {
+      theme: stored.theme,
+      accent: stored.preset,
+      density: stored.compact === true ? "compact" : "comfortable",
+      radius: stored.radius,
+      scale: stored.scale,
+      sidebarVariant: stored.sidebarVariant,
+      sidebarMode: stored.sidebarMode,
+    }
+    if (isUIPreferences(preferences)) {
+      rememberedUIPreferences = preferences
+      return preferences
+    }
+  } catch {
+    // Invalid local preferences are cleared below.
+  }
+
+  window.localStorage.removeItem("vivat-ui-preferences")
+  rememberedUIPreferences = null
+  return null
+}
+
 function isDashboard(value: unknown): value is Dashboard {
   return (
     typeof value === "object" &&
@@ -267,15 +303,28 @@ function SegmentedControl<T extends string>({
 
 export function ThemeCustomizer() {
   const { resolvedTheme, setTheme, theme } = useTheme()
+  const initialPreferences = getRememberedUIPreferences()
   const [open, setOpen] = React.useState(false)
-  const [preset, setPreset] = React.useState<ThemePreset>("company")
+  const [preset, setPreset] = React.useState<ThemePreset>(
+    initialPreferences?.accent ?? "company"
+  )
   const [companyAccent, setCompanyAccent] = React.useState("#E9B74D")
-  const [radius, setRadius] = React.useState<Radius>("lg")
-  const [compact, setCompact] = React.useState(false)
-  const [scale, setScale] = React.useState<Scale>("md")
+  const [radius, setRadius] = React.useState<Radius>(
+    initialPreferences?.radius ?? "lg"
+  )
+  const [compact, setCompact] = React.useState(
+    initialPreferences?.density === "compact"
+  )
+  const [scale, setScale] = React.useState<Scale>(
+    initialPreferences?.scale ?? "md"
+  )
   const [sidebarVariant, setSidebarVariant] =
-    React.useState<SidebarVariant>("default")
-  const [sidebarMode, setSidebarMode] = React.useState<SidebarMode>("default")
+    React.useState<SidebarVariant>(
+      initialPreferences?.sidebarVariant ?? "default"
+    )
+  const [sidebarMode, setSidebarMode] = React.useState<SidebarMode>(
+    initialPreferences?.sidebarMode ?? "default"
+  )
   const [preferencesReady, setPreferencesReady] = React.useState(false)
   const hasLoadedPreferences = React.useRef(false)
   const hasPersonalThemePreference = React.useRef(false)
@@ -292,45 +341,10 @@ export function ThemeCustomizer() {
 
     hasLoadedPreferences.current = true
     const controller = new AbortController()
-    let localPreferences: UIPreferences | null = null
-    const saved = window.localStorage.getItem("vivat-ui-preferences")
-    if (saved) {
-      try {
-        const preferences = JSON.parse(saved) as Partial<{
-          preset: ThemePreset
-          radius: Radius
-          compact: boolean
-          scale: Scale
-          sidebarVariant: SidebarVariant
-          sidebarMode: SidebarMode
-          theme: "light" | "dark" | "system"
-        }>
-        if (
-          preferences.preset &&
-          preferences.radius &&
-          typeof preferences.compact === "boolean" &&
-          preferences.scale &&
-          preferences.sidebarVariant &&
-          preferences.sidebarMode &&
-          preferences.theme &&
-          (preferences.preset === "company" || presets[preferences.preset])
-        ) {
-          localPreferences = {
-            theme: preferences.theme,
-            accent: preferences.preset,
-            density: preferences.compact ? "compact" : "comfortable",
-            radius: preferences.radius,
-            scale: preferences.scale,
-            sidebarVariant: preferences.sidebarVariant,
-            sidebarMode: preferences.sidebarMode,
-          }
-        }
-      } catch {
-        window.localStorage.removeItem("vivat-ui-preferences")
-      }
-    }
+    const localPreferences = getRememberedUIPreferences()
 
     function applyPreferences(preferences: UIPreferences) {
+      rememberedUIPreferences = preferences
       React.startTransition(() => {
         setPreset(preferences.accent)
         setRadius(preferences.radius)
@@ -457,6 +471,7 @@ export function ThemeCustomizer() {
       sidebarVariant,
       sidebarMode,
     }
+    rememberedUIPreferences = preferences
     window.localStorage.setItem(
       "vivat-ui-preferences",
       JSON.stringify({

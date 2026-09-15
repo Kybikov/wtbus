@@ -4,6 +4,13 @@ import * as React from "react"
 
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   ContextMenu,
@@ -359,32 +366,45 @@ export function EntityDataView<T>({
             {[
               ...new Set(items.map((item) => groupBy?.(item) ?? "Без группы")),
             ].map((group) => (
-              <section className="surface-card min-w-0 p-3" key={group}>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">{group}</h3>
-                  <span className="text-xs text-muted-foreground tabular-nums">
+              <Card className="min-w-0 gap-3 py-3" key={group} size="sm">
+                <CardHeader className="px-3">
+                  <CardTitle className="text-sm font-semibold">
+                    {group}
+                  </CardTitle>
+                  <CardAction className="text-xs text-muted-foreground tabular-nums">
                     {
                       items.filter(
                         (item) => (groupBy?.(item) ?? "Без группы") === group
                       ).length
                     }
-                  </span>
-                </div>
-                <div className="space-y-2">
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="space-y-2 px-3">
                   {items
                     .filter(
                       (item) => (groupBy?.(item) ?? "Без группы") === group
                     )
                     .map((item) => (
-                      <div
-                        className="rounded-xl border border-border bg-background p-3"
-                        key={getId(item)}
-                      >
-                        {card(item)}
-                      </div>
+                      <ContextMenu key={getId(item)}>
+                        <ContextMenuTrigger
+                          render={
+                            <Card
+                              className="gap-0 rounded-xl bg-background p-3 shadow-none ring-border"
+                              size="sm"
+                            />
+                          }
+                        >
+                          {card(item)}
+                        </ContextMenuTrigger>
+                        <EntityMenu
+                          actions={actions}
+                          item={item}
+                          label={getLabel(item)}
+                        />
+                      </ContextMenu>
                     ))}
-                </div>
-              </section>
+                </CardContent>
+              </Card>
             ))}
           </div>
         ) : mode === "calendar" ? (
