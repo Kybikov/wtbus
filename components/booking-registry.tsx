@@ -6,10 +6,7 @@ import { bookingPassengers } from "@/lib/booking-checkout"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Add01Icon,
-  Calendar01Icon,
-} from "@hugeicons/core-free-icons"
+import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import {
@@ -255,7 +252,10 @@ export function BookingRegistry() {
         `/api/bookings?${params.toString()}`,
         {
           cache: "no-store",
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(10_000),
+          ]),
         }
       )
       const payload: unknown = await response.json()
@@ -280,7 +280,10 @@ export function BookingRegistry() {
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 250)
-    return () => { window.clearTimeout(timer); loadController.current?.abort() }
+    return () => {
+      window.clearTimeout(timer)
+      loadController.current?.abort()
+    }
   }, [load])
 
   React.useEffect(() => {
@@ -510,7 +513,22 @@ export function BookingRegistry() {
       label: "Все пассажиры",
       value: (booking) => {
         const people = bookingPassengers(booking.customData)
-        return people.length ? <ul className="min-w-40 space-y-2 text-sm">{people.map((person, index) => <li key={index}><p>{person.firstName} {person.lastName}</p><p className="text-xs text-muted-foreground">{person.birthDate.split("-").reverse().join(".")}</p></li>)}</ul> : "—"
+        return people.length ? (
+          <ul className="min-w-40 space-y-2 text-sm">
+            {people.map((person, index) => (
+              <li key={index}>
+                <p>
+                  {person.firstName} {person.lastName}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {person.birthDate.split("-").reverse().join(".")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          "—"
+        )
       },
     },
     {
@@ -607,7 +625,11 @@ export function BookingRegistry() {
     {
       id: "paymentMethod",
       label: "Способ оплаты",
-      value: (booking) => booking.customData?.payment_method === "cash_on_boarding" || booking.status === "cash_on_boarding" ? "Наличными при посадке" : booking.paymentMethod ?? "—",
+      value: (booking) =>
+        booking.customData?.payment_method === "cash_on_boarding" ||
+        booking.status === "cash_on_boarding"
+          ? "Наличными при посадке"
+          : (booking.paymentMethod ?? "—"),
       defaultVisible: false,
     },
     {
@@ -695,42 +717,23 @@ export function BookingRegistry() {
               {notice}
             </div>
           ) : null}
-          <section className="surface-card p-4">
-            <div className="grid gap-3 lg:grid-cols-[11rem_11rem]">
-              <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
-                Статус
-                <FieldSelect
-                  onValueChange={(value) =>
-                    setStatus(value as "" | BookingStatus)
-                  }
-                  options={[
-                    { value: "", label: "Все статусы" },
-                    ...(Object.keys(statusLabels) as BookingStatus[]).map(
-                      (item) => ({ value: item, label: statusLabels[item] })
-                    ),
-                  ]}
-                  value={status}
-                />
-              </label>
-              <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
-                Дата рейса
-                <div className="relative">
-                  <HugeiconsIcon
-                    className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-                    icon={Calendar01Icon}
-                    size={16}
-                  />
-                  <Input
-                    className="h-11 w-full pr-3 pl-10"
-                    onChange={(event) => setDate(event.target.value)}
-                    type="date"
-                    value={date}
-                  />
-                </div>
-              </label>
-            </div>
-          </section>
           <EntityDataView
+            collection="bookings"
+            filterValues={{ status, date }}
+            onFiltersChange={(values) => {
+              setStatus((values.status ?? "") as "" | BookingStatus)
+              setDate(values.date ?? "")
+            }}
+            filters={[
+              {
+                id: "status",
+                label: "Статус",
+                options: (Object.keys(statusLabels) as BookingStatus[]).map(
+                  (value) => ({ value, label: statusLabels[value] })
+                ),
+              },
+              { id: "date", label: "Дата рейса", type: "date" },
+            ]}
             actions={actions}
             bulkActions={
               <Button
@@ -760,7 +763,7 @@ export function BookingRegistry() {
             )}
             loading={loading}
             loadingText="Загружаем бронирования…"
-            modes={["table", "kanban", "calendar", "gallery"]}
+            modes={["table", "list", "kanban", "calendar", "gallery"]}
             onSelectedChange={setSelected}
             renderCard={(booking) => (
               <div className="space-y-3">

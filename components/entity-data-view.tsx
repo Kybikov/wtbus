@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/context-menu"
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -35,10 +34,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { EntityViewToolbar } from "@/components/entity-view-toolbar"
+import {
+  normalizeViewConfig,
+  type EntityCollection,
+  type EntityFilter,
+  type EntityViewConfig,
+  type EntityViewMode,
+} from "@/lib/entity-views"
 import { cn } from "@/lib/utils"
 
-export type EntityViewMode = "table" | "kanban" | "calendar" | "gallery"
+export type { EntityViewMode } from "@/lib/entity-views"
 
 export type EntityColumn<T> = {
   id: string
@@ -57,6 +63,10 @@ export type EntityAction<T> = {
 }
 
 type Props<T> = {
+  collection: EntityCollection
+  filters?: EntityFilter<T>[]
+  filterValues?: Record<string, string>
+  onFiltersChange?: (filters: Record<string, string>) => void
   items: T[]
   getId: (item: T) => string
   getLabel: (item: T) => string
@@ -82,13 +92,6 @@ type Props<T> = {
   bulkActions?: React.ReactNode
   className?: string
   isSelectable?: (item: T) => boolean
-}
-
-const modeLabels: Record<EntityViewMode, string> = {
-  table: "Таблица",
-  kanban: "Канбан",
-  calendar: "Календарь",
-  gallery: "Галерея",
 }
 
 function EntityMenu<T>({
@@ -122,7 +125,11 @@ function EntityMenu<T>({
 }
 
 export function EntityDataView<T>({
-  items,
+  collection,
+  filters = [],
+  filterValues,
+  onFiltersChange,
+  items: sourceItems,
   getId,
   getLabel,
   columns,
@@ -156,6 +163,47 @@ export function EntityDataView<T>({
           .map((column) => column.id)
       )
   )
+  const [localFilters, setLocalFilters] = React.useState<
+    Record<string, string>
+  >({})
+  const values = filterValues ?? localFilters
+  const items = sourceItems.filter((item) =>
+    filters.every(
+      (filter) =>
+        !values[filter.id] ||
+        !filter.matches ||
+        filter.matches(item, values[filter.id])
+    )
+  )
+  const defaultColumns = columns
+    .filter((column) => column.defaultVisible !== false)
+    .map((column) => column.id)
+  const defaults: EntityViewConfig = {
+    mode: modes.includes(defaultMode) ? defaultMode : modes[0],
+    columns: defaultColumns,
+    filters: {},
+  }
+  const config: EntityViewConfig = {
+    mode,
+    columns: columns
+      .filter((column) => visible.has(column.id))
+      .map((column) => column.id),
+    filters: values,
+  }
+  function applyConfig(next: EntityViewConfig) {
+    const safe = normalizeViewConfig(
+      next,
+      modes,
+      columns.map((column) => column.id),
+      defaultColumns,
+      filters.map((filter) => filter.id)
+    )
+    setMode(safe.mode)
+    setVisible(new Set(safe.columns))
+    if (onFiltersChange) onFiltersChange(safe.filters)
+    else setLocalFilters(safe.filters)
+    onSelectedChange(new Set())
+  }
   const visibleColumns = columns.filter((column) => visible.has(column.id))
   const selectableItems = items.filter(isSelectable)
   const allSelected =
@@ -186,71 +234,35 @@ export function EntityDataView<T>({
 
   return (
     <section className={cn("space-y-3", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-h-8 items-center gap-2">
-          {selected.size ? (
-            <>
-              <span className="text-sm font-semibold tabular-nums">
-                Выбрано: {selected.size}
-              </span>
-              {bulkActions}
-              <Button
-                onClick={() => onSelectedChange(new Set())}
-                size="sm"
-                variant="ghost"
-              >
-                Снять выбор
-              </Button>
-            </>
-          ) : (
-            <span className="text-sm text-muted-foreground">
-              {items.length} записей
+      <EntityViewToolbar
+        key={collection}
+        ready={!loading}
+        collection={collection}
+        config={config}
+        defaults={defaults}
+        onChange={applyConfig}
+        modes={modes}
+        columns={columns}
+        filters={filters}
+      />
+      <div className="flex min-h-6 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {selected.size ? (
+          <>
+            <span className="font-semibold text-foreground">
+              Выбрано: {selected.size}
             </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button size="sm" variant="outline" />}
+            {bulkActions}
+            <Button
+              onClick={() => onSelectedChange(new Set())}
+              size="sm"
+              variant="ghost"
             >
-              Колонки
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Показывать в таблице</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {columns.map((column) => (
-                  <DropdownMenuCheckboxItem
-                    checked={visible.has(column.id)}
-                    key={column.id}
-                    onCheckedChange={(checked) => {
-                      const next = new Set(visible)
-                      if (checked) next.add(column.id)
-                      else if (next.size > 1) next.delete(column.id)
-                      setVisible(next)
-                    }}
-                  >
-                    {column.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {modes.length > 1 ? (
-            <Tabs
-              onValueChange={(value) => setMode(value as EntityViewMode)}
-              value={mode}
-            >
-              <TabsList>
-                {modes.map((item) => (
-                  <TabsTrigger key={item} value={item}>
-                    {modeLabels[item]}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          ) : null}
-        </div>
+              Снять выбор
+            </Button>
+          </>
+        ) : (
+          <span>{items.length} записей</span>
+        )}
       </div>
 
       <FadeContent duration={240} initialOpacity={0.5} key={mode}>
@@ -368,6 +380,60 @@ export function EntityDataView<T>({
               </TableBody>
             </Table>
           </div>
+        ) : mode === "list" ? (
+          <div className="surface-card divide-y">
+            {items.map((item) => (
+              <ContextMenu key={getId(item)}>
+                <ContextMenuTrigger
+                  render={<article className="flex items-start gap-4 p-4" />}
+                >
+                  <Checkbox
+                    aria-label={`Выбрать ${getLabel(item)}`}
+                    checked={selected.has(getId(item))}
+                    disabled={!isSelectable(item)}
+                    onCheckedChange={(checked) => toggleOne(item, checked)}
+                  />
+                  <div className="min-w-0 flex-1">{card(item)}</div>
+                  {actions?.length ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Действия: ${getLabel(item)}`}
+                          />
+                        }
+                      >
+                        •••
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuGroup>
+                          {actions.map((action) => (
+                            <DropdownMenuItem
+                              key={action.label}
+                              disabled={action.disabled?.(item)}
+                              variant={
+                                action.destructive ? "destructive" : "default"
+                              }
+                              onClick={() => action.onSelect(item)}
+                            >
+                              {action.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </ContextMenuTrigger>
+                <EntityMenu
+                  actions={actions}
+                  item={item}
+                  label={getLabel(item)}
+                />
+              </ContextMenu>
+            ))}
+          </div>
         ) : mode === "kanban" ? (
           <ReactBitsKanban
             canMove={canMoveInKanban}
@@ -388,7 +454,9 @@ export function EntityDataView<T>({
             onMove={onKanbanGroupChange}
             renderCard={(item) => (
               <ContextMenu>
-                <ContextMenuTrigger render={<div />}>{card(item)}</ContextMenuTrigger>
+                <ContextMenuTrigger render={<div />}>
+                  {card(item)}
+                </ContextMenuTrigger>
                 <EntityMenu
                   actions={actions}
                   item={item}

@@ -245,9 +245,21 @@ export function CustomerDirectory() {
       const [response, fieldsResponse] = await Promise.all([
         sessionFetch(
           `/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`,
-          { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }
+          {
+            cache: "no-store",
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(10_000),
+            ]),
+          }
         ),
-        sessionFetch("/api/custom-fields", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }),
+        sessionFetch("/api/custom-fields", {
+          cache: "no-store",
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(10_000),
+          ]),
+        }),
       ])
       const [payload, fieldsPayload]: [unknown, unknown] = await Promise.all([
         response.json(),
@@ -280,7 +292,10 @@ export function CustomerDirectory() {
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
-    return () => { window.clearTimeout(timer); loadController.current?.abort() }
+    return () => {
+      window.clearTimeout(timer)
+      loadController.current?.abort()
+    }
   }, [load])
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -517,7 +532,7 @@ export function CustomerDirectory() {
 
   return (
     <>
-    <AppShell
+      <AppShell
         onRefresh={load}
         refreshing={loading}
         localSearch={{
@@ -602,6 +617,29 @@ export function CustomerDirectory() {
             </div>
           ) : null}
           <EntityDataView
+            collection="customers"
+            filters={[
+              {
+                id: "telegram",
+                label: "Telegram",
+                options: [
+                  { value: "linked", label: "Привязан" },
+                  { value: "unlinked", label: "Не привязан" },
+                ],
+                matches: (customer, value) =>
+                  Boolean(customer.telegramId) === (value === "linked"),
+              },
+              {
+                id: "trips",
+                label: "Поездки",
+                options: [
+                  { value: "with", label: "Есть поездки" },
+                  { value: "without", label: "Без поездок" },
+                ],
+                matches: (customer, value) =>
+                  customer.tripCount > 0 === (value === "with"),
+              },
+            ]}
             actions={[
               { label: "Редактировать", onSelect: openEditor },
               {
@@ -618,7 +656,7 @@ export function CustomerDirectory() {
             items={customers}
             loading={loading}
             loadingText="Загружаем клиентов…"
-            modes={["table", "gallery"]}
+            modes={["table", "list", "gallery"]}
             onSelectedChange={setSelected}
             renderCard={(customer) => (
               <div className="space-y-3">

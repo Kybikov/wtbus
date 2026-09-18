@@ -143,6 +143,9 @@ func (app *application) routes() http.Handler {
 	staff := app.requireRoles("owner", "admin", "dispatcher", "driver")
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
+	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
+		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-views", operations(app.entityViews))
+	}
 	finance := app.requireRoles("owner", "admin")
 	drivers := app.requireRoles("driver")
 	tripOperators := app.requireRoles("owner", "admin", "dispatcher", "driver")

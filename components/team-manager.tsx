@@ -182,7 +182,8 @@ export function TeamManager() {
       Boolean(
         me &&
         !member.isSystem &&
-        (me.role === "developer" || (me.role === "owner" && member.role !== "developer") ||
+        (me.role === "developer" ||
+          (me.role === "owner" && member.role !== "developer") ||
           (me.role === "admin" &&
             (member.role === "dispatcher" || member.role === "driver")))
       ),
@@ -195,7 +196,8 @@ export function TeamManager() {
         me &&
         !member.isSystem &&
         member.membershipId !== me.membershipId &&
-        (me.role === "developer" || (me.role === "owner" && member.role !== "developer") ||
+        (me.role === "developer" ||
+          (me.role === "owner" && member.role !== "developer") ||
           (me.role === "admin" &&
             member.role !== "developer" &&
             (!member.isActive ||
@@ -315,9 +317,7 @@ export function TeamManager() {
         member.isSystem
           ? "системный автомат автоматизация"
           : roleLabels[member.role],
-      ].some(
-        (value) => value.toLocaleLowerCase("ru-RU").includes(normalized)
-      )
+      ].some((value) => value.toLocaleLowerCase("ru-RU").includes(normalized))
     )
   }, [members, query])
 
@@ -500,6 +500,32 @@ export function TeamManager() {
           </div>
         ) : null}
         <EntityDataView
+          collection="team"
+          filters={[
+            {
+              id: "status",
+              label: "Статус",
+              options: [
+                { value: "active", label: "Активен" },
+                { value: "inactive", label: "Отключён" },
+                { value: "system", label: "Системный" },
+              ],
+              matches: (member, value) =>
+                value === "system"
+                  ? Boolean(member.isSystem)
+                  : !member.isSystem &&
+                    member.isActive === (value === "active"),
+            },
+            {
+              id: "role",
+              label: "Роль",
+              options: allRoles.map((role) => ({
+                value: role,
+                label: roleLabels[role],
+              })),
+              matches: (member, value) => member.role === value,
+            },
+          ]}
           actions={actions}
           bulkActions={
             <>
@@ -534,7 +560,7 @@ export function TeamManager() {
             { id: "automation", label: "Автоматизация" },
           ]}
           loading={loading}
-          modes={["table", "kanban", "gallery"]}
+          modes={["table", "list", "kanban", "gallery"]}
           canMoveInKanban={(member) =>
             !member.isSystem &&
             member.membershipId !== me?.membershipId &&
@@ -564,9 +590,7 @@ export function TeamManager() {
                 </div>
                 <Badge
                   variant={
-                    member.isSystem || member.isActive
-                      ? "default"
-                      : "secondary"
+                    member.isSystem || member.isActive ? "default" : "secondary"
                   }
                 >
                   {member.isSystem
