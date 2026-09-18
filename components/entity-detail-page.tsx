@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Copy, ArrowUpRight, List } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import EntityDetailContent from "@/components/app-dialog-6"
+import EntityActivityTimeline from "@/components/billing-8"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -256,9 +257,14 @@ export function EntityDetailPage({
         </div>
       ) : null}
       {loading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-72 w-full" />
+        <div
+          className="grid gap-3 lg:grid-cols-2"
+          aria-label="Загрузка деталей"
+          aria-busy="true"
+        >
+          <Skeleton className="h-72 w-full lg:col-span-2" />
+          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-40 w-full" />
         </div>
       ) : detail ? (
         <EntityDetailContent
@@ -339,28 +345,10 @@ export function EntityDetailPage({
             </div>
           }
           activity={
-            <ol className="space-y-4">
-              {detail.activity.length ? (
-                detail.activity.map((event, index) => (
-                  <li key={index} className="border-l-2 border-border pl-4">
-                    <p className="text-sm font-medium">
-                      {event.action === "public_booking_created"
-                        ? "Бронирование создано на сайте"
-                        : event.action.replaceAll("_", " ")}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {event.actor} ·{" "}
-                      {event.kind === "system" ? "Автоматизация · " : ""}
-                      {formatEntityDate(event.createdAt, detail.timezone)}
-                    </p>
-                  </li>
-                ))
-              ) : (
-                <li className="text-sm text-muted-foreground">
-                  Действий пока не зарегистрировано.
-                </li>
-              )}
-            </ol>
+            <EntityActivityTimeline
+              events={detail.activity}
+              timezone={detail.timezone}
+            />
           }
         />
       ) : null}
