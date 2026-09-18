@@ -48,3 +48,25 @@ export async function GET() {
     )
   }
 }
+
+export async function PATCH(request: Request) {
+  if (!request.headers.get("content-type")?.includes("application/json")) {
+    return NextResponse.json({ error: "Ожидается JSON." }, { status: 415 })
+  }
+  let body: unknown
+  try { body = await request.json() } catch {
+    return NextResponse.json({ error: "Некорректные данные профиля." }, { status: 400 })
+  }
+  try {
+    const response = await apiFetch(`${apiBaseURL}/api/v1/auth/me`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    })
+    const payload: unknown = await response.json().catch(() => ({ error: "Не удалось сохранить профиль." }))
+    return NextResponse.json(payload, { status: response.status, headers: { "Cache-Control": "no-store" } })
+  } catch {
+    return NextResponse.json({ error: "Сервис профиля временно недоступен." }, { status: 503 })
+  }
+}

@@ -322,6 +322,8 @@ export function FleetOperations() {
 
   return (
     <AppShell
+      onRefresh={() => load(true)}
+      refreshing={loading || refreshing}
       pageActions={
         <div className="flex gap-2">
           {canManage ? (
@@ -330,20 +332,13 @@ export function FleetOperations() {
               Добавить автомобиль
             </Button>
           ) : null}
-          <Button
-            disabled={refreshing || saving}
-            onClick={() => void load(true)}
-            variant="outline"
-          >
-            {refreshing ? "Обновляем…" : "Обновить"}
-          </Button>
         </div>
       }
       pageDescription="Последняя GPS-точка каждого автомобиля · обновление раз в 30 секунд"
       pageTitle="Транспорт и геолокация"
       utilities={<ThemeCustomizer />}
     >
-      <div className="mx-auto max-w-[1600px] space-y-5">
+      <div className="w-full min-w-0 space-y-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-border bg-background/35 p-4">
             <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
@@ -488,8 +483,8 @@ export function FleetOperations() {
           </form>
         ) : null}
 
-        <div className="overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25">
-          <div className="hidden grid-cols-[minmax(13rem,1.35fr)_minmax(12rem,1.1fr)_minmax(12rem,1fr)_minmax(10rem,.75fr)] gap-4 border-b border-border px-5 py-3 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase md:grid">
+        <div className="@container overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25">
+          <div className="hidden grid-cols-[minmax(13rem,1.35fr)_minmax(12rem,1.1fr)_minmax(12rem,1fr)_minmax(12rem,.9fr)] gap-4 border-b border-border px-5 py-3 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase @4xl:grid">
             <span>Автомобиль</span>
             <span>Текущий рейс</span>
             <span>Последняя точка</span>
@@ -507,7 +502,7 @@ export function FleetOperations() {
             fleet.map((vehicle) => (
               <article
                 className={cn(
-                  "grid gap-4 border-b border-border px-4 py-4 last:border-b-0 md:grid-cols-[minmax(13rem,1.35fr)_minmax(12rem,1.1fr)_minmax(12rem,1fr)_minmax(12rem,.9fr)] md:items-center md:px-5",
+                  "grid gap-4 border-b border-border px-4 py-4 last:border-b-0 @4xl:grid-cols-[minmax(13rem,1.35fr)_minmax(12rem,1.1fr)_minmax(12rem,1fr)_minmax(12rem,.9fr)] @4xl:items-center @4xl:px-5",
                   !vehicle.isActive && "opacity-65"
                 )}
                 key={vehicle.id}

@@ -177,6 +177,8 @@ export function AvailabilityManager() {
 
   return (
     <AppShell
+      onRefresh={load}
+      refreshing={loading}
       pageActions={
         <Button
           onClick={() => {
@@ -192,7 +194,7 @@ export function AvailabilityManager() {
       pageTitle="Недоступные даты"
       utilities={<ThemeCustomizer />}
     >
-      <section className="mx-auto max-w-[1200px] space-y-5">
+      <section className="w-full min-w-0 space-y-5">
         {error ? (
           <div
             className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"

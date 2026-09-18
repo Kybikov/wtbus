@@ -461,6 +461,8 @@ export function TeamManager() {
 
   return (
     <AppShell
+      onRefresh={load}
+      refreshing={loading}
       localSearch={{
         value: query,
         onChange: setQuery,

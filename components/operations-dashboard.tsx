@@ -669,6 +669,8 @@ export function OperationsDashboard() {
   const [fleet, setFleet] = React.useState<FleetVehicle[]>([])
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
+  const [refreshVersion, setRefreshVersion] = React.useState(0)
+  const [refreshing, setRefreshing] = React.useState(false)
   const [nowMillis, setNowMillis] = React.useState(0)
 
   React.useEffect(() => {
@@ -684,6 +686,7 @@ export function OperationsDashboard() {
     let disposed = false
 
     async function loadDashboard() {
+      if (!disposed) setRefreshing(true)
       try {
         const [response, fleetResponse] = await Promise.all([
           sessionFetch("/api/dashboard", { cache: "no-store" }),
@@ -717,7 +720,10 @@ export function OperationsDashboard() {
             : "Не удалось загрузить оперативную сводку."
         )
       } finally {
-        if (!disposed) setIsLoading(false)
+        if (!disposed) {
+          setIsLoading(false)
+          setRefreshing(false)
+        }
       }
     }
 
@@ -728,7 +734,7 @@ export function OperationsDashboard() {
       disposed = true
       window.clearInterval(timer)
     }
-  }, [])
+  }, [refreshVersion])
 
   const upcomingTrip =
     nowMillis > 0
@@ -739,6 +745,8 @@ export function OperationsDashboard() {
 
   return (
     <AppShell
+      onRefresh={() => setRefreshVersion((version) => version + 1)}
+      refreshing={isLoading || refreshing}
       pageActions={
         <Link className={buttonVariants({ size: "lg" })} href="/trips">
           <HugeiconsIcon icon={Add01Icon} size={16} />

@@ -7,7 +7,6 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Add01Icon,
   Calendar01Icon,
-  RefreshIcon,
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
@@ -645,6 +644,8 @@ export function BookingRegistry() {
   return (
     <>
       <AppShell
+        onRefresh={load}
+        refreshing={loading}
         localSearch={{
           value: query,
           onChange: setQuery,
@@ -656,21 +657,13 @@ export function BookingRegistry() {
               <HugeiconsIcon icon={Add01Icon} size={17} />
               Новая бронь
             </Button>
-            <Button
-              disabled={loading}
-              onClick={() => void load()}
-              variant="outline"
-            >
-              <HugeiconsIcon icon={RefreshIcon} size={17} />
-              Обновить
-            </Button>
           </div>
         }
         pageDescription="Пассажиры из Telegram и ручные брони"
         pageTitle="Журнал бронирований"
         utilities={<ThemeCustomizer />}
       >
-        <div className="mx-auto max-w-[1600px] space-y-5">
+        <div className="w-full min-w-0 space-y-5">
           {error ? (
             <div
               className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"

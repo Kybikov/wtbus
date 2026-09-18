@@ -509,7 +509,9 @@ export function CustomerDirectory() {
 
   return (
     <>
-      <AppShell
+    <AppShell
+        onRefresh={load}
+        refreshing={loading}
         localSearch={{
           value: query,
           onChange: setQuery,
@@ -565,7 +567,7 @@ export function CustomerDirectory() {
         pageTitle="Клиенты"
         utilities={<ThemeCustomizer />}
       >
-        <div className="mx-auto max-w-[1600px] space-y-5">
+        <div className="w-full min-w-0 space-y-5">
           {error ? (
             <div
               className="rounded-xl border border-destructive/35 bg-destructive/10 p-3 text-sm"

@@ -66,6 +66,7 @@ function applyBrandColor(color: string) {
 export function CompanySettings() {
   const [branding, setBranding] = React.useState<Branding>(defaultBranding)
   const [loading, setLoading] = React.useState(true)
+  const [refreshVersion, setRefreshVersion] = React.useState(0)
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
@@ -77,6 +78,8 @@ export function CompanySettings() {
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       void (async () => {
+        setLoading(true)
+        setError(null)
         try {
           const response = await sessionFetch("/api/branding", {
             signal: controller.signal,
@@ -102,7 +105,7 @@ export function CompanySettings() {
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [])
+  }, [refreshVersion])
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -151,11 +154,13 @@ export function CompanySettings() {
 
   return (
     <AppShell
+      onRefresh={() => setRefreshVersion((version) => version + 1)}
+      refreshing={loading}
       pageDescription="Бренд, реквизиты и подписка компании"
       pageTitle="Настройки компании"
       utilities={<ThemeCustomizer />}
     >
-      <div className="mx-auto max-w-3xl space-y-5">
+      <div className="w-full min-w-0 space-y-5">
         {error ? (
           <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
             {error}
@@ -280,8 +285,8 @@ export function CompanySettings() {
             </Button>
           </div>
         </form>
-        <PaymentSettings disabled={loading || isSubscriptionLocked} />
-        <CustomFieldManager disabled={loading || isSubscriptionLocked} />
+        <PaymentSettings key={`payment-${refreshVersion}`} disabled={loading || isSubscriptionLocked} />
+        <CustomFieldManager key={`fields-${refreshVersion}`} disabled={loading || isSubscriptionLocked} />
       </div>
     </AppShell>
   )

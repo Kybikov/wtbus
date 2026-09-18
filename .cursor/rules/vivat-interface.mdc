@@ -10,6 +10,9 @@ alwaysApply: false
 - React Bits Pro registries are configured in `components.json`. Inspect current `@reactbits-pro` App UI blocks before building page-level UI, install the closest block through the shadcn CLI, then adapt its local source to Vivat's tokens and domain behavior. Use motion only when it explains state or hierarchy and always honor reduced motion.
 - Put the page title and description in `AppShell`. Never repeat either in page content.
 - Show one search control in the top bar. Page-local search replaces the visible global-search control; keep cross-entity search available in the `Command` palette with `Ctrl/Cmd+K`.
+- Keep desktop search controls at the same 11rem width and use the same field styling. Collection and dashboard content fills the available workspace width; never center it inside a page-level max-width container.
+- Pass each page's data reload handler and loading state into `AppShell`. Its shared refresh icon always precedes notifications, indicates loading, and is separated from page-specific actions by a vertical separator.
+- Open the personal account at `/profile` from the avatar menu. Profile changes are scoped to the authenticated user; password changes require the current password and revoke other sessions.
 - Use the shared entity view for database-backed collections. Table is the default; enable gallery, kanban or calendar only when the data supports that view.
 - Tables expose useful columns by default and let the user reveal the remaining API/database fields. Keep numeric and time columns tabular.
 - Collection rows support left-side checkbox selection, bulk actions and a right-click context menu with the same core actions available through visible controls.

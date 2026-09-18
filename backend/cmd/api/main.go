@@ -135,6 +135,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", app.login)
 	mux.HandleFunc("POST /api/v1/auth/select-company", app.selectCompany)
 	mux.HandleFunc("GET /api/v1/auth/me", app.me)
+	mux.HandleFunc("PATCH /api/v1/auth/me", app.updateProfile)
 	mux.HandleFunc("POST /api/v1/auth/logout", app.logout)
 	staff := app.requireRoles("owner", "admin", "dispatcher", "driver")
 	operations := app.requireRoles("owner", "admin", "dispatcher")

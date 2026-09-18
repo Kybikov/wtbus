@@ -518,7 +518,7 @@ export function TripsPlanner() {
 
     void loadResources()
     return () => controller.abort()
-  }, [])
+  }, [requestVersion])
 
   React.useEffect(() => {
     if (!isCreateOpen) return
@@ -806,6 +806,8 @@ export function TripsPlanner() {
   return (
     <>
       <AppShell
+        onRefresh={() => setRequestVersion((version) => version + 1)}
+        refreshing={isLoading || isResourcesLoading}
         pageActions={
           <Button onClick={openCreateTrip}>
             <HugeiconsIcon icon={Add01Icon} size={18} />
@@ -816,7 +818,7 @@ export function TripsPlanner() {
         pageTitle="Планирование рейсов"
         utilities={<ThemeCustomizer />}
       >
-        <div className="mx-auto max-w-[1800px] space-y-5">
+        <div className="w-full min-w-0 space-y-5">
           {notice ? (
             <div className="flex items-center justify-between rounded-2xl border border-primary/35 bg-primary/10 px-4 py-3 text-sm">
               <span>{notice}</span>

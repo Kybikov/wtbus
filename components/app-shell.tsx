@@ -13,6 +13,7 @@ import {
   Car01Icon,
   DashboardSquare01Icon,
   Notification01Icon,
+  RefreshIcon,
   Route01Icon,
   Search01Icon,
   Ticket01Icon,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
   SidebarContent,
@@ -78,6 +80,8 @@ type AppShellProps = {
   }
   utilities?: React.ReactNode
   pageActions?: React.ReactNode
+  onRefresh?: () => void | Promise<void>
+  refreshing?: boolean
 }
 type ShellBrand = {
   logoUrl?: string
@@ -336,9 +340,23 @@ export function AppShell({
   localSearch,
   utilities,
   pageActions,
+  onRefresh,
+  refreshing = false,
 }: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const [manualRefreshing, setManualRefreshing] = React.useState(false)
+  const [refreshPending, startRefresh] = React.useTransition()
+  const isRefreshing = refreshing || manualRefreshing || refreshPending
+  async function refreshPage() {
+    if (isRefreshing) return
+    if (!onRefresh) {
+      startRefresh(() => router.refresh())
+      return
+    }
+    setManualRefreshing(true)
+    try { await onRefresh() } finally { setManualRefreshing(false) }
+  }
   const {
     preferences,
     override: sidebarOverride,
@@ -356,6 +374,19 @@ export function AppShell({
     [preferences.sidebarMode, setSidebarOverride]
   )
   const [brand, setBrand] = React.useState(defaultShellBrand)
+  const [userName, setUserName] = React.useState("")
+  const profileVersion = React.useRef(0)
+  React.useEffect(() => {
+    function updated(event: Event) {
+      const detail = (event as CustomEvent<{ displayName?: string }>).detail
+      if (typeof detail?.displayName !== "string") return
+      profileVersion.current += 1
+      setUserName(detail.displayName)
+      setBrand((current) => ({ ...current, userInitials: initials(detail.displayName!) }))
+    }
+    window.addEventListener("vivat-profile-change", updated)
+    return () => window.removeEventListener("vivat-profile-change", updated)
+  }, [])
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =
     React.useState(false)
@@ -375,6 +406,7 @@ export function AppShell({
 
   React.useEffect(() => {
     const controller = new AbortController()
+    const initialProfileVersion = profileVersion.current
     void Promise.all([
       sessionFetch("/api/branding", { signal: controller.signal }),
       sessionFetch("/api/auth/me", { signal: controller.signal }),
@@ -387,6 +419,7 @@ export function AppShell({
           .json()
           .catch(() => null)
         if (controller.signal.aborted) return
+        if (initialProfileVersion === profileVersion.current && identityResponse.ok && typeof identity === "object" && identity !== null && "displayName" in identity && typeof identity.displayName === "string") setUserName(identity.displayName)
         setBrand((current) => {
           const tenantSlug =
             identityResponse.ok &&
@@ -405,6 +438,7 @@ export function AppShell({
               ? tenantNameFromSlug(identity.tenantSlug)
               : current.tenantName
           const userInitials =
+            initialProfileVersion === profileVersion.current &&
             identityResponse.ok &&
             typeof identity === "object" &&
             identity !== null &&
@@ -588,19 +622,19 @@ export function AppShell({
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
         <header className="app-topbar relative flex h-16 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:px-5">
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-3">
             <SidebarTrigger
               aria-label="Открыть навигацию"
               className="inline-flex size-9 rounded-lg"
             />
-            <div className="hidden min-w-0 border-r border-border pr-3 md:block">
+            <div className="hidden min-w-0 max-w-[28rem] border-r border-border pr-3 md:block">
               <p className="truncate text-sm font-semibold">{pageTitle}</p>
               <p className="truncate text-xs text-muted-foreground">
                 {pageDescription ?? pageDescriptions[pageTitle] ?? pageTitle}
               </p>
             </div>
             {localSearch ? (
-              <label className="hidden h-9 w-44 min-w-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 md:flex">
+              <label className="hidden h-9 w-44 min-w-0 shrink-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 md:flex">
                 <HugeiconsIcon
                   className="shrink-0 text-muted-foreground"
                   icon={Search01Icon}
@@ -623,18 +657,18 @@ export function AppShell({
               <Button
                 aria-haspopup="dialog"
                 aria-label="Глобальный поиск"
-                className="hidden h-9 justify-start rounded-xl text-muted-foreground md:inline-flex"
+                className="hidden h-9 w-44 shrink-0 justify-start gap-2 rounded-xl border-input bg-input/40 px-3 text-muted-foreground md:inline-flex"
                 onClick={() => setSearchOpen(true)}
                 variant="outline"
               >
                 <HugeiconsIcon icon={Search01Icon} size={16} />
-                <span className="hidden xl:inline">Глобальный поиск</span>
+                <span className="min-w-0 flex-1 truncate text-left">Поиск</span>
                 <kbd className="rounded-md border border-border px-1.5 py-0.5 text-xs">
                   ⌘K
                 </kbd>
               </Button>
             ) : null}
-            <p className="max-w-24 truncate text-sm font-semibold md:hidden">
+            <p className="min-w-0 flex-1 truncate text-sm font-semibold md:hidden">
               {pageTitle}
             </p>
             {localSearch ? (
@@ -668,12 +702,19 @@ export function AppShell({
               </Tooltip>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
             {pageActions ? (
-              <div className="flex items-center gap-2 max-sm:[&_a]:size-9 max-sm:[&_a]:overflow-hidden max-sm:[&_a]:px-0 max-sm:[&_a]:text-[0px] max-sm:[&_button]:size-9 max-sm:[&_button]:overflow-hidden max-sm:[&_button]:px-0 max-sm:[&_button]:text-[0px] max-sm:[&_svg]:size-4">
+              <div className="flex items-center gap-2 max-lg:[&_a]:size-9 max-lg:[&_a]:overflow-hidden max-lg:[&_a]:px-0 max-lg:[&_a]:text-[0px] max-lg:[&_button]:size-9 max-lg:[&_button]:overflow-hidden max-lg:[&_button]:px-0 max-lg:[&_button]:text-[0px] max-lg:[&_svg]:size-4">
                 {pageActions}
               </div>
             ) : null}
+            {pageActions ? <Separator orientation="vertical" className="mx-1 h-6 self-center" /> : null}
+            <Tooltip>
+              <TooltipTrigger render={<Button aria-label="Обновить данные" aria-busy={isRefreshing} disabled={isRefreshing} onClick={() => void refreshPage()} className="size-9 rounded-lg" size="icon-lg" variant="ghost" />}>
+                <HugeiconsIcon icon={RefreshIcon} strokeWidth={1.8} className={cn(isRefreshing && "motion-safe:animate-spin")} />
+              </TooltipTrigger>
+              <TooltipContent>{isRefreshing ? "Обновляем данные…" : "Обновить данные"}</TooltipContent>
+            </Tooltip>
             <DropdownMenu
               onOpenChange={(open) => {
                 setNotificationsOpen(open)
@@ -779,13 +820,14 @@ export function AppShell({
               <DropdownMenuContent align="end" className="w-64 p-2">
                 <div className="px-2 py-2">
                   <span className="block text-sm font-semibold text-foreground">
-                    {brand.tenantName}
+                    {userName || brand.tenantName}
                   </span>
                   <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Рабочий профиль
+                    {brand.tenantName}
                   </span>
                 </div>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem render={<Link href="/profile" />}>Личный профиль</DropdownMenuItem>
                 <DropdownMenuItem onClick={openInterfaceSettings}>
                   Интерфейс
                 </DropdownMenuItem>
@@ -826,8 +868,8 @@ export function AppShell({
           ) : null}
         </header>
         {utilities ? <div className="hidden">{utilities}</div> : null}
-        <ScrollArea className="dashboard-content min-h-0 flex-1">
-          <div className="px-2 py-3 sm:px-3 sm:py-4">{children}</div>
+        <ScrollArea className="dashboard-content min-h-0 min-w-0 flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden">
+          <div className="w-full min-w-0 px-2 py-3 sm:px-3 sm:py-4">{children}</div>
         </ScrollArea>
       </SidebarInset>
       <CommandDialog

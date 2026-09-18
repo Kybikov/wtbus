@@ -6,7 +6,6 @@ import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Calendar01Icon,
-  RefreshIcon,
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
@@ -177,26 +176,18 @@ export function IndividualTransferRequests() {
 
   return (
     <AppShell
+      onRefresh={load}
+      refreshing={loading}
       localSearch={{
         value: query,
         onChange: setQuery,
         placeholder: "Пассажир, телефон или маршрут",
       }}
-      pageActions={
-        <Button
-          disabled={loading}
-          onClick={() => void load()}
-          variant="outline"
-        >
-          <HugeiconsIcon icon={RefreshIcon} size={17} />
-          Обновить
-        </Button>
-      }
       pageDescription="Запросы из Telegram на индивидуальный маршрут"
       pageTitle="Индивидуальные заявки"
       utilities={<ThemeCustomizer />}
     >
-      <div className="mx-auto max-w-[1600px] space-y-5">
+      <div className="w-full min-w-0 space-y-5">
         {error ? (
           <div
             className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"

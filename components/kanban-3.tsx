@@ -292,7 +292,7 @@ export default function ReactBitsKanban<T>({
       onPointerUp={endPointerDrag}
       ref={rootRef}
     >
-      <div className="flex min-w-max gap-3 overflow-x-auto pb-2">
+      <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-2">
         {visibleColumns.map((column) => {
           const ids = cardsByColumn.get(column.id) ?? []
           return (

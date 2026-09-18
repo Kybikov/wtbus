@@ -241,11 +241,13 @@ export function FinanceDashboard() {
   )
   return (
     <AppShell
+      onRefresh={load}
+      refreshing={loading}
       pageDescription="Выручка, касса водителей и расходы"
       pageTitle="Деньги в работе"
       utilities={<ThemeCustomizer />}
     >
-      <div className="mx-auto max-w-[1600px] space-y-5">
+      <div className="w-full min-w-0 space-y-5">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-semibold text-muted-foreground">
@@ -268,14 +270,6 @@ export function FinanceDashboard() {
                 value={to}
               />
             </label>
-            <Button
-              disabled={loading}
-              onClick={() => void load()}
-              size="lg"
-              variant="outline"
-            >
-              Обновить
-            </Button>
           </div>
         </div>
         {error ? (

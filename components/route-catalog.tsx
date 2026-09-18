@@ -246,6 +246,8 @@ export function RouteCatalog() {
 
   return (
     <AppShell
+      onRefresh={load}
+      refreshing={loading}
       pageActions={
         <Button onClick={startCreate} size="lg">
           <HugeiconsIcon icon={Add01Icon} size={16} />
@@ -256,7 +258,7 @@ export function RouteCatalog() {
       pageTitle="Каталог маршрутов"
       utilities={<ThemeCustomizer />}
     >
-      <Card className="mx-auto max-w-[1200px] rounded-[calc(var(--radius)*1.35)] border border-border shadow-none">
+      <Card className="w-full min-w-0 rounded-[calc(var(--radius)*1.35)] border border-border shadow-none">
         <CardContent className="space-y-5 px-4 sm:px-6">
           {error ? (
             <div

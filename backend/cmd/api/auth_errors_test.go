@@ -20,6 +20,7 @@ func TestAuthenticationFailures(t *testing.T) {
 	app := &application{db: db}
 	for name, handler := range map[string]http.HandlerFunc{
 		"identity": app.me,
+		"profile": app.updateProfile,
 		"logout":   app.logout,
 		"protected route": app.requireRoles("owner")(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("must not reach the protected handler")
