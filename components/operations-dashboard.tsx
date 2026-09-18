@@ -997,7 +997,7 @@ export function OperationsDashboard() {
                 }
                 return (
                   <div
-                    className="trip-row grid grid-cols-[3rem_minmax(8rem,1fr)_auto] items-center gap-3 px-5 py-4 sm:grid-cols-[4rem_minmax(10rem,1.3fr)_minmax(8rem,1fr)_minmax(7rem,1fr)_auto]"
+                    className="trip-row grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3 px-4 py-4 sm:grid-cols-[4rem_minmax(10rem,1.3fr)_minmax(8rem,1fr)_minmax(7rem,1fr)_auto] sm:px-5"
                     key={trip.id}
                   >
                     <div className="text-sm font-bold tabular-nums">
@@ -1021,7 +1021,7 @@ export function OperationsDashboard() {
                     </p>
                     <span
                       className={cn(
-                        "justify-self-end rounded-full px-2.5 py-1 text-xs font-bold",
+                        "col-start-2 justify-self-start rounded-lg px-2.5 py-1 text-xs font-bold sm:col-start-auto sm:justify-self-end",
                         `status-${meta.tone}`
                       )}
                     >
