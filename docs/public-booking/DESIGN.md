@@ -106,7 +106,7 @@ The ramp is compact and functional: the search heading grows from the recorded h
 
 Header, main, and footer share a 1536px maximum width. Horizontal gutters increase from 1rem to 2rem at 640px and 3rem at 1024px. The public root stays at 16px independently of staff UI scale. Panels use 1.25rem padding, generally growing to 1.5rem or 2rem where the form requires it.
 
-Search fields stack on narrow screens, become two columns at 640px, and form a single rail at 1024px. Results pair a 240px facet rail with flexible inventory at 1024px; below that breakpoint, a disclosed Filters action toggles the facets. Cards retain route, times, departure and overnight arrival dates, duration, availability, price, and choice action while changing from stacked to horizontal at 1280px.
+Search fields stack on narrow screens, become two columns at 640px, and form a single rail at 1024px. Results always pair a 240px facet rail with flexible inventory at 1024px; below that breakpoint, the visible facets sit above inventory in two columns. Reset stays visible even for an empty date. Nearby departures use one list under “Найближчі тури” and share the same filters and sorting. Cards retain route, times, departure and overnight arrival dates, duration, availability, price, and choice action while changing from stacked to horizontal at 1280px.
 
 Checkout pairs flexible form content with a 300px trip summary at 1024px. On smaller screens the summary follows the form with a top divider. Wrapping, shrinkable grid tracks, and breakable route/reference text support the verified 320px viewport without horizontal page scrolling.
 
@@ -132,7 +132,7 @@ Main panels use the inherited React Bits surface radius, bound to the public 1re
 ### Do:
 
 - Do keep route, time, date range, timezone, and payment context readable as text.
-- Do preserve the facet disclosure and stacked checkout summary on small screens.
+- Do preserve visible facets above results and the stacked checkout summary on small screens.
 - Do keep task actions and search fields at their established 44px height.
 - Do respect reduced motion: result entry is motion-safe and progress transitions stop when requested.
 
