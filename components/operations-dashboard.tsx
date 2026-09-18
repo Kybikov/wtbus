@@ -18,6 +18,7 @@ import {
 import { useTheme } from "next-themes"
 
 import { AppShell } from "@/components/app-shell"
+import { useLayoutPreferences } from "@/components/layout-preferences-provider"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import {
@@ -303,6 +304,7 @@ function SegmentedControl<T extends string>({
 
 export function ThemeCustomizer() {
   const { resolvedTheme, setTheme, theme } = useTheme()
+  const { preferences: initialLayout } = useLayoutPreferences()
   const initialPreferences = getRememberedUIPreferences()
   const [open, setOpen] = React.useState(false)
   const [preset, setPreset] = React.useState<ThemePreset>(
@@ -310,20 +312,20 @@ export function ThemeCustomizer() {
   )
   const [companyAccent, setCompanyAccent] = React.useState("#E9B74D")
   const [radius, setRadius] = React.useState<Radius>(
-    initialPreferences?.radius ?? "lg"
+    initialLayout.radius
   )
   const [compact, setCompact] = React.useState(
-    initialPreferences?.density === "compact"
+    initialLayout.density === "compact"
   )
   const [scale, setScale] = React.useState<Scale>(
-    initialPreferences?.scale ?? "md"
+    initialLayout.scale
   )
   const [sidebarVariant, setSidebarVariant] =
     React.useState<SidebarVariant>(
-      initialPreferences?.sidebarVariant ?? "default"
+      initialLayout.sidebarVariant
     )
   const [sidebarMode, setSidebarMode] = React.useState<SidebarMode>(
-    initialPreferences?.sidebarMode ?? "default"
+    initialLayout.sidebarMode
   )
   const [preferencesReady, setPreferencesReady] = React.useState(false)
   const hasLoadedPreferences = React.useRef(false)

@@ -83,6 +83,9 @@ export async function POST(request: NextRequest) {
     }
     const { sessionToken, ...account } = body
     const response = NextResponse.json(account)
+    for (const name of ["vivat_layout", "sidebar_state"]) {
+      response.cookies.set({ name, value: "", path: "/", maxAge: 0 })
+    }
     response.cookies.set({
       name: "vivat_session",
       value: sessionToken,

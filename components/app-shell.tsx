@@ -3,6 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { useLayoutPreferences } from "@/components/layout-preferences-provider"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -102,23 +103,7 @@ type TransferRequestPreview = {
   destination: string
   createdAt: string
 }
-type SidebarMode = "default" | "icon" | "full"
 type SidebarVariant = "default" | "inset" | "floating"
-type SidebarPreferences = {
-  sidebarMode: SidebarMode
-  sidebarVariant: SidebarVariant
-}
-type SidebarOverride = {
-  mode: SidebarMode
-  open: boolean
-}
-
-const defaultSidebarPreferences: SidebarPreferences = {
-  sidebarMode: "default",
-  sidebarVariant: "default",
-}
-let rememberedSidebarPreferences = defaultSidebarPreferences
-let rememberedSidebarOverride: SidebarOverride | null = null
 
 const operationsRoles: MembershipRole[] = ["owner", "admin", "dispatcher"]
 const managementRoles: MembershipRole[] = ["owner", "admin"]
@@ -230,37 +215,6 @@ const initials = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("") || "АК"
-
-function useSidebarPreferences() {
-  const [value, setValue] = React.useState<SidebarPreferences>(
-    rememberedSidebarPreferences
-  )
-  React.useEffect(() => {
-    const sync = () => {
-      const data = document.documentElement.dataset
-      const next: SidebarPreferences = {
-        sidebarMode:
-          data.sidebarMode === "icon" || data.sidebarMode === "full"
-            ? data.sidebarMode
-            : "default",
-        sidebarVariant:
-          data.sidebarVariant === "inset" || data.sidebarVariant === "floating"
-            ? data.sidebarVariant
-            : "default",
-      }
-      rememberedSidebarPreferences = next
-      setValue(next)
-    }
-    sync()
-    const observer = new MutationObserver(sync)
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-sidebar-mode", "data-sidebar-variant"],
-    })
-    return () => observer.disconnect()
-  }, [])
-  return value
-}
 
 function BrandMark({
   brand,
@@ -385,9 +339,11 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const preferences = useSidebarPreferences()
-  const [sidebarOverride, setSidebarOverride] =
-    React.useState<SidebarOverride | null>(rememberedSidebarOverride)
+  const {
+    preferences,
+    override: sidebarOverride,
+    setSidebarOverride,
+  } = useLayoutPreferences()
   const sidebarOpen =
     sidebarOverride?.mode === preferences.sidebarMode
       ? sidebarOverride.open
@@ -395,10 +351,9 @@ export function AppShell({
   const setSidebarOpen = React.useCallback(
     (open: boolean) => {
       const next = { mode: preferences.sidebarMode, open }
-      rememberedSidebarOverride = next
       setSidebarOverride(next)
     },
-    [preferences.sidebarMode]
+    [preferences.sidebarMode, setSidebarOverride]
   )
   const [brand, setBrand] = React.useState(defaultShellBrand)
   const [searchOpen, setSearchOpen] = React.useState(false)

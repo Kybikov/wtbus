@@ -3,10 +3,12 @@ import type { Metadata } from "next"
 
 import "./globals.css"
 import { PWARegistrar } from "@/components/pwa-registrar"
+import { LayoutPreferencesProvider } from "@/components/layout-preferences-provider"
 import { SessionMonitor } from "@/components/session-monitor"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { getInitialLayoutSnapshot } from "@/lib/server-layout-preferences"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
@@ -27,15 +29,21 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const initialLayout = await getInitialLayoutSnapshot()
   return (
     <html
       lang="ru"
       suppressHydrationWarning
+      data-sidebar-mode={initialLayout.preferences.sidebarMode}
+      data-sidebar-variant={initialLayout.preferences.sidebarVariant}
+      data-scale={initialLayout.preferences.scale}
+      data-radius={initialLayout.preferences.radius}
+      data-density={initialLayout.preferences.density}
       className={cn(
         "antialiased",
         fontMono.variable,
@@ -45,11 +53,17 @@ export default function RootLayout({
     >
       <body>
         <ThemeProvider>
-          <TooltipProvider>
-            <PWARegistrar />
-            <SessionMonitor />
-            {children}
-          </TooltipProvider>
+          <LayoutPreferencesProvider
+            initial={initialLayout}
+            key={initialLayout.authenticated ? "authenticated" : "anonymous"}
+            persist={initialLayout.authenticated}
+          >
+            <TooltipProvider>
+              <PWARegistrar />
+              <SessionMonitor />
+              {children}
+            </TooltipProvider>
+          </LayoutPreferencesProvider>
         </ThemeProvider>
       </body>
     </html>

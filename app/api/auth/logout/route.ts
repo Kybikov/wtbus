@@ -17,6 +17,9 @@ export async function POST() {
   } catch {
     // The browser must still drop its cookie when the upstream is unavailable.
   } finally {
+    for (const name of ["vivat_layout", "sidebar_state"]) {
+      response.cookies.set({ name, value: "", path: "/", maxAge: 0 })
+    }
     response.cookies.set({
       name: "vivat_session",
       value: "",
