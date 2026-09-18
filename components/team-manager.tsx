@@ -326,6 +326,7 @@ export function TeamManager() {
     () => [
       {
         id: "name",
+        metric: { kind: "text", getValue: (member) => member.displayName },
         label: "Сотрудник",
         value: (member) => (
           <div className="min-w-48">
@@ -344,6 +345,20 @@ export function TeamManager() {
       },
       {
         id: "status",
+        metric: {
+          kind: "enum",
+          getValue: (member) =>
+            member.isSystem
+              ? "system"
+              : member.isActive
+                ? "active"
+                : "inactive",
+          options: [
+            { value: "active", label: "Активен", tone: "success" },
+            { value: "inactive", label: "Отключён", tone: "neutral" },
+            { value: "system", label: "Системный", tone: "info" },
+          ],
+        },
         label: "Статус",
         value: (member) => (
           <Badge
@@ -361,6 +376,14 @@ export function TeamManager() {
       },
       {
         id: "role",
+        metric: {
+          kind: "enum",
+          getValue: (member) => (member.isSystem ? "automation" : member.role),
+          options: [
+            ...allRoles.map((value) => ({ value, label: roleLabels[value] })),
+            { value: "automation", label: "Автоматизация" },
+          ],
+        },
         label: "Роль",
         value: (member) =>
           member.isSystem ? (
@@ -391,18 +414,24 @@ export function TeamManager() {
       },
       {
         id: "lastSeen",
+        metric: {
+          kind: "date",
+          getValue: (member) => (member.isSystem ? null : member.lastSeenAt),
+        },
         label: "Последний вход",
         value: (member) =>
           member.isSystem ? "Вход запрещён" : humanDate(member.lastSeenAt),
       },
       {
         id: "actionCount",
+        metric: { kind: "number", getValue: (member) => member.actionCount },
         label: "Действий",
         value: (member) => (member.isSystem ? member.actionCount : "—"),
         className: "tabular-nums",
       },
       {
         id: "lastActionAt",
+        metric: { kind: "date", getValue: (member) => member.lastActionAt },
         label: "Последнее действие",
         value: (member) =>
           member.isSystem
@@ -411,24 +440,28 @@ export function TeamManager() {
       },
       {
         id: "createdAt",
+        metric: { kind: "date", getValue: (member) => member.createdAt },
         label: "Добавлен",
         value: (member) => humanDate(member.createdAt),
         defaultVisible: false,
       },
       {
         id: "userId",
+        metric: { kind: "text", getValue: (member) => member.userId },
         label: "ID пользователя",
         value: (member) => member.userId,
         defaultVisible: false,
       },
       {
         id: "membershipId",
+        metric: { kind: "text", getValue: (member) => member.membershipId },
         label: "ID доступа",
         value: (member) => member.membershipId,
         defaultVisible: false,
       },
       {
         id: "driverId",
+        metric: { kind: "text", getValue: (member) => member.driverId },
         label: "ID водителя",
         value: (member) => member.driverId ?? "—",
         defaultVisible: false,
@@ -460,11 +493,9 @@ export function TeamManager() {
     [canDelete, canManage, load, me?.membershipId]
   )
 
-  const humanMembers = members.filter((member) => !member.isSystem)
-  const systemMember = members.find((member) => member.isSystem)
-
   return (
     <AppShell
+      collectionFooter
       onRefresh={load}
       refreshing={loading}
       localSearch={{
@@ -478,7 +509,7 @@ export function TeamManager() {
           Добавить сотрудника
         </Button>
       }
-      pageDescription={`${humanMembers.filter((member) => member.isActive).length} активных из ${humanMembers.length}${systemMember ? " · автомат работает" : ""}`}
+      pageDescription="Сотрудники, роли доступа и системная автоматизация"
       pageTitle="Команда"
       utilities={<ThemeCustomizer />}
     >

@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
+import { EntityFooterContext } from "@/components/entity-footer-context"
 
 import ReactBitsKanban, {
   type ReactBitsKanbanColumn,
@@ -35,6 +37,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { EntityViewToolbar } from "@/components/entity-view-toolbar"
+import { EntityMetricsBar } from "@/components/entity-metrics-bar"
+import {
+  normalizeMetrics,
+  type EntityMetric,
+  type MetricField,
+} from "@/lib/entity-metrics"
 import {
   normalizeViewConfig,
   type EntityCollection,
@@ -53,6 +61,7 @@ export type EntityColumn<T> = {
   text?: (item: T) => string
   defaultVisible?: boolean
   className?: string
+  metric?: Omit<MetricField<T>, "id" | "label">
 }
 
 export type EntityAction<T> = {
@@ -68,6 +77,7 @@ type Props<T> = {
   filterValues?: Record<string, string>
   onFiltersChange?: (filters: Record<string, string>) => void
   items: T[]
+  totalCount?: number
   getId: (item: T) => string
   getLabel: (item: T) => string
   columns: EntityColumn<T>[]
@@ -130,6 +140,7 @@ export function EntityDataView<T>({
   filterValues,
   onFiltersChange,
   items: sourceItems,
+  totalCount,
   getId,
   getLabel,
   columns,
@@ -152,6 +163,7 @@ export function EntityDataView<T>({
   className,
   isSelectable = () => true,
 }: Props<T>) {
+  const footerContext = React.useContext(EntityFooterContext)
   const [mode, setMode] = React.useState<EntityViewMode>(
     modes.includes(defaultMode) ? defaultMode : modes[0]
   )
@@ -167,6 +179,21 @@ export function EntityDataView<T>({
     Record<string, string>
   >({})
   const values = filterValues ?? localFilters
+  const [metrics, setMetrics] = React.useState<EntityMetric[]>([])
+  const metricFields: MetricField<T>[] = columns.flatMap((column) =>
+    column.metric
+      ? [{ ...column.metric, id: column.id, label: column.label }]
+      : column.text
+        ? [
+            {
+              id: column.id,
+              label: column.label,
+              kind: "text" as const,
+              getValue: column.text,
+            },
+          ]
+        : []
+  )
   const items = sourceItems.filter((item) =>
     filters.every(
       (filter) =>
@@ -182,6 +209,7 @@ export function EntityDataView<T>({
     mode: modes.includes(defaultMode) ? defaultMode : modes[0],
     columns: defaultColumns,
     filters: {},
+    metrics: [],
   }
   const config: EntityViewConfig = {
     mode,
@@ -189,6 +217,7 @@ export function EntityDataView<T>({
       .filter((column) => visible.has(column.id))
       .map((column) => column.id),
     filters: values,
+    metrics,
   }
   function applyConfig(next: EntityViewConfig) {
     const safe = normalizeViewConfig(
@@ -200,6 +229,7 @@ export function EntityDataView<T>({
     )
     setMode(safe.mode)
     setVisible(new Set(safe.columns))
+    setMetrics(normalizeMetrics(safe.metrics, metricFields))
     if (onFiltersChange) onFiltersChange(safe.filters)
     else setLocalFilters(safe.filters)
     onSelectedChange(new Set())
@@ -245,12 +275,9 @@ export function EntityDataView<T>({
         columns={columns}
         filters={filters}
       />
-      <div className="flex min-h-6 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {selected.size ? (
+      {selected.size ? (
+        <div className="flex flex-wrap items-center gap-2">
           <>
-            <span className="font-semibold text-foreground">
-              Выбрано: {selected.size}
-            </span>
             {bulkActions}
             <Button
               onClick={() => onSelectedChange(new Set())}
@@ -260,10 +287,8 @@ export function EntityDataView<T>({
               Снять выбор
             </Button>
           </>
-        ) : (
-          <span>{items.length} записей</span>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <FadeContent duration={240} initialOpacity={0.5} key={mode}>
         {loading ? (
@@ -508,6 +533,27 @@ export function EntityDataView<T>({
           </div>
         )}
       </FadeContent>
+      {(() => {
+        const bar = (
+          <EntityMetricsBar
+            items={items}
+            total={totalCount ?? sourceItems.length}
+            loadedCount={sourceItems.length}
+            selectedCount={
+              items.filter((item) => selected.has(getId(item))).length
+            }
+            fields={metricFields}
+            metrics={metrics}
+            onChange={setMetrics}
+            loading={loading}
+          />
+        )
+        return footerContext.enabled
+          ? footerContext.target
+            ? createPortal(bar, footerContext.target)
+            : null
+          : bar
+      })()}
     </section>
   )
 }

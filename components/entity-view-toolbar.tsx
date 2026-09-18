@@ -455,7 +455,7 @@ export function EntityViewToolbar<T>({
             <DialogDescription>
               {dialog === "delete"
                 ? "Данные останутся. Будут удалены только настройки отображения."
-                : "Сохраняются режим отображения, фильтры и видимые колонки."}
+                : "Сохраняются режим отображения, фильтры, видимые колонки и метрики."}
             </DialogDescription>
           </DialogHeader>
           {dialog !== "delete" ? (

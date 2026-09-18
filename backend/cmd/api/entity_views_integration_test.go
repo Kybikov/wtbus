@@ -71,7 +71,7 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 		}
 		return w
 	}
-	input := entityViewInput{Name: "My view", Visibility: "private", Config: entityViewConfig{Mode: "list", Columns: []string{"name"}, Filters: map[string]string{"telegram": "linked"}}}
+	input := entityViewInput{Name: "My view", Visibility: "private", Config: entityViewConfig{Mode: "list", Columns: []string{"name"}, Filters: map[string]string{"telegram": "linked"}, Metrics: []entityViewMetric{{Field: "trips", Operation: "sum"}, {Field: "telegram", Operation: "filled"}}}}
 	decode := func(w *httptest.ResponseRecorder) savedEntityView {
 		t.Helper()
 		var payload struct{ Item savedEntityView }
@@ -81,6 +81,9 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 		return payload.Item
 	}
 	private := decode(request("POST", "customers", "", input, author, 201))
+	if len(private.Config.Metrics) != 2 || private.Config.Metrics[0].Operation != "sum" {
+		t.Fatal("created metrics not preserved")
+	}
 	for _, who := range []identity{reader, manager, outsider} {
 		w := request("GET", "customers", "", nil, who, 200)
 		var payload struct{ Items []savedEntityView }
@@ -99,6 +102,9 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &list)
 	if len(list.Items) != 1 || list.Items[0].CanEdit || list.Items[0].Config.Mode != "list" {
 		t.Fatal("shared roundtrip/permissions wrong")
+	}
+	if len(list.Items[0].Config.Metrics) != 2 || list.Items[0].Config.Metrics[1].Field != "telegram" {
+		t.Fatal("shared metric settings not persisted")
 	}
 	input.Version = shared.Version
 	input.Config.Mode = "gallery"

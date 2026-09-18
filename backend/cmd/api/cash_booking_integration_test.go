@@ -113,6 +113,29 @@ func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
 	if _, err := db.Exec(ctx, `UPDATE memberships SET role='developer' WHERE id=$1`, memberID); err != nil {
 		t.Fatal(err)
 	}
+	// The collection footer needs the full matching count, independent of LIMIT.
+	if _, err := db.Exec(ctx, `INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source) SELECT $1,$2,$3,'cancelled',2,2500,'EUR','dispatcher' FROM generate_series(1,2)`, tenantID, tripID, customerID); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		params string
+		total  int
+	}{{"limit=1", 3}, {"limit=1&status=cancelled", 2}, {"limit=1&status=cash_on_boarding", 1}, {"limit=1&q=missing-passenger", 0}, {"limit=1&date=2030-01-01", 0}} {
+		r := httptest.NewRequest("GET", "/?"+check.params, nil)
+		r.SetPathValue("slug", slug)
+		w := httptest.NewRecorder()
+		app.listBookings(w, r)
+		var payload struct {
+			Total int
+			Items []bookingListItem
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 200 || payload.Total != check.total || len(payload.Items) > 1 {
+			t.Fatalf("wrong booking metric total for %s: %d %s", check.params, w.Code, w.Body)
+		}
+	}
 	app.bootstrapEmail, app.bootstrapPassword, app.bootstrapTenant = slug+"@test.invalid", "disposable-owner-password", slug
 	if err := app.ensureBootstrapOwner(ctx); err != nil {
 		t.Fatal(err)

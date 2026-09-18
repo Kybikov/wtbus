@@ -1,3 +1,4 @@
+import type { EntityMetric } from "./entity-metrics.ts"
 export type EntityCollection = "customers" | "bookings" | "team"
 export type EntityViewMode =
   "table" | "list" | "kanban" | "calendar" | "gallery"
@@ -5,6 +6,7 @@ export type EntityViewConfig = {
   mode: EntityViewMode
   columns: string[]
   filters: Record<string, string>
+  metrics?: EntityMetric[]
 }
 export type SavedEntityView = {
   id: string
@@ -45,6 +47,7 @@ export function normalizeViewConfig(
         ([id, value]) => filterIds.includes(id) && value !== ""
       )
     ),
+    metrics: config.metrics ?? [],
   }
 }
 
@@ -56,6 +59,7 @@ export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
       filters: Object.entries(value.filters)
         .filter(([, v]) => v !== "")
         .sort(([a], [b]) => a.localeCompare(b)),
+      metrics: value.metrics ?? [],
     })
   return canonical(a) === canonical(b)
 }

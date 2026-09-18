@@ -65,7 +65,7 @@ type Booking = {
   customData?: Record<string, unknown>
 }
 
-type BookingCollection = { items: Booking[]; timezone: string }
+type BookingCollection = { items: Booking[]; timezone: string; total?: number }
 
 type BookingTrip = {
   id: string
@@ -114,7 +114,11 @@ function isCollection(value: unknown): value is BookingCollection {
     "items" in value &&
     Array.isArray(value.items) &&
     "timezone" in value &&
-    typeof value.timezone === "string"
+    typeof value.timezone === "string" &&
+    (!("total" in value) ||
+      (typeof value.total === "number" &&
+        Number.isInteger(value.total) &&
+        value.total >= 0))
   )
 }
 
@@ -214,6 +218,7 @@ function statusClass(status: BookingStatus) {
 
 export function BookingRegistry() {
   const [items, setItems] = React.useState<Booking[]>([])
+  const [total, setTotal] = React.useState(0)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const [timezone, setTimezone] = React.useState("Europe/Berlin")
   const [loading, setLoading] = React.useState(true)
@@ -265,6 +270,7 @@ export function BookingRegistry() {
         )
       if (controller.signal.aborted) return
       setItems(payload.items)
+      setTotal(payload.total ?? payload.items.length)
       setTimezone(payload.timezone)
     } catch (reason) {
       if (controller.signal.aborted) return
@@ -510,6 +516,10 @@ export function BookingRegistry() {
   const columns: EntityColumn<Booking>[] = [
     {
       id: "passengers",
+      metric: {
+        kind: "number",
+        getValue: (booking) => bookingPassengers(booking.customData).length,
+      },
       label: "Все пассажиры",
       value: (booking) => {
         const people = bookingPassengers(booking.customData)
@@ -533,6 +543,12 @@ export function BookingRegistry() {
     },
     {
       id: "passenger",
+      metric: {
+        kind: "text",
+        getValue: (booking) =>
+          customText(booking.customData?.passenger_name) ??
+          booking.customerName,
+      },
       label: "Пассажир",
       value: (booking) => (
         <div className="min-w-48">
@@ -550,6 +566,10 @@ export function BookingRegistry() {
     },
     {
       id: "route",
+      metric: {
+        kind: "text",
+        getValue: (booking) => `${booking.origin} → ${booking.destination}`,
+      },
       label: "Рейс",
       value: (booking) => (
         <div className="min-w-44">
@@ -564,6 +584,13 @@ export function BookingRegistry() {
     },
     {
       id: "status",
+      metric: {
+        kind: "enum",
+        getValue: (booking) => booking.status,
+        options: (Object.keys(statusLabels) as BookingStatus[]).map(
+          (value) => ({ value, label: statusLabels[value] })
+        ),
+      },
       label: "Статус",
       value: (booking) => (
         <span
@@ -575,11 +602,19 @@ export function BookingRegistry() {
     },
     {
       id: "seats",
+      metric: { kind: "number", getValue: (booking) => booking.seats },
       label: "Места",
       value: (booking) => <span className="tabular-nums">{booking.seats}</span>,
     },
     {
       id: "price",
+      metric: {
+        kind: "money",
+        getValue: (booking) => ({
+          amountMinor: booking.priceMinor,
+          currency: booking.currency,
+        }),
+      },
       label: "Сумма",
       value: (booking) => (
         <span className="tabular-nums">
@@ -589,41 +624,62 @@ export function BookingRegistry() {
     },
     {
       id: "source",
+      metric: {
+        kind: "enum",
+        getValue: (booking) => booking.source,
+        options: Object.entries(sourceLabels).map(([value, label]) => ({
+          value,
+          label,
+        })),
+      },
       label: "Источник",
       value: (booking) => sourceLabels[booking.source] ?? booking.source,
     },
     {
       id: "customerPhone",
+      metric: { kind: "text", getValue: (booking) => booking.customerPhone },
       label: "Телефон контакта",
       value: (booking) => booking.customerPhone,
       defaultVisible: false,
     },
     {
       id: "capacity",
+      metric: { kind: "number", getValue: (booking) => booking.capacity },
       label: "Вместимость",
       value: (booking) => booking.capacity,
       defaultVisible: false,
     },
     {
       id: "availableSeats",
+      metric: { kind: "number", getValue: (booking) => booking.availableSeats },
       label: "Свободно",
       value: (booking) => booking.availableSeats,
       defaultVisible: false,
     },
     {
       id: "tripStatus",
+      metric: { kind: "text", getValue: (booking) => booking.tripStatus },
       label: "Статус рейса",
       value: (booking) => booking.tripStatus,
       defaultVisible: false,
     },
     {
       id: "paymentStatus",
+      metric: { kind: "text", getValue: (booking) => booking.paymentStatus },
       label: "Статус оплаты",
       value: (booking) => booking.paymentStatus ?? "—",
       defaultVisible: false,
     },
     {
       id: "paymentMethod",
+      metric: {
+        kind: "text",
+        getValue: (booking) =>
+          booking.customData?.payment_method === "cash_on_boarding" ||
+          booking.status === "cash_on_boarding"
+            ? "cash_on_boarding"
+            : booking.paymentMethod,
+      },
       label: "Способ оплаты",
       value: (booking) =>
         booking.customData?.payment_method === "cash_on_boarding" ||
@@ -634,24 +690,28 @@ export function BookingRegistry() {
     },
     {
       id: "createdAt",
+      metric: { kind: "date", getValue: (booking) => booking.createdAt },
       label: "Создано",
       value: (booking) => formatDate(booking.createdAt, timezone),
       defaultVisible: false,
     },
     {
       id: "id",
+      metric: { kind: "text", getValue: (booking) => booking.id },
       label: "ID брони",
       value: (booking) => booking.id,
       defaultVisible: false,
     },
     {
       id: "tripId",
+      metric: { kind: "text", getValue: (booking) => booking.tripId },
       label: "ID рейса",
       value: (booking) => booking.tripId,
       defaultVisible: false,
     },
     {
       id: "paymentId",
+      metric: { kind: "text", getValue: (booking) => booking.paymentID },
       label: "ID оплаты",
       value: (booking) => booking.paymentID ?? "—",
       defaultVisible: false,
@@ -684,6 +744,7 @@ export function BookingRegistry() {
   return (
     <>
       <AppShell
+        collectionFooter
         onRefresh={load}
         refreshing={loading}
         localSearch={{
@@ -719,6 +780,7 @@ export function BookingRegistry() {
           ) : null}
           <EntityDataView
             collection="bookings"
+            totalCount={total}
             filterValues={{ status, date }}
             onFiltersChange={(values) => {
               setStatus((values.status ?? "") as "" | BookingStatus)
@@ -729,7 +791,20 @@ export function BookingRegistry() {
                 id: "status",
                 label: "Статус",
                 options: (Object.keys(statusLabels) as BookingStatus[]).map(
-                  (value) => ({ value, label: statusLabels[value] })
+                  (value) => ({
+                    value,
+                    label: statusLabels[value],
+                    tone:
+                      value === "expired"
+                        ? "danger"
+                        : value === "confirmed" || value === "completed"
+                          ? "success"
+                          : value === "cash_on_boarding"
+                            ? "info"
+                            : value === "cancelled"
+                              ? "neutral"
+                              : "warning",
+                  })
                 ),
               },
               { id: "date", label: "Дата рейса", type: "date" },

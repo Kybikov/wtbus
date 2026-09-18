@@ -1,5 +1,6 @@
 "use client"
 
+import { metricValue } from "@/lib/entity-metrics"
 import { sessionFetch } from "@/lib/session-navigation"
 import { usePageSearch } from "@/hooks/use-page-search"
 
@@ -479,6 +480,7 @@ export function CustomerDirectory() {
     },
     {
       id: "trips",
+      metric: { kind: "number", getValue: (customer) => customer.tripCount },
       label: "Поездки",
       value: (customer) => (
         <span className="tabular-nums">
@@ -488,6 +490,14 @@ export function CustomerDirectory() {
     },
     {
       id: "ltv",
+      metric: {
+        kind: "money",
+        getValue: (customer) =>
+          customer.lifetimeValue.map((value) => ({
+            amountMinor: value.amountMinor,
+            currency: value.currency,
+          })),
+      },
       label: "LTV",
       value: (customer) => (
         <span className="tabular-nums">
@@ -497,6 +507,7 @@ export function CustomerDirectory() {
     },
     {
       id: "telegram",
+      metric: { kind: "text", getValue: (customer) => customer.telegramId },
       label: "Telegram",
       defaultVisible: false,
       value: (customer) =>
@@ -504,18 +515,33 @@ export function CustomerDirectory() {
     },
     {
       id: "notes",
+      metric: { kind: "text", getValue: (customer) => customer.notes },
       label: "Комментарий",
       defaultVisible: false,
       value: (customer) => customer.notes || "—",
     },
     {
       id: "id",
+      metric: { kind: "text", getValue: (customer) => customer.id },
       label: "ID",
       defaultVisible: false,
       value: (customer) => <code className="text-xs">{customer.id}</code>,
     },
     ...customFields.map<EntityColumn<Customer>>((field) => ({
       id: `custom-${field.key}`,
+      metric: {
+        kind: field.fieldType === "select" ? "enum" : field.fieldType,
+        getValue: (customer) => metricValue(customer.customData?.[field.key]),
+        options:
+          field.fieldType === "select"
+            ? field.options.map((value) => ({ value, label: value }))
+            : field.fieldType === "boolean"
+              ? [
+                  { value: "true", label: "Да" },
+                  { value: "false", label: "Нет" },
+                ]
+              : undefined,
+      },
       label: field.label,
       defaultVisible: false,
       value: (customer) =>
@@ -533,6 +559,7 @@ export function CustomerDirectory() {
   return (
     <>
       <AppShell
+        collectionFooter
         onRefresh={load}
         refreshing={loading}
         localSearch={{
@@ -586,7 +613,7 @@ export function CustomerDirectory() {
             </Button>
           </div>
         }
-        pageDescription={`${total} клиентов · контакты, поездки и история обращений`}
+        pageDescription="Контакты, поездки и история обращений"
         pageTitle="Клиенты"
         utilities={<ThemeCustomizer />}
       >
@@ -618,6 +645,7 @@ export function CustomerDirectory() {
           ) : null}
           <EntityDataView
             collection="customers"
+            totalCount={total}
             filters={[
               {
                 id: "telegram",

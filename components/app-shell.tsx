@@ -63,6 +63,7 @@ import { cn } from "@/lib/utils"
 import { isSearchShortcut, searchPageHref } from "@/lib/admin-search"
 import { AdminSearchField } from "@/components/admin-search-field"
 import { useSearchShortcutLabel } from "@/hooks/use-search-shortcut-label"
+import { EntityFooterContext } from "@/components/entity-footer-context"
 
 type MembershipRole = "developer" | "owner" | "admin" | "dispatcher" | "driver"
 type NavigationItem = {
@@ -85,6 +86,7 @@ type AppShellProps = {
   pageActions?: React.ReactNode
   onRefresh?: () => void | Promise<void>
   refreshing?: boolean
+  collectionFooter?: boolean
 }
 type ShellBrand = {
   logoUrl?: string
@@ -346,9 +348,12 @@ export function AppShell({
   pageActions,
   onRefresh,
   refreshing = false,
+  collectionFooter = false,
 }: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const [footerHost, setFooterHost] = React.useState<HTMLDivElement|null>(null)
+  const footerContext = React.useMemo(()=>({enabled:collectionFooter,target:footerHost}),[collectionFooter,footerHost])
   const [descriptionOpen, setDescriptionOpen] = React.useState(false)
   const descriptionId = React.useId()
   const [manualRefreshing, setManualRefreshing] = React.useState(false)
@@ -598,7 +603,7 @@ export function AppShell({
 
   return (
     <SidebarProvider
-      className="app-shell-frame min-h-svh gap-2 bg-background p-2 text-foreground"
+      className={cn("app-shell-frame min-h-svh gap-2 bg-background p-2 text-foreground",collectionFooter && "h-dvh min-h-0 overflow-hidden")}
       onOpenChange={setSidebarOpen}
       open={sidebarOpen}
       style={
@@ -840,9 +845,12 @@ export function AppShell({
           ) : null}
         </header>
         {utilities ? <div className="hidden">{utilities}</div> : null}
+        <EntityFooterContext.Provider value={footerContext}>
         <ScrollArea className="dashboard-content min-h-0 min-w-0 flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden">
           <div className="w-full min-w-0 px-2 py-3 sm:px-3 sm:py-4">{children}</div>
         </ScrollArea>
+        {collectionFooter ? <div className="min-w-0 shrink-0 px-2 pb-3 pt-1 sm:px-3"><div ref={setFooterHost} className="min-h-[50px]"/></div> : null}
+        </EntityFooterContext.Provider>
       </SidebarInset>
       <CommandDialog
         description="Найдите раздел, бронирование или клиента."

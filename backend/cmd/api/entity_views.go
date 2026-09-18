@@ -13,9 +13,16 @@ import (
 )
 
 type entityViewConfig struct {
-	Mode    string            `json:"mode"`
-	Columns []string          `json:"columns"`
-	Filters map[string]string `json:"filters"`
+	Mode    string             `json:"mode"`
+	Columns []string           `json:"columns"`
+	Filters map[string]string  `json:"filters"`
+	Metrics []entityViewMetric `json:"metrics,omitempty"`
+}
+
+type entityViewMetric struct {
+	Field     string `json:"field"`
+	Operation string `json:"operation"`
+	Value     string `json:"value,omitempty"`
 }
 type savedEntityView struct {
 	ID         string           `json:"id"`
@@ -49,6 +56,28 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 			return false
 		}
 		seen[column] = true
+	}
+	if len(input.Config.Metrics) > 12 {
+		return false
+	}
+	metricKeys := map[entityViewMetric]bool{}
+	for _, metric := range input.Config.Metrics {
+		if !entityColumnID.MatchString(metric.Field) || metricKeys[metric] {
+			return false
+		}
+		metricKeys[metric] = true
+		switch metric.Operation {
+		case "filled", "empty", "unique", "sum", "average", "min", "max":
+			if metric.Value != "" {
+				return false
+			}
+		case "equals":
+			if strings.TrimSpace(metric.Value) == "" || len([]rune(metric.Value)) > 160 {
+				return false
+			}
+		default:
+			return false
+		}
 	}
 	if input.Config.Filters == nil {
 		input.Config.Filters = map[string]string{}

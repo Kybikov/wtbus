@@ -40,3 +40,27 @@ func TestEntityViewEditingPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestEntityViewMetricValidation(t *testing.T) {
+	valid := func() entityViewInput {
+		return entityViewInput{Name: "Metrics", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name"}, Metrics: []entityViewMetric{{Field: "status", Operation: "equals", Value: "active"}, {Field: "custom-number", Operation: "sum"}}}}
+	}
+	input := valid()
+	if !validateEntityView("team", &input) {
+		t.Fatal("valid metrics rejected")
+	}
+	for _, change := range []func(*entityViewInput){
+		func(v *entityViewInput) { v.Config.Metrics = append(v.Config.Metrics, v.Config.Metrics[0]) },
+		func(v *entityViewInput) { v.Config.Metrics[0].Field = "bad field" },
+		func(v *entityViewInput) { v.Config.Metrics[0].Operation = "execute" },
+		func(v *entityViewInput) { v.Config.Metrics[0].Value = "" },
+		func(v *entityViewInput) { v.Config.Metrics[1].Value = "unexpected" },
+		func(v *entityViewInput) { v.Config.Metrics = make([]entityViewMetric, 13) },
+	} {
+		input = valid()
+		change(&input)
+		if validateEntityView("team", &input) {
+			t.Fatal("invalid metrics accepted")
+		}
+	}
+}

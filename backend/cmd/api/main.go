@@ -4664,7 +4664,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 			COALESCE(c.full_name, ''), c.phone_e164,
 			t.id::text, t.status::text, t.origin_name, t.destination_name, t.starts_at, t.capacity,
 			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (occupied.status IN ('pending', 'cash_on_boarding', 'confirmed') OR (occupied.status = 'awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
-			COALESCE(payment.id::text, ''), COALESCE(payment.status::text, ''), COALESCE(payment.payment_method, ''), b.payment_hold_expires_at
+			COALESCE(payment.id::text, ''), COALESCE(payment.status::text, ''), COALESCE(payment.payment_method, ''), b.payment_hold_expires_at, count(*) OVER()
 		FROM bookings b
 		JOIN customers c ON c.id = b.customer_id
 		JOIN trips t ON t.id = b.trip_id
@@ -4688,10 +4688,11 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	items := make([]bookingListItem, 0)
+	var total int
 	for rows.Next() {
 		var item bookingListItem
 		var customData []byte
-		if err := rows.Scan(&item.ID, &item.Status, &item.Seats, &item.PriceMinor, &item.Currency, &item.Source, &item.CreatedAt, &customData, &item.CustomerName, &item.CustomerPhone, &item.TripID, &item.TripStatus, &item.Origin, &item.Destination, &item.StartsAt, &item.Capacity, &item.AvailableSeats, &item.PaymentID, &item.PaymentStatus, &item.PaymentMethod, &item.PaymentHoldExpiresAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Status, &item.Seats, &item.PriceMinor, &item.Currency, &item.Source, &item.CreatedAt, &customData, &item.CustomerName, &item.CustomerPhone, &item.TripID, &item.TripStatus, &item.Origin, &item.Destination, &item.StartsAt, &item.Capacity, &item.AvailableSeats, &item.PaymentID, &item.PaymentStatus, &item.PaymentMethod, &item.PaymentHoldExpiresAt, &total); err != nil {
 			app.log.Error("scan booking", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load bookings"})
 			return
@@ -4709,7 +4710,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load bookings"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "timezone": tenant.Timezone})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "timezone": tenant.Timezone, "total": total})
 }
 
 func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
