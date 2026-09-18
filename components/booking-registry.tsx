@@ -1,6 +1,7 @@
 "use client"
 
 import { sessionFetch } from "@/lib/session-navigation"
+import { bookingPassengers } from "@/lib/booking-checkout"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -497,6 +498,14 @@ export function BookingRegistry() {
 
   const columns: EntityColumn<Booking>[] = [
     {
+      id: "passengers",
+      label: "Все пассажиры",
+      value: (booking) => {
+        const people = bookingPassengers(booking.customData)
+        return people.length ? <ul className="min-w-40 space-y-2 text-sm">{people.map((person, index) => <li key={index}><p>{person.firstName} {person.lastName}</p><p className="text-xs text-muted-foreground">{person.birthDate.split("-").reverse().join(".")}</p></li>)}</ul> : "—"
+      },
+    },
+    {
       id: "passenger",
       label: "Пассажир",
       value: (booking) => (
@@ -590,7 +599,7 @@ export function BookingRegistry() {
     {
       id: "paymentMethod",
       label: "Способ оплаты",
-      value: (booking) => booking.paymentMethod ?? "—",
+      value: (booking) => booking.customData?.payment_method === "cash_on_boarding" || booking.status === "cash_on_boarding" ? "Наличными при посадке" : booking.paymentMethod ?? "—",
       defaultVisible: false,
     },
     {

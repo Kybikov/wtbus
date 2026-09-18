@@ -81,7 +81,7 @@ func TestPublicBookingPostgres(t *testing.T) {
 		return response
 	}
 	makeInput := func(index int) publicBookingInput {
-		return publicBookingInput{RequestKey: fmt.Sprintf("00000000-0000-4000-8000-%012d", index), TripID: tripID, QuotedPriceMinor: 2500, Seats: 1, PassengerName: "Тестовий пасажир", PassengerPhone: fmt.Sprintf("+380670%06d", index), PassengerBirthDate: "1990-01-01", Consent: true, CustomData: map[string]any{"document": "fixture"}}
+		return publicBookingInput{RequestKey: fmt.Sprintf("00000000-0000-4000-8000-%012d", index), TripID: tripID, QuotedPriceMinor: 2500, Seats: 1, Passengers: []publicPassenger{{FirstName: "Test", LastName: "Passenger", BirthDate: "1990-01-01"}}, PaymentMethod: "cash_on_boarding", PassengerPhone: fmt.Sprintf("+380670%06d", index), Consent: true, CustomData: map[string]any{"document": "fixture"}}
 	}
 	assertStatus := func(t *testing.T, response *httptest.ResponseRecorder, status int) {
 		t.Helper()
@@ -171,6 +171,11 @@ func TestPublicBookingPostgres(t *testing.T) {
 		}
 	})
 	t.Run("validation rejects client pricing and private identities", func(t *testing.T) {
+		for _, mutate := range []func(*publicBookingInput){func(i *publicBookingInput) { i.PaymentMethod = "" }, func(i *publicBookingInput) { i.PaymentMethod = "bank" }, func(i *publicBookingInput) { i.Passengers = nil }, func(i *publicBookingInput) { i.Passengers[0].FirstName = "Іван" }} {
+			invalid := makeInput(99)
+			mutate(&invalid)
+			assertStatus(t, send("POST", "/bookings", invalid), 400)
+		}
 		var otherTenantID string
 		otherSlug := slug + "-other"
 		row(`INSERT INTO tenants(slug,name) VALUES($1,'Other') RETURNING id::text`, &otherTenantID, otherSlug)
@@ -195,7 +200,7 @@ func TestPublicBookingPostgres(t *testing.T) {
 		input.CustomData = nil
 		assertStatus(t, send("POST", "/bookings", input), 400)
 		input = makeInput(4)
-		input.PassengerBirthDate = "2990-01-01"
+		input.Passengers[0].BirthDate = "2990-01-01"
 		assertStatus(t, send("POST", "/bookings", input), 400)
 		input = makeInput(5)
 		input.TripID = "00000000-0000-4000-8000-999999999999"
@@ -206,6 +211,7 @@ func TestPublicBookingPostgres(t *testing.T) {
 	t.Run("cash checkout is idempotent and counted in automation", func(t *testing.T) {
 		input := makeInput(10)
 		input.Seats = 2
+		input.Passengers = append(input.Passengers, publicPassenger{FirstName: "Second", LastName: "Passenger", BirthDate: "2000-02-29"})
 		created := send("POST", "/bookings", input)
 		assertStatus(t, created, 201)
 		var payload struct {
@@ -224,18 +230,27 @@ func TestPublicBookingPostgres(t *testing.T) {
 			t.Fatal("idempotency response changed")
 		}
 		input.Seats = 1
+		input.Passengers = input.Passengers[:1]
 		assertStatus(t, send("POST", "/bookings", input), 409)
 		input = makeInput(11)
 		input.PassengerPhone = makeInput(10).PassengerPhone
-		input.PassengerName = "Should not overwrite"
+		input.Passengers[0].FirstName = "Changed"
 		assertStatus(t, send("POST", "/bookings", input), 409)
 		var count int
 		var customerName, source string
 		if err = db.QueryRow(ctx, `SELECT count(*) FROM activity_events WHERE tenant_id=$1 AND actor_kind='system' AND action='public_booking_created'`, tenantID).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("activity count %d: %v", count, err)
 		}
-		if err = db.QueryRow(ctx, `SELECT c.full_name,b.source FROM bookings b JOIN customers c ON c.id=b.customer_id WHERE b.id=$1`, first.Reference).Scan(&customerName, &source); err != nil || customerName != "Тестовий пасажир" || source != "web" {
+		if err = db.QueryRow(ctx, `SELECT c.full_name,b.source FROM bookings b JOIN customers c ON c.id=b.customer_id WHERE b.id=$1`, first.Reference).Scan(&customerName, &source); err != nil || customerName != "Test Passenger" || source != "web" {
 			t.Fatalf("customer/source %s %s: %v", customerName, source, err)
+		}
+		var manifest []byte
+		if err = db.QueryRow(ctx, `SELECT custom_data->'passengers' FROM bookings WHERE id=$1`, first.Reference).Scan(&manifest); err != nil {
+			t.Fatal(err)
+		}
+		var people []publicPassenger
+		if err = json.Unmarshal(manifest, &people); err != nil || len(people) != 2 || people[1].FirstName != "Second" || people[1].BirthDate != "2000-02-29" {
+			t.Fatalf("group manifest was not persisted: %s %v", manifest, err)
 		}
 	})
 	t.Run("concurrent checkout never oversells final seat", func(t *testing.T) {

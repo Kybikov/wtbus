@@ -77,6 +77,7 @@ func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
 	}
 	var bookingResult struct {
 		Item struct {
+			ID         string `json:"id"`
 			Status     string `json:"status"`
 			PriceMinor int64  `json:"priceMinor"`
 		} `json:"item"`
@@ -93,6 +94,28 @@ func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
 	}
 	if paymentConfigurations != 0 {
 		t.Fatal("test fixture unexpectedly has a payment configuration")
+	}
+	people := `[ {"firstName":"Ivan","lastName":"Petrenko","birthDate":"1990-01-01"}, {"firstName":"Anna","lastName":"Petrenko","birthDate":"1992-02-29"} ]`
+	if _, err := db.Exec(ctx, `UPDATE bookings SET custom_data=custom_data||jsonb_build_object('passengers',$2::jsonb) WHERE id=$1`, bookingResult.Item.ID, people); err != nil {
+		t.Fatal(err)
+	}
+	manifest := func(trip string, member string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "/?tripId="+trip, nil)
+		r.SetPathValue("slug", slug)
+		r = r.WithContext(context.WithValue(r.Context(), identityContextKey{}, identity{TenantID: tenantID, MembershipID: member, Role: "driver"}))
+		w := httptest.NewRecorder()
+		app.driverPassengers(w, r)
+		return w
+	}
+	list := manifest(tripID, memberID)
+	if list.Code != 200 || !bytes.Contains(list.Body.Bytes(), []byte(`"firstName":"Anna"`)) || !bytes.Contains(list.Body.Bytes(), []byte(bookingResult.Item.ID)) {
+		t.Fatalf("assigned manifest: %d %s", list.Code, list.Body)
+	}
+	if other := manifest("00000000-0000-4000-8000-000000000099", memberID); other.Code != 403 {
+		t.Fatalf("other trip leaked: %d %s", other.Code, other.Body)
+	}
+	if other := manifest(tripID, "00000000-0000-4000-8000-000000000099"); other.Code != 403 {
+		t.Fatalf("other member leaked: %d %s", other.Code, other.Body)
 	}
 	if _, err := db.Exec(ctx, `UPDATE trips SET status='in_progress' WHERE id=$1`, tripID); err != nil {
 		t.Fatal(err)

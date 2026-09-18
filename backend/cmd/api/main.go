@@ -181,6 +181,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/individual-transfer-requests/{requestID}", operations(app.requireActiveSubscription(app.updateIndividualTransferRequest)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/gps-points", tripOperators(app.recordGPSPoint))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/cash-summary", drivers(app.driverCashSummary))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", drivers(app.driverPassengers))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/cash-received", drivers(app.confirmDriverCashReceived))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/summary", finance(app.financeSummary))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/driver-cash", finance(app.requireActiveSubscription(app.recordDriverCash)))
@@ -3366,6 +3367,8 @@ var reservedBookingCustomFieldKeys = map[string]struct{}{
 	"passenger_name":       {},
 	"passenger_phone":      {},
 	"passenger_birth_date": {},
+	"passengers":           {},
+	"payment_method":       {},
 }
 
 func isCustomFieldEntity(entity string) bool {

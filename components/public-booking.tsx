@@ -3,17 +3,14 @@
 import Image from "next/image"
 import Link from "next/link"
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { ArrowLeftRight, ArrowRight, Bus, CheckCircle2, Loader2, Search, Ticket } from "lucide-react"
+import { ArrowLeftRight, ArrowRight, Bus, Loader2, Search } from "lucide-react"
 import Filtering8 from "@/components/filtering-8"
-import Wizard2 from "@/components/wizard-2"
+import { PassengerCheckout } from "@/components/passenger-checkout"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { FieldSelect } from "@/components/ui/field-select"
-import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
-import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { publicBookingFetch, travelDay, travelDate, travelMoney, travelTime, type PublicCatalog, type PublicConfirmation, type PublicTrip } from "@/lib/public-booking"
+import { publicBookingFetch, travelDay, travelDate, type PublicCatalog, type PublicTrip } from "@/lib/public-booking"
 
 type SearchCriteria = { origin: string; destination: string; date: string; seats: number }
 type SearchResults = { items: PublicTrip[]; before: PublicTrip[]; after: PublicTrip[] }
@@ -87,52 +84,4 @@ export function PublicBooking({ slug }: { slug: string }) {
     </main>
     <footer className="mx-auto mt-6 flex w-full max-w-screen-2xl flex-wrap justify-between gap-3 border-t border-border px-4 py-6 text-xs text-muted-foreground sm:px-8 lg:px-12"><span>{catalog?.name ?? "Vivat Bus"}</span><span>Бронювання без реєстрації · Оплата при посадці</span></footer>
   </div>
-}
-
-function PassengerCheckout({ slug, trip, seats, catalog, onBack }: { slug: string; trip: PublicTrip; seats: number; catalog: PublicCatalog; onBack: () => void }) {
-  const [step, setStep] = useState(1)
-  const [passenger, setPassenger] = useState({ name: "", phone: "", birthDate: "" })
-  const [custom, setCustom] = useState<Record<string, string | number | boolean>>({})
-  const [consent, setConsent] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState("")
-  const [confirmation, setConfirmation] = useState<PublicConfirmation | null>(null)
-  const form = useRef<HTMLFormElement>(null)
-  const request = useRef<{ fingerprint: string; key: string } | null>(null)
-  const inFlight = useRef(false)
-  const submissionStarted = useRef(false)
-  const total = confirmation?.priceMinor ?? trip.priceMinor * seats
-  const today = travelDay(new Date(), "UTC")
-  function review() {
-    if (!form.current?.reportValidity()) return
-    if (!passenger.birthDate || passenger.birthDate > today) { setError("Оберіть правильну дату народження."); document.getElementById("passenger-birth")?.focus(); return }
-    if (catalog.fields.some((field) => custom[field.key] === undefined || custom[field.key] === "")) { setError("Заповніть додаткові обов’язкові поля."); return }
-    setError(""); setStep(2); window.scrollTo({ top: 0 })
-  }
-  async function submit() {
-    if (!consent || inFlight.current) return
-    inFlight.current = true
-    submissionStarted.current = true
-    setBusy(true); setError("")
-    const data = { tripId: trip.id, quotedPriceMinor: trip.priceMinor, seats, passengerName: passenger.name.trim(), passengerPhone: passenger.phone.trim(), passengerBirthDate: passenger.birthDate, customData: custom, consent }
-    const fingerprint = JSON.stringify(data)
-    if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint, key: crypto.randomUUID() }
-    try {
-      const response = await publicBookingFetch<{ item: PublicConfirmation }>(slug, "bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, requestKey: request.current.key }) })
-      setConfirmation(response.item); setStep(3); window.scrollTo({ top: 0 })
-    } catch (failure) { setError(errorMessage(failure)) }
-    finally { inFlight.current = false; setBusy(false) }
-  }
-  // Prevent losing the receipt if a slow checkout response is interrupted.
-  useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => { if (submissionStarted.current && !confirmation) event.preventDefault() }
-    window.addEventListener("beforeunload", beforeUnload)
-    return () => window.removeEventListener("beforeunload", beforeUnload)
-  }, [confirmation])
-  const summary = <><div className="mb-5 flex items-center gap-2 text-sm font-semibold"><Ticket className="size-4 text-primary" />Ваш рейс</div><h2 className="break-words text-xl font-semibold">{trip.origin} → {trip.destination}</h2><p className="mt-3 text-sm text-muted-foreground">{travelDate(trip.startsAt, catalog.timezone)}{travelDate(trip.startsAt, catalog.timezone) !== travelDate(trip.endsAt, catalog.timezone) ? ` — ${travelDate(trip.endsAt, catalog.timezone)}` : ""}</p><p className="mt-2 text-lg font-semibold tabular-nums">{travelTime(trip.startsAt, catalog.timezone)} — {travelTime(trip.endsAt, catalog.timezone)}</p><p className="mt-2 text-xs text-muted-foreground">Часовий пояс: {catalog.timezone}</p><Separator className="my-6" /><div className="flex justify-between gap-3 text-sm"><span>Місць</span><strong>{seats}</strong></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="text-sm">До сплати</span><strong className="text-2xl tabular-nums text-primary">{travelMoney(total, confirmation?.currency ?? trip.currency)}</strong></div><p className="mt-3 text-xs leading-relaxed text-muted-foreground">Готівкою при посадці. Онлайн-оплата не потрібна.</p></>
-  return <Wizard2 step={step} title={step === 3 ? "Бронювання створено" : "Оформлення поїздки"} summary={summary} busy={busy} disabled={step === 2 && !consent} nextLabel={step === 1 ? "Перевірити дані" : step === 2 ? "Забронювати місця" : "Знайти інший рейс"} onNext={step === 1 ? review : step === 2 ? () => void submit() : onBack} onBack={() => { if (step === 2) { setStep(1); setError("") } else onBack() }}>
-    {error && <p role="alert" className="mb-6 rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{error}</p>}
-    {step === 1 ? <form ref={form} onSubmit={(event) => { event.preventDefault(); review() }} className="space-y-6"><div><h2 className="text-xl font-semibold">Дані пасажира</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Для зв’язку щодо рейсу та списку посадки. Якщо їдете разом, вкажіть контакт відповідального пасажира.</p></div><div className="grid min-w-0 gap-5 sm:grid-cols-2"><div className="sm:col-span-2"><label htmlFor="passenger-name" className="mb-2 block text-sm font-medium">Ім’я та прізвище</label><Input id="passenger-name" required autoComplete="name" maxLength={160} value={passenger.name} onChange={(event) => setPassenger({ ...passenger, name: event.target.value })} pattern={".*\\S.*"} placeholder="Як у документі" className="h-11" /></div><div><label htmlFor="passenger-phone" className="mb-2 block text-sm font-medium">Телефон</label><Input id="passenger-phone" type="tel" required autoComplete="tel" pattern={"\\+[0-9\\s\\(\\)\\-]{7,22}"} maxLength={23} value={passenger.phone} onChange={(event) => setPassenger({ ...passenger, phone: event.target.value })} placeholder="+380… або +48…" className="h-11" /><p className="mt-2 text-xs text-muted-foreground">Міжнародний формат із + та кодом країни.</p></div><div className="min-w-0"><label htmlFor="passenger-birth" className="mb-2 block text-sm font-medium">Дата народження</label><DatePicker id="passenger-birth" label="Дата народження" required min="1900-01-01" max={today} value={passenger.birthDate} onValueChange={(birthDate) => setPassenger({ ...passenger, birthDate })} /></div></div>
-      {catalog.fields.map((field) => <div key={field.key}><label htmlFor={`booking-${field.key}`} className="mb-2 block text-sm font-medium">{field.label}</label>{field.type === "select" ? <FieldSelect aria-label={field.label} value={String(custom[field.key] ?? "")} onValueChange={(value) => setCustom({ ...custom, [field.key]: value })} options={field.options.map((option) => ({ value: option, label: option }))} placeholder="Оберіть значення" /> : field.type === "boolean" ? <FieldSelect aria-label={field.label} value={custom[field.key] === undefined ? "" : String(custom[field.key])} onValueChange={(value) => setCustom({ ...custom, [field.key]: value === "true" })} options={[{ value: "true", label: "Так" }, { value: "false", label: "Ні" }]} placeholder="Оберіть значення" /> : field.type === "date" ? <DatePicker id={`booking-${field.key}`} label={field.label} required value={String(custom[field.key] ?? "")} onValueChange={(value) => setCustom({ ...custom, [field.key]: value })} /> : <Input id={`booking-${field.key}`} required type={field.type === "number" ? "number" : "text"} step={field.type === "number" ? "any" : undefined} maxLength={4000} value={String(custom[field.key] ?? "")} onChange={(event) => setCustom({ ...custom, [field.key]: field.type === "number" && event.target.value !== "" ? Number(event.target.value) : event.target.value })} className="h-11" />}</div>)}<button type="submit" className="sr-only" tabIndex={-1}>Перевірити дані</button></form> : step === 2 ? <div><h2 className="mb-6 text-xl font-semibold">Перевірте перед бронюванням</h2><dl className="space-y-5 text-sm"><div><dt className="text-muted-foreground">Пасажир</dt><dd className="mt-1 break-words font-semibold">{passenger.name}</dd></div><div><dt className="text-muted-foreground">Телефон</dt><dd className="mt-1 font-semibold">{passenger.phone}</dd></div><div><dt className="text-muted-foreground">Дата народження</dt><dd className="mt-1 font-semibold">{passenger.birthDate}</dd></div>{catalog.fields.map((field) => <div key={field.key}><dt className="text-muted-foreground">{field.label}</dt><dd className="mt-1 break-words font-semibold">{typeof custom[field.key] === "boolean" ? custom[field.key] ? "Так" : "Ні" : String(custom[field.key])}</dd></div>)}</dl><Separator className="my-7" /><label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed"><Checkbox checked={consent} onCheckedChange={setConsent} className="mt-1" /><span>Підтверджую правильність даних і погоджуюся на їх обробку перевізником для оформлення та виконання цієї поїздки.</span></label><p className="mt-4 text-xs leading-relaxed text-muted-foreground">Після підтвердження місця будуть зарезервовані. Оплатіть поїздку готівкою при посадці.</p></div> : confirmation ? <div role="status"><CheckCircle2 className="mb-5 size-12 text-primary" /><h2 className="text-2xl font-bold">{confirmation.status === "cash_on_boarding" ? "Місця заброньовано!" : "Бронювання знайдено"}</h2><p className="mt-3 text-sm leading-relaxed text-muted-foreground">Збережіть номер бронювання та покажіть його під час посадки. Дані вже передано перевізнику.</p><p className="mt-6 text-xs text-muted-foreground">Номер бронювання</p><p className="mt-2 break-all font-mono text-sm font-semibold select-all">{confirmation.reference}</p><Button variant="outline" className="mt-6" onClick={() => window.print()}>Зберегти / роздрукувати</Button><p className="mt-5 text-sm text-muted-foreground">{confirmation.status === "cash_on_boarding" ? "Оплата очікується готівкою при посадці." : `Поточний статус: ${confirmation.status}`}</p></div> : null}
-  </Wizard2>
 }

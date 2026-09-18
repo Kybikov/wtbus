@@ -108,7 +108,7 @@ Header, main, and footer share a 1536px maximum width. Horizontal gutters increa
 
 Search fields stack on narrow screens, become two columns at 640px, and form a single rail at 1024px. Results always pair a 240px facet rail with flexible inventory at 1024px; below that breakpoint, the visible facets sit above inventory in two columns. Reset stays visible even for an empty date. Nearby departures use one list under “Найближчі тури” and share the same filters and sorting. Cards retain route, times, departure and overnight arrival dates, duration, availability, price, and choice action while changing from stacked to horizontal at 1280px.
 
-Checkout pairs flexible form content with a 300px trip summary at 1024px. On smaller screens the summary follows the form with a top divider. Wrapping, shrinkable grid tracks, and breakable route/reference text support the verified 320px viewport without horizontal page scrolling.
+Checkout has a 1024px maximum width and content-driven height, pairing flexible form content with a 260px trip summary at 1024px. One named step row carries progress; there is no second header progress bar. On smaller screens the summary follows the form with a top divider. Wrapping, shrinkable grid tracks, and breakable route/reference text support the verified 320px viewport without horizontal page scrolling.
 
 ## Elevation & Depth
 
@@ -116,14 +116,14 @@ Result cards, facets, and checkout are flat, border-defined tonal surfaces. Card
 
 ## Shapes
 
-Main panels use the inherited React Bits surface radius, bound to the public 1rem application radius. Buttons use the shared control radius, selects the field radius, and inputs the input radius. Fine borders and separators define containment. Progress is a slim rounded track; route suggestions are text-first rows with a bottom divider.
+Main panels use the inherited React Bits surface radius, bound to the public 1rem application radius. Checkout controls share a rounded-xl field radius. Fine borders and separators define containment. Step progress uses numbered circles and completed-step checkmarks; route suggestions are text-first rows with a bottom divider.
 
 ## Components
 
 - **Search:** dark fields inside the gold rail; dependent destination choices and the available reverse route determine enabled states. The dark search action completes the rail.
 - **Buttons and fields:** explicit search, selection, and checkout controls are 44px tall. Shared controls preserve gold focus rings, reduced opacity while disabled, and a one-pixel pressed response. Inputs keep visible labels; validation and service failures remain readable inline alerts.
 - **Trip cards and facets:** licensed Filtering8 adapted to real bus inventory, with departure/duration sliders, result count, reset, and sorting. Price is per passenger; group totals and payment context stay textual.
-- **Checkout:** licensed Wizard2 adapted to passenger data, review, and confirmation. Named steps accompany numeric progress. The next action changes with the step; consent enables final submission, and busy state disables repeated action. The adjacent trip summary retains dates, timezone, seats, total, and cash-on-boarding context.
+- **Checkout:** licensed Wizard2 adapted to passenger data, review, and confirmation. A single named step row includes completed-step checkmarks. Each passenger has separate Latin first/last names and a localized birth date, with add/remove actions bounded by the searched seats. Library phone input uses shadcn controls. All fields share an outlined background surface and 44px height. Payment begins unselected and must be chosen explicitly; only supported cash-on-boarding is offered. Ukrainian inline errors replace browser validation popups. The next action changes with the step; consent enables final submission, and busy state disables repeated action. The adjacent trip summary retains dates, timezone, seats, total, and chosen payment. Confirmation highlights the full booking ID with copy and print actions.
 - **Navigation and receipt:** the supplied mark anchors the booking header; the team login remains a separate utility link. Confirmation presents a selectable reference and print action. Printing removes navigation, progress, and action chrome, and uses white paper with dark text.
 - **Loading and absence:** skeletons accompany busy states. Licensed EmptyState2 supplies a framed, centered no-results panel with a quiet search icon, concise explanation, and a 44px outline reset action. No-date and filtered-out messages remain distinct; when both lists are empty, a single panel avoids repeated messages. The facet reset is a ghost icon aligned right on the heading row, with a tooltip, accessible name, and 44px target.
 
@@ -134,7 +134,7 @@ Main panels use the inherited React Bits surface radius, bound to the public 1re
 - Do keep route, time, date range, timezone, and payment context readable as text.
 - Do preserve visible facets above results and the stacked checkout summary on small screens.
 - Do keep task actions and search fields at their established 44px height.
-- Do respect reduced motion: result entry is motion-safe and progress transitions stop when requested.
+- Do respect reduced motion: result entry is motion-safe.
 
 ### Don't:
 

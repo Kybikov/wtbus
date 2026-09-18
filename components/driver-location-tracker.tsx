@@ -7,6 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Car01Icon, Clock01Icon, Route01Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
+import { DriverPassengerManifest } from "@/components/driver-passenger-manifest"
 import { useDriverGPS } from "@/hooks/use-driver-gps"
 
 type FleetTrip = {
@@ -373,6 +374,7 @@ export function DriverLocationTracker() {
 
         {selectedVehicle?.activeTrip ? (
           <>
+            <DriverPassengerManifest key={selectedVehicle.activeTrip.id} tripId={selectedVehicle.activeTrip.id} />
             <div className="mt-7 rounded-2xl border border-border bg-background/40 p-4">
               <p className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
                 <HugeiconsIcon icon={Route01Icon} size={15} />

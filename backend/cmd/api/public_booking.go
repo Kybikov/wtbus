@@ -208,16 +208,53 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 }
 
 type publicBookingInput struct {
-	RequestKey         string         `json:"requestKey"`
-	TripID             string         `json:"tripId"`
-	QuotedPriceMinor   int64          `json:"quotedPriceMinor"`
-	Seats              int16          `json:"seats"`
-	PassengerName      string         `json:"passengerName"`
-	PassengerPhone     string         `json:"passengerPhone"`
-	PassengerBirthDate string         `json:"passengerBirthDate"`
-	CustomData         map[string]any `json:"customData"`
-	Consent            bool           `json:"consent"`
+	RequestKey       string            `json:"requestKey"`
+	TripID           string            `json:"tripId"`
+	QuotedPriceMinor int64             `json:"quotedPriceMinor"`
+	Seats            int16             `json:"seats"`
+	PassengerPhone   string            `json:"passengerPhone"`
+	Passengers       []publicPassenger `json:"passengers"`
+	PaymentMethod    string            `json:"paymentMethod"`
+	CustomData       map[string]any    `json:"customData"`
+	Consent          bool              `json:"consent"`
 }
+
+type publicPassenger struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	BirthDate string `json:"birthDate"`
+}
+
+var publicLatinName = regexp.MustCompile(`^[A-Za-z]+([ '-][A-Za-z]+)*$`)
+
+func normalizePublicPassengers(input *publicBookingInput, now time.Time) (bookingPassengerDetails, error) {
+	if input.PaymentMethod != "cash_on_boarding" {
+		return bookingPassengerDetails{}, errors.New("Оберіть доступний спосіб оплати: готівка при посадці.")
+	}
+	if len(input.Passengers) != int(input.Seats) || input.Seats < 1 || input.Seats > 20 {
+		return bookingPassengerDetails{}, errors.New("Вкажіть дані кожного пасажира відповідно до кількості місць.")
+	}
+	var contact bookingPassengerDetails
+	for index := range input.Passengers {
+		person := &input.Passengers[index]
+		person.FirstName = strings.TrimSpace(person.FirstName)
+		person.LastName = strings.TrimSpace(person.LastName)
+		if len(person.FirstName) > 80 || len(person.LastName) > 80 || !publicLatinName.MatchString(person.FirstName) || !publicLatinName.MatchString(person.LastName) {
+			return bookingPassengerDetails{}, fmt.Errorf("Пасажир %d: ім’я та прізвище мають бути латиницею, як у документі.", index+1)
+		}
+		details, err := normalizeBookingPassengerDetails(person.FirstName+" "+person.LastName, input.PassengerPhone, person.BirthDate, now)
+		if err != nil {
+			return bookingPassengerDetails{}, fmt.Errorf("Пасажир %d: перевірте дату народження та контактний телефон.", index+1)
+		}
+		person.BirthDate = details.BirthDate
+		if index == 0 {
+			contact = details
+		}
+	}
+	input.PassengerPhone = contact.Phone
+	return contact, nil
+}
+
 type publicConfirmation struct {
 	Reference  string `json:"reference"`
 	Status     string `json:"status"`
@@ -238,12 +275,11 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Перевірте дані бронювання та підтвердіть їх обробку."})
 		return
 	}
-	passenger, err := normalizeBookingPassengerDetails(input.PassengerName, input.PassengerPhone, input.PassengerBirthDate, time.Now().UTC())
+	passenger, err := normalizePublicPassengers(&input, time.Now().UTC())
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Вкажіть ім’я, телефон у міжнародному форматі та правильну дату народження."})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	input.PassengerName, input.PassengerPhone, input.PassengerBirthDate = passenger.Name, passenger.Phone, passenger.BirthDate
 	input.RequestKey, input.TripID = strings.ToLower(input.RequestKey), strings.ToLower(input.TripID)
 	// Atomic fixed windows, scoped by a hashed phone (never log passenger data)
 	// and by tenant. Do not trust caller-supplied forwarded-IP headers.
@@ -347,6 +383,7 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	custom["passenger_name"], custom["passenger_phone"], custom["passenger_birth_date"] = passenger.Name, passenger.Phone, passenger.BirthDate
+	custom["passengers"], custom["payment_method"] = input.Passengers, input.PaymentMethod
 	data, _ := json.Marshal(custom)
 	err = tx.QueryRow(r.Context(), `INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data) VALUES($1,$2,$3,'cash_on_boarding',$4,$5,$6,'web',$7) RETURNING id::text,status::text,seats,price_minor,currency`, company.ID, input.TripID, customerID, input.Seats, total, currency, data).Scan(&result.Reference, &result.Status, &result.Seats, &result.PriceMinor, &result.Currency)
 	if err != nil {
