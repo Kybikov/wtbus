@@ -486,14 +486,19 @@ export function ThemeCustomizer() {
         theme: preferences.theme,
       })
     )
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
       void sessionFetch("/api/preferences", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(preferences),
-      })
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]),
+      }).catch(() => undefined)
     }, 350)
-    return () => window.clearTimeout(timer)
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
   }, [
     compact,
     preferencesReady,
