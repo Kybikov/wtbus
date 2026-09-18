@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -143,27 +144,67 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, location)
 	rows, err := app.db.Query(r.Context(), `SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,
  t.capacity-`+publicOccupiedSQL+` FROM trips t WHERE t.tenant_id=$1 AND t.origin_name=$2 AND t.destination_name=$3
- AND t.starts_at>=$4 AND t.starts_at<$5 AND `+publicSalePredicate+` AND t.capacity-`+publicOccupiedSQL+` >= $6
- ORDER BY t.starts_at LIMIT 200`, company.ID, origin, destination, start, start.AddDate(0, 0, 1), seats)
+ AND t.starts_at>=$4 AND t.starts_at<$5 AND `+publicSalePredicate+`
+ ORDER BY t.starts_at LIMIT 200`, company.ID, origin, destination, start, start.AddDate(0, 0, 1))
 	if err != nil {
 		app.publicFailure(w, err)
 		return
 	}
 	defer rows.Close()
 	items := make([]publicTrip, 0)
+	available := false
 	for rows.Next() {
 		var item publicTrip
 		if err = rows.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.AvailableSeats); err != nil {
 			app.publicFailure(w, err)
 			return
 		}
+		item.AvailableSeats = max(0, item.AvailableSeats)
+		available = available || item.AvailableSeats >= seats
 		items = append(items, item)
 	}
 	if err = rows.Err(); err != nil {
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "timezone": company.Timezone})
+	rows.Close()
+	before, after := make([]publicTrip, 0), make([]publicTrip, 0)
+	if !available {
+		// Suggest only real, still saleable departures with enough seats. The
+		// preceding side never includes departed trips; each side is bounded.
+		nearby, queryErr := app.db.Query(r.Context(), `WITH eligible AS (
+ SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,
+ t.capacity-`+publicOccupiedSQL+` AS available_seats FROM trips t
+ WHERE t.tenant_id=$1 AND t.origin_name=$2 AND t.destination_name=$3 AND `+publicSalePredicate+`
+ AND t.capacity-`+publicOccupiedSQL+` >= $6)
+ (SELECT * FROM eligible WHERE starts_at<$4 ORDER BY starts_at DESC,id LIMIT 3)
+ UNION ALL
+ (SELECT * FROM eligible WHERE starts_at>=$5 ORDER BY starts_at,id LIMIT 3)`, company.ID, origin, destination, start, start.AddDate(0, 0, 1), seats)
+		if queryErr != nil {
+			app.publicFailure(w, queryErr)
+			return
+		}
+		defer nearby.Close()
+		for nearby.Next() {
+			var item publicTrip
+			if err = nearby.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.AvailableSeats); err != nil {
+				app.publicFailure(w, err)
+				return
+			}
+			if item.StartsAt.Before(start) {
+				before = append(before, item)
+			} else {
+				after = append(after, item)
+			}
+		}
+		if err = nearby.Err(); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		sort.Slice(before, func(i, j int) bool { return before[i].StartsAt.After(before[j].StartsAt) })
+		sort.Slice(after, func(i, j int) bool { return after[i].StartsAt.Before(after[j].StartsAt) })
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "before": before, "after": after, "timezone": company.Timezone})
 }
 
 type publicBookingInput struct {

@@ -110,6 +110,66 @@ func TestPublicBookingPostgres(t *testing.T) {
 			t.Fatal(response.Body)
 		}
 	})
+	t.Run("sold out trips remain visible and nearby suggestions have enough seats", func(t *testing.T) {
+		var customerID, soldBookingID string
+		row(`INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Sold out fixture','+380670999998') RETURNING id::text`, &customerID, tenantID)
+		row(`INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source) VALUES($1,$2,$3,'cash_on_boarding',3,7500,'EUR','dispatcher') RETURNING id::text`, &soldBookingID, tenantID, tripID, customerID)
+		defer db.Exec(ctx, `DELETE FROM customers WHERE id=$1`, customerID)
+		defer db.Exec(ctx, `DELETE FROM bookings WHERE id=$1`, soldBookingID)
+		fixtureIDs := []string{}
+		defer func() {
+			for _, id := range fixtureIDs {
+				db.Exec(ctx, `DELETE FROM trips WHERE id=$1`, id)
+			}
+		}()
+		for _, delta := range []int{-1, 1, 2, 3, 4} {
+			var id string
+			at := starts.AddDate(0, 0, delta)
+			row(`INSERT INTO trips(tenant_id,route_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,price_minor,currency) VALUES($1,$2,'regular','assigned','Київ','Варшава',$3,$4,3,2500,'EUR') RETURNING id::text`, &id, tenantID, routeID, at, at.Add(8*time.Hour))
+			fixtureIDs = append(fixtureIDs, id)
+		}
+		// Insufficient capacity and departed trips must not become suggestions.
+		for _, at := range []time.Time{starts.Add(time.Hour * 24), time.Now().Add(-time.Hour * 24)} {
+			var id string
+			row(`INSERT INTO trips(tenant_id,route_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,price_minor,currency) VALUES($1,$2,'regular','assigned','Київ','Варшава',$3,$4,1,2500,'EUR') RETURNING id::text`, &id, tenantID, routeID, at, at.Add(8*time.Hour))
+			fixtureIDs = append(fixtureIDs, id)
+		}
+		decode := func(path string) struct{ Items, Before, After []publicTrip } {
+			response := send("GET", path, nil)
+			assertStatus(t, response, 200)
+			var data struct{ Items, Before, After []publicTrip }
+			if err := json.Unmarshal(response.Body.Bytes(), &data); err != nil {
+				t.Fatal(err)
+			}
+			return data
+		}
+		data := decode(strings.Replace(searchPath, "seats=1", "seats=2", 1))
+		if len(data.Items) != 1 || data.Items[0].ID != tripID || data.Items[0].AvailableSeats != 0 || len(data.Before) != 1 || len(data.After) != 3 {
+			t.Fatalf("unexpected sold out search: %+v", data)
+		}
+		for _, trip := range append(data.Before, data.After...) {
+			if trip.AvailableSeats < 2 || !trip.StartsAt.After(time.Now()) {
+				t.Fatalf("unbookable suggestion: %+v", trip)
+			}
+		}
+		if data.After[0].ID != fixtureIDs[1] || data.After[2].ID != fixtureIDs[3] {
+			t.Fatalf("not the nearest departures: %+v", data.After)
+		}
+		// An empty day gets suggestions on both sides; booked-out trips are skipped.
+		empty := strings.Replace(searchPath, starts.Format("2006-01-02"), starts.AddDate(0, 0, 7).Format("2006-01-02"), 1)
+		data = decode(empty)
+		if len(data.Items) != 0 || len(data.Before) != 3 || len(data.After) != 0 || data.Before[0].ID != fixtureIDs[4] {
+			t.Fatalf("unexpected empty day: %+v", data)
+		}
+		// Existing availability rules also apply to nearby inventory.
+		var blockID string
+		row(`INSERT INTO availability_blocks(tenant_id,route_id,starts_at,ends_at,reason) VALUES($1,$2,$3,$4,'fixture') RETURNING id::text`, &blockID, tenantID, routeID, starts.AddDate(0, 0, 1), starts.AddDate(0, 0, 5))
+		defer db.Exec(ctx, `DELETE FROM availability_blocks WHERE id=$1`, blockID)
+		data = decode(searchPath)
+		if len(data.After) != 0 {
+			t.Fatalf("blocked suggestions leaked: %+v", data.After)
+		}
+	})
 	t.Run("validation rejects client pricing and private identities", func(t *testing.T) {
 		var otherTenantID string
 		otherSlug := slug + "-other"
@@ -200,8 +260,8 @@ func TestPublicBookingPostgres(t *testing.T) {
 		}
 		response := send("GET", searchPath, nil)
 		assertStatus(t, response, 200)
-		if !strings.Contains(response.Body.String(), `"items":[]`) {
-			t.Fatal("full trip remained available", response.Body)
+		if !strings.Contains(response.Body.String(), `"availableSeats":0`) || !strings.Contains(response.Body.String(), tripID) {
+			t.Fatal("sold out trip was not visible with zero seats", response.Body)
 		}
 	})
 	t.Run("blocked disabled departed and suspended sales", func(t *testing.T) {
