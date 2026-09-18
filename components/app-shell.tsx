@@ -9,10 +9,12 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
+  ArrowLeft01Icon,
   Calendar01Icon,
   Car01Icon,
   DashboardSquare01Icon,
   Notification01Icon,
+  InformationCircleIcon,
   RefreshIcon,
   Route01Icon,
   Search01Icon,
@@ -345,6 +347,8 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const [descriptionOpen, setDescriptionOpen] = React.useState(false)
+  const descriptionId = React.useId()
   const [manualRefreshing, setManualRefreshing] = React.useState(false)
   const [refreshPending, startRefresh] = React.useTransition()
   const isRefreshing = refreshing || manualRefreshing || refreshPending
@@ -621,20 +625,34 @@ export function AppShell({
         variant={preferences.sidebarVariant}
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
-        <header className="app-topbar relative flex h-16 shrink-0 items-center justify-between gap-3 rounded-[var(--app-radius)] border border-border bg-card px-3 sm:px-5">
-          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-3">
+        <header className="app-topbar relative flex h-12 shrink-0 items-center justify-between gap-1 rounded-[var(--app-radius)] border border-border bg-card px-2 sm:gap-3 sm:px-3">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-2">
             <SidebarTrigger
               aria-label="Открыть навигацию"
-              className="inline-flex size-9 rounded-lg"
+              className="inline-flex size-8 rounded-lg max-sm:size-7"
             />
-            <div className="hidden min-w-0 max-w-[28rem] border-r border-border pr-3 md:block">
+            <Tooltip>
+              <TooltipTrigger render={<Button aria-label="Назад" className="size-8 rounded-lg max-sm:size-7" size="icon" variant="ghost" onClick={() => {
+                if (window.history.length > 1) router.back()
+                else router.push("/")
+              }} />}>
+                <HugeiconsIcon icon={ArrowLeft01Icon} size={18} strokeWidth={1.8} />
+              </TooltipTrigger>
+              <TooltipContent>Назад</TooltipContent>
+            </Tooltip>
+            <div className="flex min-w-0 max-w-[28rem] flex-1 items-center gap-0.5 sm:gap-1 lg:flex-initial lg:border-r lg:border-border lg:pr-2">
               <p className="truncate text-sm font-semibold">{pageTitle}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {pageDescription ?? pageDescriptions[pageTitle] ?? pageTitle}
-              </p>
+              <Tooltip triggerId={`${descriptionId}-trigger`} open={descriptionOpen} onOpenChange={setDescriptionOpen}>
+                <TooltipTrigger id={`${descriptionId}-trigger`} closeOnClick={false} render={<Button aria-label="Описание страницы" aria-describedby={descriptionOpen ? descriptionId : undefined} className="size-6 shrink-0 rounded-md text-muted-foreground max-sm:size-5" size="icon-xs" variant="ghost" onClick={() => setDescriptionOpen(true)} />}>
+                  <HugeiconsIcon icon={InformationCircleIcon} size={15} strokeWidth={1.8} />
+                </TooltipTrigger>
+                <TooltipContent role="tooltip" id={descriptionId} side="bottom" className="max-w-[min(22rem,calc(100vw-2rem))] text-left leading-relaxed">
+                  {pageDescription ?? pageDescriptions[pageTitle] ?? pageTitle}
+                </TooltipContent>
+              </Tooltip>
             </div>
             {localSearch ? (
-              <label className="hidden h-9 w-44 min-w-0 shrink-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 md:flex">
+              <label className="hidden h-9 w-44 min-w-0 shrink-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 lg:flex">
                 <HugeiconsIcon
                   className="shrink-0 text-muted-foreground"
                   icon={Search01Icon}
@@ -657,7 +675,7 @@ export function AppShell({
               <Button
                 aria-haspopup="dialog"
                 aria-label="Глобальный поиск"
-                className="hidden h-9 w-44 shrink-0 justify-start gap-2 rounded-xl border-input bg-input/40 px-3 text-muted-foreground md:inline-flex"
+                className="hidden h-9 w-44 shrink-0 justify-start gap-2 rounded-xl border-input bg-input/40 px-3 text-muted-foreground lg:inline-flex"
                 onClick={() => setSearchOpen(true)}
                 variant="outline"
               >
@@ -668,14 +686,11 @@ export function AppShell({
                 </kbd>
               </Button>
             ) : null}
-            <p className="min-w-0 flex-1 truncate text-sm font-semibold md:hidden">
-              {pageTitle}
-            </p>
             {localSearch ? (
               <Button
                 aria-expanded={localSearchMobileOpen}
                 aria-label="Поиск на странице"
-                className="md:hidden"
+                className="max-sm:size-7 lg:hidden"
                 onClick={() => setLocalSearchMobileOpen((open) => !open)}
                 size="icon"
                 variant="ghost"
@@ -689,7 +704,7 @@ export function AppShell({
                   render={
                     <Button
                       aria-label="Поиск рейса или клиента"
-                      className="md:hidden"
+                      className="max-sm:size-7 lg:hidden"
                       onClick={() => setSearchOpen(true)}
                       size="icon"
                       variant="ghost"
@@ -702,13 +717,13 @@ export function AppShell({
               </Tooltip>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5 max-sm:[&_button]:size-7">
             {pageActions ? (
               <div className="flex items-center gap-2 max-lg:[&_a]:size-9 max-lg:[&_a]:overflow-hidden max-lg:[&_a]:px-0 max-lg:[&_a]:text-[0px] max-lg:[&_button]:size-9 max-lg:[&_button]:overflow-hidden max-lg:[&_button]:px-0 max-lg:[&_button]:text-[0px] max-lg:[&_svg]:size-4">
                 {pageActions}
               </div>
             ) : null}
-            {pageActions ? <Separator orientation="vertical" className="mx-1 h-6 self-center" /> : null}
+            {pageActions ? <Separator orientation="vertical" className="mx-1 h-5 data-vertical:self-center" /> : null}
             <Tooltip>
               <TooltipTrigger render={<Button aria-label="Обновить данные" aria-busy={isRefreshing} disabled={isRefreshing} onClick={() => void refreshPage()} className="size-9 rounded-lg" size="icon-lg" variant="ghost" />}>
                 <HugeiconsIcon icon={RefreshIcon} strokeWidth={1.8} className={cn(isRefreshing && "motion-safe:animate-spin")} />
@@ -847,7 +862,7 @@ export function AppShell({
             </DropdownMenu>
           </div>
           {localSearch && localSearchMobileOpen ? (
-            <div className="absolute top-[calc(100%+.5rem)] right-0 left-0 z-40 rounded-[var(--app-radius)] border border-border bg-popover p-2 shadow-xl md:hidden">
+            <div className="absolute top-[calc(100%+.5rem)] right-0 left-0 z-40 rounded-[var(--app-radius)] border border-border bg-popover p-2 shadow-xl lg:hidden">
               <div className="flex items-center gap-2 rounded-xl border border-input bg-input/40 px-3">
                 <HugeiconsIcon
                   className="shrink-0 text-muted-foreground"
