@@ -5,8 +5,6 @@ import { usePageSearch } from "@/hooks/use-page-search"
 import { bookingPassengers } from "@/lib/booking-checkout"
 
 import * as React from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import {
@@ -752,14 +750,7 @@ export function BookingRegistry() {
           onChange: setQuery,
           placeholder: "Пассажир, телефон или маршрут",
         }}
-        pageActions={
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={openCreateBooking}>
-              <HugeiconsIcon icon={Add01Icon} size={17} />
-              Новая бронь
-            </Button>
-          </div>
-        }
+        onCreate={openCreateBooking}
         pageDescription="Пассажиры из Telegram и ручные брони"
         pageTitle="Журнал бронирований"
         utilities={<ThemeCustomizer />}

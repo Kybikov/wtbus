@@ -1,8 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { Add01Icon } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
 
 import { AppShell } from "@/components/app-shell"
 import {
@@ -503,12 +501,8 @@ export function TeamManager() {
         onChange: setQuery,
         placeholder: "Сотрудник, email или роль",
       }}
-      pageActions={
-        <Button disabled={loading || !me} onClick={() => setShowForm(true)}>
-          <HugeiconsIcon icon={Add01Icon} size={17} />
-          Добавить сотрудника
-        </Button>
-      }
+      onCreate={() => setShowForm(true)}
+      createDisabled={loading || !me}
       pageDescription="Сотрудники, роли доступа и системная автоматизация"
       pageTitle="Команда"
       utilities={<ThemeCustomizer />}

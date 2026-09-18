@@ -1,13 +1,10 @@
 "use client"
 
 import { metricValue } from "@/lib/entity-metrics"
-import { adminControlClassName } from "@/lib/admin-ui"
 import { sessionFetch } from "@/lib/session-navigation"
 import { usePageSearch } from "@/hooks/use-page-search"
 
 import * as React from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import {
@@ -569,55 +566,33 @@ export function CustomerDirectory() {
           placeholder: "Имя, телефон или email",
           label: "Поиск клиентов",
         }}
-        pageActions={
-          <div className="flex items-center gap-2">
-            <input
-              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void importFile(file)
-                event.currentTarget.value = ""
-              }}
-              ref={importInput}
-              type="file"
-            />
-            <Button
-              className={`${adminControlClassName} hidden xl:inline-flex`}
-              disabled={importing}
-              onClick={() => importInput.current?.click()}
-              size="sm"
-              variant="outline"
-            >
-              {importing ? "Импортируем…" : "Импорт"}
-            </Button>
-            <Button
-              className={`${adminControlClassName} hidden lg:inline-flex`}
-              disabled={exporting}
-              onClick={() => void exportCustomers()}
-              size="sm"
-              variant="outline"
-            >
-              {exporting ? "Выгружаем…" : "Экспорт"}
-            </Button>
-            <Button
-              onClick={() => {
-                setForm(emptyForm)
-                setEditingID(null)
-                setFormError(null)
-                setOpen(true)
-              }}
-              size="sm"
-            >
-              <HugeiconsIcon icon={Add01Icon} size={17} />
-              <span className="hidden sm:inline">Клиент</span>
-            </Button>
-          </div>
-        }
+        onCreate={() => {
+          setForm(emptyForm)
+          setEditingID(null)
+          setFormError(null)
+          setOpen(true)
+        }}
+        dataActions={{
+          onImport: () => importInput.current?.click(),
+          onExport: exportCustomers,
+          importing,
+          exporting,
+        }}
         pageDescription="Контакты, поездки и история обращений"
         pageTitle="Клиенты"
         utilities={<ThemeCustomizer />}
       >
+        <input
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) void importFile(file)
+            event.currentTarget.value = ""
+          }}
+          ref={importInput}
+          type="file"
+        />
         <div className="w-full min-w-0 space-y-5">
           {error ? (
             <div

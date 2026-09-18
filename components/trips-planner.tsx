@@ -6,7 +6,6 @@ import * as React from "react"
 import { Input } from "@/components/ui/input"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
-  Add01Icon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Car01Icon,
@@ -867,12 +866,8 @@ export function TripsPlanner() {
         }}
         onRefresh={() => setRequestVersion((version) => version + 1)}
         refreshing={isLoading || isResourcesLoading}
-        pageActions={
-          <Button onClick={openCreateTrip}>
-            <HugeiconsIcon icon={Add01Icon} size={18} />
-            Создать рейс
-          </Button>
-        }
+        onCreate={openCreateTrip}
+        createDisabled={isLoading || isResourcesLoading}
         pageDescription="Транспорт, водители и расписание без накладок"
         pageTitle="Планирование рейсов"
         utilities={<ThemeCustomizer />}

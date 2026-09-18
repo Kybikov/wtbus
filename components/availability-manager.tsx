@@ -3,8 +3,6 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
@@ -232,17 +230,10 @@ export function AvailabilityManager() {
       }}
       onRefresh={load}
       refreshing={loading}
-      pageActions={
-        <Button
-          onClick={() => {
-            setForm(defaultBlockForm())
-            setOpen(true)
-          }}
-        >
-          <HugeiconsIcon icon={Add01Icon} size={18} />
-          Добавить блокировку
-        </Button>
-      }
+      onCreate={() => {
+        setForm(defaultBlockForm())
+        setOpen(true)
+      }}
       pageDescription={`Блокировки продаж и планирования${timezone ? ` · ${timezone}` : ""}`}
       pageTitle="Недоступные даты"
       utilities={<ThemeCustomizer />}

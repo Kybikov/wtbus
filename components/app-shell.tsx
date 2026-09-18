@@ -22,6 +22,8 @@ import {
   UserGroupIcon,
   Wallet01Icon,
 } from "@hugeicons/core-free-icons"
+import { MoreHorizontal } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import {
   Command,
@@ -64,6 +66,8 @@ import { isSearchShortcut } from "@/lib/admin-search"
 import { entityDetailHref } from "@/lib/entity-details"
 import { AdminSearchField } from "@/components/admin-search-field"
 import { useSearchShortcutLabel } from "@/hooks/use-search-shortcut-label"
+import { UniversalHeaderActions, type HeaderDataActions } from "@/components/universal-header-actions"
+import { EntityExportContext, type EntityExport } from "@/components/entity-export-context"
 import { EntityFooterContext } from "@/components/entity-footer-context"
 import { adminControlClassName, adminSearchClassName } from "@/lib/admin-ui"
 
@@ -86,6 +90,9 @@ type AppShellProps = {
   }
   utilities?: React.ReactNode
   pageActions?: React.ReactNode
+  onCreate?: () => void
+  createDisabled?: boolean
+  dataActions?: HeaderDataActions
   onRefresh?: () => void | Promise<void>
   refreshing?: boolean
   collectionFooter?: boolean
@@ -348,6 +355,9 @@ export function AppShell({
   localSearch,
   utilities,
   pageActions,
+  onCreate,
+  createDisabled,
+  dataActions,
   onRefresh,
   refreshing = false,
   collectionFooter = false,
@@ -386,6 +396,8 @@ export function AppShell({
     },
     [preferences.sidebarMode, setSidebarOverride]
   )
+  const [viewExport, setViewExport] = React.useState<EntityExport | null>(null)
+  const [identityReady, setIdentityReady] = React.useState(false)
   const [brand, setBrand] = React.useState(defaultShellBrand)
   const [userName, setUserName] = React.useState("")
   const profileVersion = React.useRef(0)
@@ -433,6 +445,7 @@ export function AppShell({
           .json()
           .catch(() => null)
         if (controller.signal.aborted) return
+        setIdentityReady(identityResponse.ok)
         if (initialProfileVersion === profileVersion.current && identityResponse.ok && typeof identity === "object" && identity !== null && "displayName" in identity && typeof identity.displayName === "string") setUserName(identity.displayName)
         setBrand((current) => {
           const tenantSlug =
@@ -604,6 +617,7 @@ export function AppShell({
   }
 
   return (
+    <EntityExportContext.Provider value={setViewExport}>
     <SidebarProvider
       className={cn("app-shell-frame min-h-svh gap-2 bg-background p-2 text-foreground",collectionFooter && "h-dvh min-h-0 overflow-hidden")}
       onOpenChange={setSidebarOpen}
@@ -622,7 +636,7 @@ export function AppShell({
         variant={preferences.sidebarVariant}
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
-        <header className="app-topbar workspace-panel relative flex h-12 shrink-0 items-center justify-between gap-1 px-2 sm:gap-3 sm:px-3">
+        <header className="app-topbar workspace-panel relative max-[380px]:[&>div_button]:size-6 max-[380px]:[&>div]:gap-0 max-[380px]:[&_[data-slot=separator]]:mx-0.5 flex h-12 shrink-0 items-center justify-between gap-1 px-2 sm:gap-3 sm:px-3">
           <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-2">
             <SidebarTrigger
               aria-label="Открыть навигацию"
@@ -695,13 +709,20 @@ export function AppShell({
               </Tooltip>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5 max-sm:[&_button]:size-7">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5 max-xl:[&_button]:size-8 max-sm:[&_button]:size-7">
             {pageActions ? (
-              <div className="flex items-center gap-2 [&_[data-slot=button]]:h-8 [&_[data-slot=button]]:rounded-lg max-lg:[&_a]:size-8 max-lg:[&_a]:overflow-hidden max-lg:[&_a]:px-0 max-lg:[&_a]:text-[0px] max-lg:[&_button]:size-8 max-lg:[&_button]:overflow-hidden max-lg:[&_button]:px-0 max-lg:[&_button]:text-[0px] max-lg:[&_svg]:size-4">
-                {pageActions}
-              </div>
+              <>
+                <div className="hidden items-center gap-2 xl:flex [&_[data-slot=button]]:h-8 [&_[data-slot=button]]:rounded-lg max-lg:[&_a]:size-8 max-lg:[&_a]:overflow-hidden max-lg:[&_a]:px-0 max-lg:[&_a]:text-[0px] max-lg:[&_button]:size-8 max-lg:[&_button]:overflow-hidden max-lg:[&_button]:px-0 max-lg:[&_button]:text-[0px] max-lg:[&_svg]:size-4">
+                  {pageActions}
+                </div>
+                <Popover>
+                  <PopoverTrigger render={<Button aria-label="Действия страницы" className="size-7 rounded-lg xl:hidden" size="icon" variant="ghost" />}><MoreHorizontal className="size-4" /></PopoverTrigger>
+                  <PopoverContent align="end" className="gap-2 p-2 [&_[data-slot=button]]:w-full [&_[data-slot=button]]:justify-start">{pageActions}</PopoverContent>
+                </Popover>
+              </>
             ) : null}
             {pageActions ? <Separator orientation="vertical" className="mx-1 h-5 data-vertical:self-center" /> : null}
+            <UniversalHeaderActions role={brand.role} ready={identityReady} onCreate={onCreate} createDisabled={createDisabled} dataActions={dataActions} viewExport={viewExport} onImported={refreshPage} />
             <Tooltip>
               <TooltipTrigger render={<Button aria-label="Обновить данные" aria-busy={isRefreshing} disabled={isRefreshing} onClick={() => void refreshPage()} className="size-9 rounded-lg" size="icon-lg" variant="ghost" />}>
                 <HugeiconsIcon icon={RefreshIcon} strokeWidth={1.8} className={cn(isRefreshing && "motion-safe:animate-spin")} />
@@ -953,5 +974,6 @@ export function AppShell({
         <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground"><span>↑ ↓ выбрать · Enter открыть</span><span>Esc закрыть</span></div>
       </CommandDialog>
     </SidebarProvider>
+    </EntityExportContext.Provider>
   )
 }

@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { entityDetailHref } from "@/lib/entity-details"
 import { createPortal } from "react-dom"
+import { serializeViewCsv } from "@/lib/admin-actions"
+import { EntityExportContext } from "@/components/entity-export-context"
 import { EntityFooterContext } from "@/components/entity-footer-context"
 
 import ReactBitsKanban, {
@@ -256,6 +258,40 @@ export function EntityDataView<T>({
     onSelectedChange(new Set())
   }
   const visibleColumns = columns.filter((column) => visible.has(column.id))
+  const registerExport = React.useContext(EntityExportContext)
+  const exportColumns = visibleColumns.filter(
+    (column) => column.text || column.metric
+  )
+  const csv = serializeViewCsv(
+    exportColumns.map((column) => column.label),
+    items.map((item) =>
+      exportColumns.map((column) =>
+        column.text ? column.text(item) : column.metric?.getValue(item)
+      )
+    )
+  )
+  const rowCount = items.length
+  const loadedCount = sourceItems.length
+  const exportTotal = totalCount ?? loadedCount
+  React.useEffect(() => {
+    registerExport?.({
+      csv,
+      filename: `vivat-${collection}.csv`,
+      rows: rowCount,
+      loaded: loadedCount,
+      total: exportTotal,
+      loading: !!loading,
+    })
+    return () => registerExport?.(null)
+  }, [
+    registerExport,
+    csv,
+    collection,
+    rowCount,
+    loadedCount,
+    exportTotal,
+    loading,
+  ])
   const selectableItems = items.filter(isSelectable)
   const allSelected =
     selectableItems.length > 0 &&

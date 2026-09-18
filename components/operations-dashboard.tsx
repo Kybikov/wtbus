@@ -7,7 +7,6 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import Link from "next/link"
 import {
   ArrowUpRight01Icon,
-  Add01Icon,
   Car01Icon,
   ChartIncreaseIcon,
   Clock01Icon,
@@ -752,12 +751,6 @@ export function OperationsDashboard() {
     <AppShell
       onRefresh={() => setRefreshVersion((version) => version + 1)}
       refreshing={isLoading || refreshing}
-      pageActions={
-        <Link className={buttonVariants({ size: "lg" })} href="/trips">
-          <HugeiconsIcon icon={Add01Icon} size={16} />
-          Создать рейс
-        </Link>
-      }
       pageDescription="Рейсы, загрузка, GPS и команда в течение дня"
       pageTitle="Оперативная сводка"
       utilities={<ThemeCustomizer />}

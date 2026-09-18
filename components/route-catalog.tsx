@@ -3,8 +3,6 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
@@ -312,12 +310,7 @@ export function RouteCatalog() {
       }}
       onRefresh={load}
       refreshing={loading}
-      pageActions={
-        <Button onClick={startCreate} size="lg">
-          <HugeiconsIcon icon={Add01Icon} size={16} />
-          Новый маршрут
-        </Button>
-      }
+      onCreate={startCreate}
       pageDescription="Регулярные направления, цены и активность"
       pageTitle="Каталог маршрутов"
       utilities={<ThemeCustomizer />}

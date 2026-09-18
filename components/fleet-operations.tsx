@@ -3,8 +3,6 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { FleetLocationMap } from "@/components/fleet-location-map"
@@ -409,16 +407,8 @@ export function FleetOperations() {
       }}
       onRefresh={() => load(true)}
       refreshing={loading || refreshing}
-      pageActions={
-        <div className="flex gap-2">
-          {canManage ? (
-            <Button disabled={saving} onClick={startCreate}>
-              <HugeiconsIcon icon={Add01Icon} size={18} />
-              Добавить автомобиль
-            </Button>
-          ) : null}
-        </div>
-      }
+      onCreate={startCreate}
+      createDisabled={saving || !canManage}
       pageDescription="Последняя GPS-точка каждого автомобиля · обновление раз в 30 секунд"
       pageTitle="Транспорт и геолокация"
       utilities={<ThemeCustomizer />}
