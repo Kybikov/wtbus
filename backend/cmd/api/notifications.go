@@ -25,6 +25,33 @@ import (
 var pushHTTPClient = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 var notificationCategories = map[string]bool{"newRequests": true, "newBookings": true, "payments": true, "trips": true}
 
+// webpush-go adds mailto: itself unless Subscriber is an HTTPS URL.
+// Our configuration accepts the RFC URI form; passing it through unchanged
+// creates mailto:mailto:... and Apple rejects the resulting VAPID JWT.
+func vapidSubscriber(subject string) string {
+	subject = strings.TrimSpace(subject)
+	if strings.HasPrefix(strings.ToLower(subject), "mailto:") {
+		return strings.TrimSpace(subject[len("mailto:"):])
+	}
+	return subject
+}
+
+func pushProviderReason(body []byte) string {
+	var result struct {
+		Reason string `json:"reason"`
+	}
+	if json.Unmarshal(body, &result) != nil {
+		return "unknown"
+	}
+	// Never log arbitrary provider bodies, device endpoints or credentials.
+	switch result.Reason {
+	case "BadJwtToken", "VapidPkHashMismatch", "ExpiredToken", "BadDeviceToken", "BadExpiration", "BadTopic", "Forbidden", "TooManyRequests":
+		return result.Reason
+	default:
+		return "unknown"
+	}
+}
+
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
@@ -527,11 +554,13 @@ func (app *application) deliverPush(ctx context.Context) error {
 		path = "/profile"
 	}
 	payload, _ := json.Marshal(map[string]any{"title": title, "body": body, "url": path, "tag": "vivat:" + id})
-	result, sendErr := webpush.SendNotificationWithContext(ctx, payload, &s, &webpush.Options{HTTPClient: pushHTTPClient, Subscriber: optionalEnv("PUSH_VAPID_SUBJECT", "mailto:support@wtmelon.store"), VAPIDPublicKey: app.pushPublicKey, VAPIDPrivateKey: app.pushPrivateKey, TTL: 3600, Urgency: webpush.UrgencyNormal})
+	result, sendErr := webpush.SendNotificationWithContext(ctx, payload, &s, &webpush.Options{HTTPClient: pushHTTPClient, Subscriber: vapidSubscriber(optionalEnv("PUSH_VAPID_SUBJECT", "mailto:support@wtmelon.store")), VAPIDPublicKey: app.pushPublicKey, VAPIDPrivateKey: app.pushPrivateKey, TTL: 3600, Urgency: webpush.UrgencyNormal})
 	status := 0
+	providerReason := "unknown"
 	if result != nil {
 		status = result.StatusCode
-		_, _ = io.Copy(io.Discard, io.LimitReader(result.Body, 8192))
+		responseBody, _ := io.ReadAll(io.LimitReader(result.Body, 8192))
+		providerReason = pushProviderReason(responseBody)
 		result.Body.Close()
 	}
 	if status == 404 || status == 410 {
@@ -540,11 +569,12 @@ func (app *application) deliverPush(ctx context.Context) error {
 	}
 	if sendErr == nil && status >= 200 && status < 300 {
 		_, err = app.db.Exec(ctx, `UPDATE push_jobs SET finished_at=now(),locked_until=NULL WHERE id=$1`, jobID)
+		app.log.Info("push delivery accepted", "status", status, "job_id", jobID)
 		return err
 	}
 	if attempts >= 8 || (status >= 400 && status < 500 && status != 429) {
 		_, err = app.db.Exec(ctx, `UPDATE push_jobs SET finished_at=now(),locked_until=NULL WHERE id=$1`, jobID)
-		app.log.Warn("push delivery stopped", "status", status, "attempts", attempts)
+		app.log.Warn("push delivery stopped", "status", status, "attempts", attempts, "reason", providerReason)
 		return err
 	}
 	delay := time.Duration(1<<min(attempts, 10)) * 15 * time.Second

@@ -4,7 +4,7 @@ import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
 import { realtimeEvent } from "@/lib/realtime"
-import { NotificationsBell } from "@/components/notifications-inbox"
+import { AppShell } from "@/components/app-shell"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -372,8 +372,15 @@ export function DriverLocationTracker() {
   }
 
   return (
-    <main className="min-h-svh bg-background px-4 py-5 text-foreground sm:px-6">
-      <div className="mx-auto flex min-h-[calc(100svh-2.5rem)] max-w-md flex-col rounded-[var(--app-radius)] border border-border bg-card p-5 shadow-xl shadow-black/10">
+    <AppShell
+      pageTitle="Мой рейс"
+      pageDescription="Пассажиры, наличные и передача геолокации"
+      onRefresh={async () => {
+        await loadFleet()
+        if (identity?.role === "driver") await loadCashSummary()
+      }}
+    >
+      <div className="mx-auto flex w-full max-w-md flex-col rounded-[var(--app-radius)] border border-border bg-card p-4 sm:p-5">
         <div className="flex items-center gap-3">
           <div className="grid size-11 place-items-center rounded-2xl bg-primary text-primary-foreground">
             <HugeiconsIcon icon={Car01Icon} size={22} />
@@ -385,19 +392,6 @@ export function DriverLocationTracker() {
             </p>
           </div>
         </div>
-
-        <nav
-          aria-label="Навигация приложения"
-          className="mt-5 flex flex-wrap gap-2"
-        >
-          <Button render={<Link href="/profile" />} variant="outline">
-            Профиль и настройки
-          </Button>
-          <Button render={<Link href="/" />} variant="ghost">
-            Главная
-          </Button>
-          <NotificationsBell />
-        </nav>
 
         <div className="mt-6">
           <h1 className="text-3xl font-bold tracking-[-.035em]">
@@ -629,6 +623,6 @@ export function DriverLocationTracker() {
           </div>
         ) : null}
       </div>
-    </main>
+    </AppShell>
   )
 }

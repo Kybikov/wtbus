@@ -202,6 +202,90 @@ body:has([data-public-booking]) {
   min-height: 3rem;
 }
 
+/* One bounded app viewport: only the content canvas scrolls. */
+.app-shell-frame {
+  height: 100dvh;
+  min-height: 0;
+}
+.app-workspace {
+  min-height: 0;
+}
+.mobile-dock {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.mobile-dock-search [data-slot="command-input-wrapper"] {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+}
+.mobile-dock-search [data-slot="input-group"] {
+  height: 44px !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  html[data-scale] { font-size: 16px; }
+  body:has(.app-shell-frame) { overflow: hidden; }
+  .app-shell-frame {
+    gap: 0;
+    padding: env(safe-area-inset-top) 0 0;
+  }
+  .app-topbar {
+    height: 56px;
+    min-height: 56px;
+    border-radius: 0;
+    border-top: 0;
+    border-right: 0;
+    border-left: 0;
+  }
+  .workspace-content,
+  :root[data-density="compact"] .workspace-content {
+    padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+  }
+  .app-workspace:has(.mobile-collection-footer) .workspace-content { padding-bottom: 16px; }
+  .mobile-collection-footer {
+    padding: 4px 16px calc(84px + env(safe-area-inset-bottom));
+  }
+  [data-slot="button"],
+  [data-slot="select-trigger"],
+  [data-slot="combobox-trigger"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="command-item"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  [data-slot="input"], [data-slot="textarea"],
+  [data-slot="command-input"], [data-slot="select-trigger"],
+  [data-slot="combobox-input"], input, textarea, select { font-size: 16px; }
+  [data-slot="input"], [data-slot="select-trigger"] { min-height: 44px; }
+  .group\/calendar {
+    --cell-size: min(44px, calc((100vw - 56px) / 7));
+  }
+  .group\/calendar [data-day] {
+    min-width: var(--cell-size);
+    min-height: var(--cell-size);
+  }
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]) { min-height: 44px; }
+  label:has([data-slot="checkbox"]), label:has([data-slot="switch"]) { min-height: 44px; }
+  [data-slot="dropdown-menu-checkbox-item"], [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-sub-trigger"], [data-slot="select-item"] { min-height: 44px; }
+  [data-slot="dialog-content"]:not(.mobile-dock-search) {
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  [data-slot="table-container"] { min-width: 0; overscroll-behavior-x: contain; }
+  .mobile-dock-search [data-slot="command-item"] { border-radius: var(--radius-lg); gap: 12px; padding: 10px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-content"], [data-slot="dialog-overlay"] { animation: none !important; transition: none !important; }
+}
+
 /* Workspace panels share the same surface and outer edges at every scale. */
 .workspace-panel {
   border: 1px solid var(--border);

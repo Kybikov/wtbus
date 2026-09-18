@@ -1,12 +1,69 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 )
+
+func TestVAPIDSubscriberProducesValidContactClaim(t *testing.T) {
+	private, public, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, subject := range []string{"mailto:support@wtmelon.store", "support@wtmelon.store", " MAILTO:support@wtmelon.store "} {
+		t.Run(subject, func(t *testing.T) {
+			s := testPushSubscription(t)
+			s.Endpoint = "https://web.push.apple.com/test-only"
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				auth := r.Header.Get("Authorization")
+				token := strings.Split(strings.TrimPrefix(auth, "vapid t="), ",")[0]
+				parts := strings.Split(token, ".")
+				if len(parts) != 3 {
+					t.Fatal("missing VAPID token")
+				}
+				data, err := base64.RawURLEncoding.DecodeString(parts[1])
+				if err != nil {
+					t.Fatal(err)
+				}
+				var claims map[string]any
+				if err := json.Unmarshal(data, &claims); err != nil {
+					t.Fatal(err)
+				}
+				if claims["sub"] != "mailto:support@wtmelon.store" || claims["aud"] != "https://web.push.apple.com" {
+					t.Fatalf("invalid VAPID contact or audience: %v", claims)
+				}
+				return &http.Response{StatusCode: 201, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+			})}
+			response, err := webpush.SendNotificationWithContext(context.Background(), []byte(`{"title":"test"}`), &s, &webpush.Options{HTTPClient: client, Subscriber: vapidSubscriber(subject), VAPIDPublicKey: public, VAPIDPrivateKey: private, TTL: 60})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+		})
+	}
+	if got := vapidSubscriber("https://wtmelon.store/support"); got != "https://wtmelon.store/support" {
+		t.Fatal(got)
+	}
+}
+
+func TestPushProviderReasonDoesNotExposeResponseSecrets(t *testing.T) {
+	if got := pushProviderReason([]byte(`{"reason":"BadJwtToken"}`)); got != "BadJwtToken" {
+		t.Fatal(got)
+	}
+	for _, body := range []string{`{"reason":"private-token"}`, `{"error":"secret"}`, `not json`} {
+		if got := pushProviderReason([]byte(body)); got != "unknown" {
+			t.Fatal(got)
+		}
+	}
+}
 
 func testPushSubscription(t *testing.T) webpush.Subscription {
 	t.Helper()

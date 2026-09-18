@@ -136,7 +136,7 @@ export function ProfileAppSettings({ identity }: { identity: Identity }) {
         subscription: subscription.toJSON(),
       })
       setMessage(
-        "Проверка отправлена через push-сервис. Ожидайте системное уведомление."
+        "Проверка поставлена в очередь. Ожидайте системное уведомление на этом устройстве."
       )
     })
   }

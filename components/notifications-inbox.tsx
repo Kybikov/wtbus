@@ -201,7 +201,7 @@ export function NotificationsBell() {
         render={
           <Button
             aria-label={`Уведомления${inbox.unread ? `: ${inbox.unread} непрочитанных` : ""}`}
-            className="relative size-9 rounded-lg"
+            className="relative size-11 rounded-lg md:size-9"
             size="icon-lg"
             variant="ghost"
           />
