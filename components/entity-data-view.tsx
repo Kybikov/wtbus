@@ -15,6 +15,7 @@ import ReactBitsKanban, {
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -392,124 +393,256 @@ export function EntityDataView<T>({
             {emptyText}
           </div>
         ) : mode === "table" ? (
-          <div className="surface-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10 pl-4">
-                    <Checkbox
-                      aria-label="Выбрать все записи"
-                      checked={allSelected}
-                      disabled={selectableItems.length === 0}
-                      onCheckedChange={toggleAll}
-                    />
-                  </TableHead>
-                  {visibleColumns.map((column) => (
-                    <TableHead className={column.className} key={column.id}>
-                      {column.label}
-                    </TableHead>
-                  ))}
-                  {actions?.length ? (
-                    <TableHead className="w-24 text-right">Действия</TableHead>
-                  ) : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => {
-                  const id = getId(item)
-                  return (
-                    <ContextMenu key={id}>
-                      <ContextMenuTrigger
+          <>
+            <div
+              className="space-y-3 md:hidden"
+              role="list"
+              aria-label="Записи"
+            >
+              <label className="flex items-center gap-3 px-3 text-sm">
+                <Checkbox
+                  aria-label="Выбрать все записи"
+                  checked={allSelected}
+                  disabled={selectableItems.length === 0}
+                  onCheckedChange={toggleAll}
+                />
+                Выбрать все
+              </label>
+              {items.map((item) => (
+                <Card
+                  key={getId(item)}
+                  role="listitem"
+                  className={cn(
+                    "workspace-panel gap-3 py-3",
+                    selected.has(getId(item)) && "ring-1 ring-primary"
+                  )}
+                >
+                  <CardHeader className="flex flex-row items-start gap-2 px-3">
+                    <label className="flex min-w-11 shrink-0 items-center justify-center">
+                      <Checkbox
+                        aria-label={`Выбрать ${getLabel(item)}`}
+                        checked={selected.has(getId(item))}
+                        disabled={!isSelectable(item)}
+                        onCheckedChange={(checked) => toggleOne(item, checked)}
+                      />
+                    </label>
+                    <div className="flex min-h-11 min-w-0 flex-1 items-center">
+                      {detailEnabled ? (
+                        <Link
+                          href={entityDetailHref(collection, getId(item))}
+                          className="flex min-h-11 w-full items-center font-semibold break-words hover:text-primary"
+                        >
+                          {getLabel(item)}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold break-words">
+                          {getLabel(item)}
+                        </span>
+                      )}
+                    </div>
+                    {actions?.length ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              aria-label={`Действия: ${getLabel(item)}`}
+                              size="icon-lg"
+                              variant="ghost"
+                            />
+                          }
+                        >
+                          •••
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuGroup>
+                            <DropdownMenuLabel>
+                              {getLabel(item)}
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {actions.map((action) => (
+                              <DropdownMenuItem
+                                key={action.label}
+                                disabled={action.disabled?.(item)}
+                                variant={
+                                  action.destructive ? "destructive" : "default"
+                                }
+                                onClick={() => action.onSelect(item)}
+                              >
+                                {action.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="px-3">
+                    <dl className="grid grid-cols-2 gap-3">
+                      {visibleColumns.map((column) => (
+                        <div
+                          key={column.id}
+                          className={cn(
+                            "min-w-0",
+                            [
+                              "name",
+                              "passenger",
+                              "passengers",
+                              "allPassengers",
+                              "route",
+                              "notes",
+                            ].includes(column.id) && "col-span-2"
+                          )}
+                        >
+                          <dt className="mb-1 text-xs text-muted-foreground">
+                            {column.label}
+                          </dt>
+                          <dd className="min-w-0 text-sm break-words [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal [&>*]:max-w-full [&>*]:min-w-0">
+                            {column.value(item)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {detailEnabled ? (
+                      <Button
+                        className="mt-3 w-full"
+                        variant="outline"
                         render={
-                          <TableRow
-                            data-state={
-                              selected.has(id) ? "selected" : undefined
-                            }
+                          <Link
+                            href={entityDetailHref(collection, getId(item))}
                           />
                         }
                       >
-                        <TableCell className="pl-4">
-                          <Checkbox
-                            aria-label={`Выбрать ${getLabel(item)}`}
-                            checked={selected.has(id)}
-                            disabled={!isSelectable(item)}
-                            onCheckedChange={(checked) =>
-                              toggleOne(item, checked)
-                            }
-                          />
-                        </TableCell>
-                        {visibleColumns.map((column) => (
-                          <TableCell
-                            className={column.className}
-                            key={column.id}
-                          >
-                            {detailEnabled &&
-                            column.id ===
-                              (collection === "bookings"
-                                ? "passenger"
-                                : "name") ? (
-                              <Link
-                                href={entityDetailHref(collection, getId(item))}
-                                className="block rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
-                              >
-                                {column.value(item)}
-                              </Link>
-                            ) : (
-                              column.value(item)
-                            )}
-                          </TableCell>
-                        ))}
-                        {actions?.length ? (
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Button
-                                    aria-label={`Действия: ${getLabel(item)}`}
-                                    size="sm"
-                                    variant="ghost"
-                                  />
-                                }
-                              >
-                                •••
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuGroup>
-                                  <DropdownMenuLabel>
-                                    {getLabel(item)}
-                                  </DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
-                                  {actions.map((action) => (
-                                    <DropdownMenuItem
-                                      className={
-                                        action.destructive
-                                          ? "text-destructive focus:text-destructive"
-                                          : undefined
-                                      }
-                                      disabled={action.disabled?.(item)}
-                                      key={action.label}
-                                      onClick={() => action.onSelect(item)}
-                                    >
-                                      {action.label}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </DropdownMenuGroup>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        ) : null}
-                      </ContextMenuTrigger>
-                      <EntityMenu
-                        actions={actions}
-                        item={item}
-                        label={getLabel(item)}
+                        Открыть детали
+                      </Button>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            <div className="surface-card hidden overflow-hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10 pl-4">
+                      <Checkbox
+                        aria-label="Выбрать все записи"
+                        checked={allSelected}
+                        disabled={selectableItems.length === 0}
+                        onCheckedChange={toggleAll}
                       />
-                    </ContextMenu>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                    </TableHead>
+                    {visibleColumns.map((column) => (
+                      <TableHead className={column.className} key={column.id}>
+                        {column.label}
+                      </TableHead>
+                    ))}
+                    {actions?.length ? (
+                      <TableHead className="w-24 text-right">
+                        Действия
+                      </TableHead>
+                    ) : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => {
+                    const id = getId(item)
+                    return (
+                      <ContextMenu key={id}>
+                        <ContextMenuTrigger
+                          render={
+                            <TableRow
+                              data-state={
+                                selected.has(id) ? "selected" : undefined
+                              }
+                            />
+                          }
+                        >
+                          <TableCell className="pl-4">
+                            <Checkbox
+                              aria-label={`Выбрать ${getLabel(item)}`}
+                              checked={selected.has(id)}
+                              disabled={!isSelectable(item)}
+                              onCheckedChange={(checked) =>
+                                toggleOne(item, checked)
+                              }
+                            />
+                          </TableCell>
+                          {visibleColumns.map((column) => (
+                            <TableCell
+                              className={column.className}
+                              key={column.id}
+                            >
+                              {detailEnabled &&
+                              column.id ===
+                                (collection === "bookings"
+                                  ? "passenger"
+                                  : "name") ? (
+                                <Link
+                                  href={entityDetailHref(
+                                    collection,
+                                    getId(item)
+                                  )}
+                                  className="block rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                                >
+                                  {column.value(item)}
+                                </Link>
+                              ) : (
+                                column.value(item)
+                              )}
+                            </TableCell>
+                          ))}
+                          {actions?.length ? (
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  render={
+                                    <Button
+                                      aria-label={`Действия: ${getLabel(item)}`}
+                                      size="sm"
+                                      variant="ghost"
+                                    />
+                                  }
+                                >
+                                  •••
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuGroup>
+                                    <DropdownMenuLabel>
+                                      {getLabel(item)}
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {actions.map((action) => (
+                                      <DropdownMenuItem
+                                        className={
+                                          action.destructive
+                                            ? "text-destructive focus:text-destructive"
+                                            : undefined
+                                        }
+                                        disabled={action.disabled?.(item)}
+                                        key={action.label}
+                                        onClick={() => action.onSelect(item)}
+                                      >
+                                        {action.label}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuGroup>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          ) : null}
+                        </ContextMenuTrigger>
+                        <EntityMenu
+                          actions={actions}
+                          item={item}
+                          label={getLabel(item)}
+                        />
+                      </ContextMenu>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         ) : mode === "list" ? (
           <div className="surface-card divide-y">
             {items.map((item) => (
