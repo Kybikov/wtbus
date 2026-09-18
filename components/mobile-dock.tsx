@@ -21,6 +21,7 @@ import {
   ListFilter,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
@@ -81,10 +82,7 @@ const emptyResults: SearchState = {
 
 // Adapted from the user's licensed React Bits Pro Mobile 3 source.
 // Shadcn owns controls, modal focus/keyboard handling and the real CRM result list.
-export function MobileDock({
-  role,
-  localSearch,
-}: {
+export type MobileDockProps = {
   role: StaffRole
   localSearch?: {
     value: string
@@ -92,7 +90,9 @@ export function MobileDock({
     placeholder: string
     label?: string
   }
-}) {
+}
+
+export function MobileDock({ role, localSearch }: MobileDockProps) {
   const pathname = usePathname()
   const router = useRouter()
   const reduceMotion = useReducedMotion()
@@ -102,12 +102,36 @@ export function MobileDock({
   const [results, setResults] = React.useState<SearchState>(emptyResults)
   const [viewport, setViewport] = React.useState({ bottom: 0, height: 600 })
   const searchTrigger = React.useRef<HTMLButtonElement>(null)
+  const navigationRoot = React.useRef<HTMLDivElement>(null)
   const destinations = mobileNavigation(role)
   const matches = destinations.filter((item) =>
     item.label
       .toLocaleLowerCase("ru")
       .includes(query.trim().toLocaleLowerCase("ru"))
   )
+
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const viewport = navigationRoot.current?.querySelector<HTMLElement>(
+        '[data-slot="scroll-area-viewport"]'
+      )
+      const active = viewport?.querySelector<HTMLElement>(
+        '[aria-current="page"]'
+      )
+      if (!viewport || !active) return
+      const area = viewport.getBoundingClientRect()
+      const item = active.getBoundingClientRect()
+      viewport.scrollTo({
+        left:
+          viewport.scrollLeft +
+          item.left -
+          area.left -
+          (area.width - item.width) / 2,
+        behavior: reduceMotion ? "instant" : "smooth",
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [pathname, role, reduceMotion])
 
   React.useEffect(() => {
     const view = window.visualViewport
@@ -209,41 +233,64 @@ export function MobileDock({
           aria-label="Основная навигация"
           layout={!reduceMotion}
           layoutId={`${layoutId}-dock-frame`}
-          className="pointer-events-auto flex h-14 items-center gap-1 rounded-full border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
+          className="pointer-events-auto flex h-14 w-full max-w-md min-w-0 items-center gap-1 rounded-full border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
         >
-          {mobileDockNavigation(role).map((item) => {
-            const active = isMobileDestinationActive(pathname, item.href)
-            const Icon = icons[item.icon]
-            return (
-              <Button
-                key={item.href}
-                render={<Link href={item.href} />}
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                variant="ghost"
-                size="icon-lg"
-                className={cn(
-                  "relative size-11 rounded-full",
-                  active &&
-                    "text-primary-foreground hover:text-primary-foreground"
-                )}
-              >
-                {active ? (
-                  <motion.span
-                    aria-hidden
-                    layoutId={`${layoutId}-active`}
-                    transition={
-                      reduceMotion
-                        ? { duration: 0 }
-                        : { type: "spring", bounce: 0, duration: 0.35 }
-                    }
-                    className="absolute inset-0 rounded-full bg-primary"
-                  />
-                ) : null}
-                <Icon aria-hidden className="relative size-5" />
-              </Button>
-            )
-          })}
+          <div
+            ref={navigationRoot}
+            className="min-w-0 flex-1 overflow-hidden rounded-full"
+          >
+            <ScrollArea className="h-11 w-full [&_[data-slot=scroll-area-viewport]]:scrollbar-none [&_[data-slot=scroll-area-viewport]]:overscroll-x-contain">
+              <div className="flex w-max items-center gap-1 px-0.5">
+                {mobileDockNavigation(role).map((item) => {
+                  const active = isMobileDestinationActive(pathname, item.href)
+                  const Icon = icons[item.icon]
+                  return (
+                    <Button
+                      key={item.href}
+                      render={<Link href={item.href} />}
+                      aria-label={item.label}
+                      title={item.label}
+                      aria-current={active ? "page" : undefined}
+                      variant="ghost"
+                      size="icon-lg"
+                      className={cn(
+                        "relative size-11 shrink-0 rounded-full",
+                        active &&
+                          "text-primary-foreground hover:text-primary-foreground"
+                      )}
+                    >
+                      {active ? (
+                        <motion.span
+                          aria-hidden
+                          layoutId={`${layoutId}-active`}
+                          transition={
+                            reduceMotion
+                              ? { duration: 0 }
+                              : { type: "spring", bounce: 0.15, duration: 0.45 }
+                          }
+                          className="absolute inset-0 rounded-full bg-primary"
+                        />
+                      ) : null}
+                      <motion.span
+                        aria-hidden
+                        className="relative flex items-center justify-center"
+                        animate={{ scale: active ? 1.12 : 1 }}
+                        transition={
+                          reduceMotion
+                            ? { duration: 0 }
+                            : { type: "spring", stiffness: 400, damping: 24 }
+                        }
+                        whileTap={reduceMotion ? undefined : { scale: 0.9 }}
+                      >
+                        <Icon className="size-5" />
+                      </motion.span>
+                    </Button>
+                  )
+                })}
+              </div>
+              <ScrollBar orientation="horizontal" className="h-1!" />
+            </ScrollArea>
+          </div>
           <span aria-hidden className="mx-0.5 h-6 w-px bg-border" />
           <DialogTrigger
             render={

@@ -3,7 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 import { NotificationsBell } from "@/components/notifications-inbox"
 import { realtimeEvent } from "@/lib/realtime"
-import { MobileDock } from "@/components/mobile-dock"
+import { useMobilePageNavigation } from "@/components/mobile-navigation-provider"
 
 import * as React from "react"
 import { useLayoutPreferences } from "@/components/layout-preferences-provider"
@@ -417,6 +417,11 @@ export function AppShell({
   const [viewExport, setViewExport] = React.useState<EntityExport | null>(null)
   const [identityReady, setIdentityReady] = React.useState(false)
   const [brand, setBrand] = React.useState(defaultShellBrand)
+  useMobilePageNavigation(identityReady, {
+    pathname,
+    role: brand.role,
+    localSearch,
+  })
   const [userName, setUserName] = React.useState("")
   const profileVersion = React.useRef(0)
   React.useEffect(() => {
@@ -822,7 +827,10 @@ export function AppShell({
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-0.5 md:gap-1.5">
-              <Popover open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+              <Popover
+                open={mobileActionsOpen}
+                onOpenChange={setMobileActionsOpen}
+              >
                 <PopoverTrigger
                   render={
                     <Button
@@ -1039,9 +1047,6 @@ export function AppShell({
             ) : null}
           </EntityFooterContext.Provider>
         </SidebarInset>
-        {identityReady ? (
-          <MobileDock role={brand.role} localSearch={localSearch} />
-        ) : null}
         <CommandDialog
           description="Найдите раздел, бронирование или клиента."
           onOpenChange={setSearchOpen}

@@ -53,11 +53,7 @@ export function mobileNavigation(role: StaffRole) {
   return mobileDestinations.filter((item) => item.roles.includes(role))
 }
 export function mobileDockNavigation(role: StaffRole) {
-  const hrefs =
-    role === "driver"
-      ? ["/driver", "/notifications", "/profile"]
-      : ["/", "/trips", "/bookings", "/requests"]
-  return mobileNavigation(role).filter((item) => hrefs.includes(item.href))
+  return mobileNavigation(role)
 }
 export function isMobileDestinationActive(pathname: string, href: string) {
   return pathname === href || (href !== "/" && pathname.startsWith(href + "/"))

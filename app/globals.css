@@ -230,15 +230,17 @@ body:has([data-public-booking]) {
   body:has(.app-shell-frame) { overflow: hidden; }
   .app-shell-frame {
     gap: 0;
-    padding: env(safe-area-inset-top) 0 0;
+    padding: calc(8px + env(safe-area-inset-top)) 0 0;
   }
   .app-shell-frame .app-topbar {
     height: 56px;
     min-height: 56px;
-    border-radius: 0;
-    border-top: 0;
-    border-right: 0;
-    border-left: 0;
+    margin-inline: 8px;
+    border-radius: 28px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--card) 95%, transparent);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+    backdrop-filter: blur(12px);
   }
   .workspace-content,
   :root[data-density="compact"] .workspace-content {
