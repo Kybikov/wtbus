@@ -64,6 +64,7 @@ import { isSearchShortcut, searchPageHref } from "@/lib/admin-search"
 import { AdminSearchField } from "@/components/admin-search-field"
 import { useSearchShortcutLabel } from "@/hooks/use-search-shortcut-label"
 import { EntityFooterContext } from "@/components/entity-footer-context"
+import { adminControlClassName, adminSearchClassName } from "@/lib/admin-ui"
 
 type MembershipRole = "developer" | "owner" | "admin" | "dispatcher" | "driver"
 type NavigationItem = {
@@ -620,7 +621,7 @@ export function AppShell({
         variant={preferences.sidebarVariant}
       />
       <SidebarInset className="app-workspace min-w-0 overflow-hidden bg-transparent shadow-none">
-        <header className="app-topbar relative flex h-12 shrink-0 items-center justify-between gap-1 rounded-[var(--app-radius)] border border-border bg-card px-2 sm:gap-3 sm:px-3">
+        <header className="app-topbar workspace-panel relative flex h-12 shrink-0 items-center justify-between gap-1 px-2 sm:gap-3 sm:px-3">
           <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-2">
             <SidebarTrigger
               aria-label="Открыть навигацию"
@@ -651,13 +652,13 @@ export function AppShell({
               <Button
                 aria-haspopup="dialog"
                 aria-label="Глобальный поиск"
-                className="hidden h-9 w-44 shrink-0 justify-start gap-2 rounded-xl border-input bg-input/40 px-3 text-muted-foreground lg:inline-flex"
+                className={cn(adminControlClassName, adminSearchClassName, "hidden w-44 shrink-0 justify-start gap-2 text-muted-foreground lg:inline-flex")}
                 onClick={() => setSearchOpen(true)}
                 variant="outline"
               >
                 <HugeiconsIcon icon={Search01Icon} size={16} />
                 <span className="min-w-0 flex-1 truncate text-left">Поиск</span>
-                <kbd className="rounded-md border border-border px-1.5 py-0.5 text-xs">
+                <kbd className="px-1 text-[10px]">
                   {shortcutLabel}
                 </kbd>
               </Button>
@@ -695,7 +696,7 @@ export function AppShell({
           </div>
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5 max-sm:[&_button]:size-7">
             {pageActions ? (
-              <div className="flex items-center gap-2 max-lg:[&_a]:size-9 max-lg:[&_a]:overflow-hidden max-lg:[&_a]:px-0 max-lg:[&_a]:text-[0px] max-lg:[&_button]:size-9 max-lg:[&_button]:overflow-hidden max-lg:[&_button]:px-0 max-lg:[&_button]:text-[0px] max-lg:[&_svg]:size-4">
+              <div className="flex items-center gap-2 [&_[data-slot=button]]:h-8 [&_[data-slot=button]]:rounded-lg max-lg:[&_a]:size-8 max-lg:[&_a]:overflow-hidden max-lg:[&_a]:px-0 max-lg:[&_a]:text-[0px] max-lg:[&_button]:size-8 max-lg:[&_button]:overflow-hidden max-lg:[&_button]:px-0 max-lg:[&_button]:text-[0px] max-lg:[&_svg]:size-4">
                 {pageActions}
               </div>
             ) : null}
@@ -847,9 +848,9 @@ export function AppShell({
         {utilities ? <div className="hidden">{utilities}</div> : null}
         <EntityFooterContext.Provider value={footerContext}>
         <ScrollArea className="dashboard-content min-h-0 min-w-0 flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden">
-          <div className="w-full min-w-0 px-2 py-3 sm:px-3 sm:py-4">{children}</div>
+          <div className="workspace-content w-full min-w-0 py-3">{children}</div>
         </ScrollArea>
-        {collectionFooter ? <div className="min-w-0 shrink-0 px-2 pb-3 pt-1 sm:px-3"><div ref={setFooterHost} className="min-h-[50px]"/></div> : null}
+        {collectionFooter ? <div className="min-w-0 shrink-0 pt-1"><div ref={setFooterHost} className="min-h-[50px]"/></div> : null}
         </EntityFooterContext.Provider>
       </SidebarInset>
       <CommandDialog

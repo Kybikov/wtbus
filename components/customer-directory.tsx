@@ -1,6 +1,7 @@
 "use client"
 
 import { metricValue } from "@/lib/entity-metrics"
+import { adminControlClassName } from "@/lib/admin-ui"
 import { sessionFetch } from "@/lib/session-navigation"
 import { usePageSearch } from "@/hooks/use-page-search"
 
@@ -582,7 +583,7 @@ export function CustomerDirectory() {
               type="file"
             />
             <Button
-              className="hidden xl:inline-flex"
+              className={`${adminControlClassName} hidden xl:inline-flex`}
               disabled={importing}
               onClick={() => importInput.current?.click()}
               size="sm"
@@ -591,7 +592,7 @@ export function CustomerDirectory() {
               {importing ? "Импортируем…" : "Импорт"}
             </Button>
             <Button
-              className="hidden lg:inline-flex"
+              className={`${adminControlClassName} hidden lg:inline-flex`}
               disabled={exporting}
               onClick={() => void exportCustomers()}
               size="sm"

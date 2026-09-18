@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { sessionFetch } from "@/lib/session-navigation"
+import { adminControlClassName } from "@/lib/admin-ui"
 import {
   ChevronDown,
   Columns3,
@@ -48,7 +49,7 @@ import {
   type SavedEntityView,
 } from "@/lib/entity-views"
 
-const control = "h-8 gap-1.5 rounded-lg px-3 text-xs"
+const control = adminControlClassName
 type Props<T> = {
   collection: EntityCollection
   config: EntityViewConfig
@@ -194,7 +195,7 @@ export function EntityViewToolbar<T>({
   return (
     <>
       <div
-        className="flex flex-wrap items-center justify-between gap-2"
+        className="workspace-panel flex min-h-[50px] flex-wrap items-center justify-between gap-2 p-2"
         aria-label="Виды и настройки отображения"
       >
         <div className="flex flex-wrap items-center gap-2">

@@ -2,6 +2,7 @@
 
 import { Activity, Info, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { adminControlClassName } from "@/lib/admin-ui"
 import {
   Popover,
   PopoverTrigger,
@@ -80,7 +81,7 @@ export function EntityMetricsBar<T>({
       role="region"
       aria-label="Метрики вида"
       aria-busy={loading}
-      className="flex items-center gap-1 rounded-xl border bg-card/95 px-2 py-2 shadow-sm backdrop-blur-sm"
+      className="workspace-panel flex items-center gap-1 px-2 py-2"
     >
       <span
         className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
@@ -193,8 +194,8 @@ export function EntityMetricsBar<T>({
           render={
             <Button
               size="sm"
-              variant="ghost"
-              className="h-8 shrink-0 gap-1.5 rounded-lg border-l px-3 text-xs"
+              variant="outline"
+              className={adminControlClassName}
               disabled={!fields.length || metrics.length >= MAX_VIEW_METRICS}
             />
           }

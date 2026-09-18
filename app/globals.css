@@ -147,12 +147,9 @@ body:has([data-public-booking]) {
   font-size: 18px;
 }
 
-:root[data-density="compact"] .dashboard-content {
-  padding-top: 0.75rem;
-  padding-bottom: 0.75rem;
-}
-:root[data-density="compact"] .dashboard-content > * {
-  margin-top: 1rem;
+:root[data-density="compact"] .workspace-content {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
 }
 :root[data-density="compact"] .metric-card {
   min-height: 7.5rem;
@@ -168,9 +165,6 @@ body:has([data-public-booking]) {
   }
   :root[data-sidebar-variant="inset"] .app-sidebar {
     margin: 0;
-    border-radius: calc(var(--app-radius) * 0.8);
-  }
-  :root[data-sidebar-variant="inset"] .app-topbar {
     border-radius: calc(var(--app-radius) * 0.8);
   }
   :root[data-sidebar-variant="floating"] .app-sidebar {
@@ -206,6 +200,13 @@ body:has([data-public-booking]) {
 
 .app-topbar {
   min-height: 3rem;
+}
+
+/* Workspace panels share the same surface and outer edges at every scale. */
+.workspace-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--app-radius);
+  background: var(--card);
 }
 
 .dashboard-content > * {
