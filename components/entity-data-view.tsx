@@ -353,7 +353,7 @@ export function EntityDataView<T>({
     </div>
   )
   return (
-    <section className={cn("space-y-3", className)}>
+    <section className={cn("space-y-3", className)} aria-busy={loading}>
       <EntityViewToolbar
         key={collection}
         ready={!loading}
@@ -382,7 +382,7 @@ export function EntityDataView<T>({
       ) : null}
 
       <FadeContent duration={240} initialOpacity={0.5} key={mode}>
-        {loading ? (
+        {loading && items.length === 0 ? (
           <div className="surface-card p-8 text-center text-sm text-muted-foreground">
             {loadingText}
           </div>
