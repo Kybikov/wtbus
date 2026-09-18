@@ -125,7 +125,7 @@ Main panels use the inherited React Bits surface radius, bound to the public 1re
 - **Trip cards and facets:** licensed Filtering8 adapted to real bus inventory, with departure/duration sliders, result count, reset, and sorting. Price is per passenger; group totals and payment context stay textual.
 - **Checkout:** licensed Wizard2 adapted to passenger data, review, and confirmation. Named steps accompany numeric progress. The next action changes with the step; consent enables final submission, and busy state disables repeated action. The adjacent trip summary retains dates, timezone, seats, total, and cash-on-boarding context.
 - **Navigation and receipt:** the supplied mark anchors the booking header; the team login remains a separate utility link. Confirmation presents a selectable reference and print action. Printing removes navigation, progress, and action chrome, and uses white paper with dark text.
-- **Loading and absence:** skeletons accompany busy states; no inventory produces a clear recovery message rather than demonstration cards.
+- **Loading and absence:** skeletons accompany busy states. Licensed EmptyState2 supplies a framed, centered no-results panel with a quiet search icon, concise explanation, and a 44px outline reset action. No-date and filtered-out messages remain distinct; when both lists are empty, a single panel avoids repeated messages. The facet reset is a ghost icon aligned right on the heading row, with a tooltip, accessible name, and 44px target.
 
 ## Do's and Don'ts
 

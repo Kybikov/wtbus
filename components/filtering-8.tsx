@@ -4,11 +4,13 @@
 // adapted from its installed source to real bus inventory and shadcn controls.
 import { useMemo, useState } from "react"
 import { ArrowRight, Bus, Clock3, RotateCcw } from "lucide-react"
+import EmptyState2 from "@/components/empty-state-2"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { departureMinute, travelDate, travelMoney, travelTime, type PublicTrip } from "@/lib/public-booking"
 
 export default function Filtering8({ trips, timezone, seats, onSelect, nearest, loading = false }: { trips: PublicTrip[]; timezone: string; seats: number; onSelect: (trip: PublicTrip) => void; nearest?: PublicTrip[]; loading?: boolean }) {
@@ -28,6 +30,7 @@ export default function Filtering8({ trips, timezone, seats, onSelect, nearest, 
     return { trips: filter(trips), nearest: filter(nearest ?? []) }
   }, [trips, nearest, timezone, departure, duration, sort])
   function reset() { setDeparture([0, 1440]); setDuration(null) }
+  const filtersHideTrips = trips.length > 0 || (!!nearest?.length && filtered.nearest.length === 0)
 
   function tripList(items: PublicTrip[]) {
     return <ul className="space-y-3">
@@ -52,7 +55,15 @@ export default function Filtering8({ trips, timezone, seats, onSelect, nearest, 
     </div>
     <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
       <aside aria-label="Фільтри рейсів" className="grid grid-cols-2 gap-5 rounded-[var(--rb-r-lg)] border border-border bg-card p-5 lg:block lg:space-y-6">
-        <div className="col-span-2 flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">Фільтри</h2><Button variant="outline" className="h-11 px-3 text-xs" onClick={reset}><RotateCcw />Скинути фільтри</Button></div>
+        <div className="col-span-2 flex items-center justify-between gap-2">
+          <h2 className="font-semibold">Фільтри</h2>
+          <TooltipProvider><Tooltip>
+            <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" className="size-11 shrink-0 text-muted-foreground hover:text-foreground" aria-label="Скинути фільтри" onClick={reset} />}>
+              <RotateCcw aria-hidden="true" className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent>Скинути фільтри</TooltipContent>
+          </Tooltip></TooltipProvider>
+        </div>
         <div><h3 className="mb-2 text-sm font-medium">Час відправлення</h3><p className="mb-4 text-xs tabular-nums text-muted-foreground">{time(departure[0])} — {time(departure[1])}</p>
           <Slider min={0} max={1440} step={15} value={departure} onValueChange={(value) => setDeparture(Array.isArray(value) ? value : [value, 1440])} aria-label="Час відправлення" />
         </div><Separator className="hidden lg:block" />
@@ -61,10 +72,10 @@ export default function Filtering8({ trips, timezone, seats, onSelect, nearest, 
         </div><Separator className="hidden lg:block" /><p className="col-span-2 text-xs leading-relaxed text-muted-foreground">Час указано за часовим поясом перевізника: {timezone}. Ціна — за одного пасажира.</p>
       </aside>
       <div className="min-w-0">
-        {loading ? <div aria-label="Шукаємо рейси" className="space-y-3"><Skeleton className="h-36" /><Skeleton className="h-36" /></div> : filtered.trips.length ? tripList(filtered.trips) : <p role="status" className="rounded-xl border border-border p-4 text-sm text-muted-foreground">{trips.length ? "Немає рейсів за цими фільтрами." : "На обрану дату рейсів немає."}</p>}
-        {!loading && nearest !== undefined && <section aria-label="Найближчі тури" className="mt-7 space-y-4">
+        {loading ? <div aria-label="Шукаємо рейси" className="space-y-3"><Skeleton className="h-36" /><Skeleton className="h-36" /></div> : filtered.trips.length ? tripList(filtered.trips) : <EmptyState2 title={filtersHideTrips ? "Немає рейсів за цими фільтрами" : "На обрану дату рейсів немає"} description={filtersHideTrips ? "Змініть час чи тривалість поїздки або скиньте фільтри." : filtered.nearest.length ? "Перегляньте найближчі тури нижче або оберіть іншу дату." : "Оберіть іншу дату або напрямок."} onReset={reset} />}
+        {!loading && nearest !== undefined && (filtered.nearest.length > 0 || filtered.trips.length > 0) && <section aria-label="Найближчі тури" className="mt-7 space-y-4">
           <h2 className="text-xl font-semibold">Найближчі тури</h2>
-          {filtered.nearest.length ? tripList(filtered.nearest) : <p role="status" className="text-sm text-muted-foreground">{nearest.length ? "За цими фільтрами турів немає." : "Доступних турів поки немає."}</p>}
+          {filtered.nearest.length ? tripList(filtered.nearest) : <EmptyState2 title={nearest.length ? "Немає турів за цими фільтрами" : "Доступних турів поки немає"} description={nearest.length ? "Змініть час чи тривалість поїздки або скиньте фільтри." : "Оберіть іншу дату або напрямок."} onReset={reset} />}
         </section>}
       </div>
     </div>
