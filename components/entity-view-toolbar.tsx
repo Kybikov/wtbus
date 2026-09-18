@@ -216,7 +216,7 @@ export function EntityViewToolbar<T>({
               ) : (
                 <LayoutGrid />
               )}
-              <span className="max-w-44 truncate">
+              <span className="max-w-28 truncate sm:max-w-44">
                 {current?.name ?? "По умолчанию"}
               </span>
               {dirty ? (
@@ -279,7 +279,7 @@ export function EntityViewToolbar<T>({
             onClick={() => open("create")}
           >
             <Plus />
-            Создать вид
+            <span className="sr-only sm:not-sr-only">Создать вид</span>
           </Button>
           {current?.canEdit && dirty ? (
             <Button
@@ -328,7 +328,7 @@ export function EntityViewToolbar<T>({
                 }
               >
                 <Filter />
-                Фильтры{filterCount ? ` · ${filterCount}` : null}
+                <span className="sr-only sm:not-sr-only">Фильтры</span>{filterCount ? ` · ${filterCount}` : null}
               </PopoverTrigger>
               <PopoverContent
                 align="end"
@@ -394,7 +394,7 @@ export function EntityViewToolbar<T>({
               }
             >
               <Columns3 />
-              Колонки
+              <span className="sr-only sm:not-sr-only">Колонки</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"

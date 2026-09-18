@@ -232,7 +232,7 @@ body:has([data-public-booking]) {
     gap: 0;
     padding: env(safe-area-inset-top) 0 0;
   }
-  .app-topbar {
+  .app-shell-frame .app-topbar {
     height: 56px;
     min-height: 56px;
     border-radius: 0;

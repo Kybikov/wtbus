@@ -437,6 +437,7 @@ export function AppShell({
   const shortcutLabel = useSearchShortcutLabel()
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =
     React.useState(false)
+  const [mobileActionsOpen, setMobileActionsOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
   const [searchLoading, setSearchLoading] = React.useState(false)
   const [searchError, setSearchError] = React.useState<string | null>(null)
@@ -821,7 +822,7 @@ export function AppShell({
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-0.5 md:gap-1.5">
-              <Popover>
+              <Popover open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
                 <PopoverTrigger
                   render={
                     <Button
@@ -848,7 +849,10 @@ export function AppShell({
                     <Button
                       className="w-full"
                       disabled={!identityReady || createDisabled}
-                      onClick={onCreate}
+                      onClick={() => {
+                        setMobileActionsOpen(false)
+                        onCreate()
+                      }}
                     >
                       Создать запись
                     </Button>
