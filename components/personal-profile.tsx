@@ -20,7 +20,7 @@ function isProfile(value: unknown): value is Profile {
 function errorMessage(value: unknown, fallback: string) {
   return typeof value === "object" && value !== null && "error" in value && typeof value.error === "string" ? value.error : fallback
 }
-const roles: Record<string, string> = { owner: "Владелец", admin: "Администратор", dispatcher: "Диспетчер", driver: "Водитель" }
+const roles: Record<string, string> = { developer: "Разработчик", owner: "Владелец", admin: "Администратор", dispatcher: "Диспетчер", driver: "Водитель" }
 
 export function PersonalProfile() {
   const [profile, setProfile] = React.useState<Profile | null>(null)

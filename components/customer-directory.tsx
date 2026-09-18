@@ -1,6 +1,7 @@
 "use client"
 
 import { sessionFetch } from "@/lib/session-navigation"
+import { usePageSearch } from "@/hooks/use-page-search"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -195,7 +196,7 @@ function formFromCustomer(customer: Customer): CustomerForm {
 }
 
 export function CustomerDirectory() {
-  const [query, setQuery] = React.useState("")
+  const [query, setQuery] = usePageSearch()
   const [appliedQuery, setAppliedQuery] = React.useState("")
   const [customers, setCustomers] = React.useState<Customer[]>([])
   const [customFields, setCustomFields] = React.useState<CustomField[]>([])
@@ -233,15 +234,20 @@ export function CustomerDirectory() {
     return () => window.clearTimeout(timer)
   }, [query])
 
+  const loadController = React.useRef<AbortController | null>(null)
   const load = React.useCallback(async () => {
+    loadController.current?.abort()
+    const controller = new AbortController()
+    loadController.current = controller
     setLoading(true)
     setError(null)
     try {
       const [response, fieldsResponse] = await Promise.all([
         sessionFetch(
-          `/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`
+          `/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50`,
+          { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }
         ),
-        sessionFetch("/api/custom-fields", { cache: "no-store" }),
+        sessionFetch("/api/custom-fields", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }),
       ])
       const [payload, fieldsPayload]: [unknown, unknown] = await Promise.all([
         response.json(),
@@ -254,10 +260,12 @@ export function CustomerDirectory() {
         !isCustomFieldCollection(fieldsPayload)
       )
         throw new Error("Не удалось загрузить клиентов.")
+      if (controller.signal.aborted) return
       setCustomers(payload.items)
       setTotal(payload.total)
       setCustomFields(fieldsPayload.items.filter((field) => field.isActive))
     } catch (reason) {
+      if (controller.signal.aborted) return
       setCustomers([])
       setCustomFields([])
       setError(
@@ -266,13 +274,13 @@ export function CustomerDirectory() {
           : "Не удалось загрузить клиентов."
       )
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [appliedQuery])
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
+    return () => { window.clearTimeout(timer); loadController.current?.abort() }
   }, [load])
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {

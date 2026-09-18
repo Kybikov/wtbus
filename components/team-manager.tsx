@@ -25,7 +25,7 @@ import { FieldSelect } from "@/components/ui/field-select"
 import { Input } from "@/components/ui/input"
 import { sessionFetch } from "@/lib/session-navigation"
 
-type Role = "owner" | "admin" | "dispatcher" | "driver"
+type Role = "developer" | "owner" | "admin" | "dispatcher" | "driver"
 
 type TeamMember = {
   membershipId: string
@@ -50,6 +50,7 @@ type Me = {
 }
 
 const roleLabels: Record<Role, string> = {
+  developer: "Разработчик",
   owner: "Владелец",
   admin: "Администратор",
   dispatcher: "Диспетчер",
@@ -63,6 +64,7 @@ function isRole(value: string): value is Role {
 }
 
 const roleDescriptions: Record<Role, string> = {
+  developer: "Полный доступ ко всем разделам и управлению доступами",
   owner: "Полный доступ, команда и настройки",
   admin: "Операции и настройки компании",
   dispatcher: "Рейсы, бронирования и клиенты",
@@ -112,6 +114,7 @@ function humanDate(value?: string, empty = "Ещё не входил") {
 }
 
 function manageableRoles(role: Role): Role[] {
+  if (role === "developer") return allRoles
   return role === "owner"
     ? ["owner", "admin", "dispatcher", "driver"]
     : ["dispatcher", "driver"]
@@ -179,7 +182,7 @@ export function TeamManager() {
       Boolean(
         me &&
         !member.isSystem &&
-        (me.role === "owner" ||
+        (me.role === "developer" || (me.role === "owner" && member.role !== "developer") ||
           (me.role === "admin" &&
             (member.role === "dispatcher" || member.role === "driver")))
       ),
@@ -192,8 +195,9 @@ export function TeamManager() {
         me &&
         !member.isSystem &&
         member.membershipId !== me.membershipId &&
-        (me.role === "owner" ||
+        (me.role === "developer" || (me.role === "owner" && member.role !== "developer") ||
           (me.role === "admin" &&
+            member.role !== "developer" &&
             (!member.isActive ||
               member.role === "dispatcher" ||
               member.role === "driver")))

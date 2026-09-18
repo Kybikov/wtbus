@@ -14,6 +14,9 @@ func TestCanDeleteTeamMember(t *testing.T) {
 		memberActive bool
 		want         bool
 	}{
+		{name: "developer can delete inactive owner", actorRole: "developer", memberRole: "owner", want: true},
+		{name: "owner cannot delete developer", actorRole: "owner", memberRole: "developer", want: false},
+		{name: "admin cannot delete inactive developer", actorRole: "admin", memberRole: "developer", want: false},
 		{name: "owner can delete inactive owner", actorRole: "owner", memberRole: "owner", want: true},
 		{name: "admin can delete inactive owner", actorRole: "admin", memberRole: "owner", want: true},
 		{name: "admin cannot delete active owner", actorRole: "admin", memberRole: "owner", memberActive: true, want: false},
@@ -26,6 +29,17 @@ func TestCanDeleteTeamMember(t *testing.T) {
 				t.Fatalf("canDeleteTeamMember(%q, %q, %t) = %t, want %t", test.actorRole, test.memberRole, test.memberActive, got, test.want)
 			}
 		})
+	}
+}
+
+func TestDeveloperRoleManagement(t *testing.T) {
+	for _, role := range []string{"developer", "owner", "admin", "dispatcher", "driver"} {
+		if !canManageTeamRole("developer", role, role) {
+			t.Fatalf("developer cannot manage %s", role)
+		}
+	}
+	if canManageTeamRole("owner", "admin", "developer") || canManageTeamRole("owner", "developer", "admin") || canManageTeamRole("admin", "admin", "developer") {
+		t.Fatal("ordinary managers must not change developer access")
 	}
 }
 

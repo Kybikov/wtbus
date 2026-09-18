@@ -26,7 +26,6 @@ import { Button } from "@/components/ui/button"
 import {
   Command,
   CommandDialog,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -40,7 +39,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
@@ -62,8 +60,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { isSearchShortcut, searchPageHref } from "@/lib/admin-search"
+import { AdminSearchField } from "@/components/admin-search-field"
+import { useSearchShortcutLabel } from "@/hooks/use-search-shortcut-label"
 
-type MembershipRole = "owner" | "admin" | "dispatcher" | "driver"
+type MembershipRole = "developer" | "owner" | "admin" | "dispatcher" | "driver"
 type NavigationItem = {
   href: string
   icon: typeof DashboardSquare01Icon
@@ -111,8 +112,8 @@ type TransferRequestPreview = {
 }
 type SidebarVariant = "default" | "inset" | "floating"
 
-const operationsRoles: MembershipRole[] = ["owner", "admin", "dispatcher"]
-const managementRoles: MembershipRole[] = ["owner", "admin"]
+const operationsRoles: MembershipRole[] = ["developer", "owner", "admin", "dispatcher"]
+const managementRoles: MembershipRole[] = ["developer", "owner", "admin"]
 const navigation: NavigationItem[] = [
   {
     href: "/",
@@ -203,6 +204,7 @@ const hasItems = <T,>(value: unknown): value is { items: T[] } =>
   "items" in value &&
   Array.isArray(value.items)
 const isMembershipRole = (value: unknown): value is MembershipRole =>
+  value === "developer" ||
   value === "owner" ||
   value === "admin" ||
   value === "dispatcher" ||
@@ -392,6 +394,7 @@ export function AppShell({
     return () => window.removeEventListener("vivat-profile-change", updated)
   }, [])
   const [searchOpen, setSearchOpen] = React.useState(false)
+  const shortcutLabel = useSearchShortcutLabel()
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =
     React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -476,8 +479,9 @@ export function AppShell({
   }, [])
   React.useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (isSearchShortcut(event)) {
         event.preventDefault()
+        setLocalSearchMobileOpen(false)
         setSearchOpen(true)
       }
     }
@@ -486,7 +490,7 @@ export function AppShell({
   }, [])
   React.useEffect(() => {
     const query = searchQuery.trim()
-    if (!searchOpen || query.length < 2) return
+    if (!searchOpen || query.length < 2 || brand.role === "driver") return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setSearchLoading(true)
@@ -512,22 +516,8 @@ export function AppShell({
               ? customerPayload.items
               : []
           )
-          setBookings(
-            bookingResponse.ok && hasItems<SearchBooking>(bookingPayload)
-              ? bookingPayload.items.filter((item) =>
-                  [
-                    item.customerName,
-                    item.customerPhone,
-                    item.origin,
-                    item.destination,
-                  ]
-                    .join(" ")
-                    .toLocaleLowerCase("ru-RU")
-                    .includes(query.toLocaleLowerCase("ru-RU"))
-                )
-              : []
-          )
-          if (!customerResponse.ok && !bookingResponse.ok)
+          setBookings(bookingResponse.ok && hasItems<SearchBooking>(bookingPayload) ? bookingPayload.items : [])
+          if (!customerResponse.ok || !bookingResponse.ok)
             setSearchError("Не удалось выполнить поиск. Повторите попытку.")
         })
         .catch(() => {
@@ -542,7 +532,7 @@ export function AppShell({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [searchOpen, searchQuery])
+  }, [searchOpen, searchQuery, brand.role])
   React.useEffect(() => {
     const change = (event: Event) => {
       const detail = (event as CustomEvent<{ logoUrl?: string | null }>).detail
@@ -580,12 +570,11 @@ export function AppShell({
   }, [])
   const updateSearchQuery = React.useCallback((value: string) => {
     setSearchQuery(value)
-    if (value.trim().length >= 2) return
     setCustomers([])
     setBookings([])
     setSearchError(null)
-    setSearchLoading(false)
-  }, [])
+    setSearchLoading(value.trim().length >= 2 && brand.role !== "driver")
+  }, [brand.role])
   const visibleNavigation = navigation.filter((item) =>
     item.roles.includes(brand.role)
   )
@@ -594,6 +583,7 @@ export function AppShell({
     searchQuery.trim().length >= 2 && !searchLoading && !searchError
   const navigate = (href: string) => {
     setSearchOpen(false)
+    if (localSearch && href.split("?")[0] === pathname) localSearch.onChange(new URLSearchParams(href.split("?")[1]).get("q") ?? "")
     router.push(href)
   }
   const openInterfaceSettings = () => {
@@ -651,26 +641,7 @@ export function AppShell({
                 </TooltipContent>
               </Tooltip>
             </div>
-            {localSearch ? (
-              <label className="hidden h-9 w-44 min-w-0 shrink-0 items-center gap-2 rounded-xl border border-input bg-input/40 px-3 lg:flex">
-                <HugeiconsIcon
-                  className="shrink-0 text-muted-foreground"
-                  icon={Search01Icon}
-                  size={16}
-                />
-                <span className="sr-only">
-                  {localSearch.label ?? "Поиск на странице"}
-                </span>
-                <Input
-                  aria-label={localSearch.label ?? "Поиск на странице"}
-                  className="h-8 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                  onChange={(event) => localSearch.onChange(event.target.value)}
-                  placeholder={localSearch.placeholder}
-                  type="search"
-                  value={localSearch.value}
-                />
-              </label>
-            ) : null}
+            {localSearch ? <AdminSearchField className="hidden w-44 shrink-0 lg:flex" value={localSearch.value} onChange={localSearch.onChange} label={localSearch.label ?? "Поиск на странице"} placeholder={localSearch.placeholder} onGlobalSearch={() => setSearchOpen(true)} /> : null}
             {!localSearch ? (
               <Button
                 aria-haspopup="dialog"
@@ -682,7 +653,7 @@ export function AppShell({
                 <HugeiconsIcon icon={Search01Icon} size={16} />
                 <span className="min-w-0 flex-1 truncate text-left">Поиск</span>
                 <kbd className="rounded-md border border-border px-1.5 py-0.5 text-xs">
-                  ⌘K
+                  {shortcutLabel}
                 </kbd>
               </Button>
             ) : null}
@@ -847,7 +818,7 @@ export function AppShell({
                 <DropdownMenuItem onClick={openInterfaceSettings}>
                   Интерфейс
                 </DropdownMenuItem>
-                {brand.role === "owner" || brand.role === "admin" ? (
+                {managementRoles.includes(brand.role) ? (
                   <DropdownMenuItem render={<Link href="/settings" />}>
                     Настройки компании
                   </DropdownMenuItem>
@@ -864,22 +835,7 @@ export function AppShell({
           </div>
           {localSearch && localSearchMobileOpen ? (
             <div className="absolute top-[calc(100%+.5rem)] right-0 left-0 z-40 rounded-[var(--app-radius)] border border-border bg-popover p-2 shadow-xl lg:hidden">
-              <div className="flex items-center gap-2 rounded-xl border border-input bg-input/40 px-3">
-                <HugeiconsIcon
-                  className="shrink-0 text-muted-foreground"
-                  icon={Search01Icon}
-                  size={16}
-                />
-                <Input
-                  aria-label={localSearch.label ?? "Поиск на странице"}
-                  autoFocus
-                  className="h-10 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                  onChange={(event) => localSearch.onChange(event.target.value)}
-                  placeholder={localSearch.placeholder}
-                  type="search"
-                  value={localSearch.value}
-                />
-              </div>
+              <AdminSearchField autoFocus value={localSearch.value} onChange={localSearch.onChange} label={localSearch.label ?? "Поиск на странице"} placeholder={localSearch.placeholder} onGlobalSearch={() => { setLocalSearchMobileOpen(false); setSearchOpen(true) }} />
             </div>
           ) : null}
         </header>
@@ -889,24 +845,31 @@ export function AppShell({
         </ScrollArea>
       </SidebarInset>
       <CommandDialog
-        description="Найдите раздел, рейс, бронирование или клиента."
+        description="Найдите раздел, бронирование или клиента."
         onOpenChange={setSearchOpen}
         open={searchOpen}
         title="Поиск"
+        className="top-[12svh]! w-[calc(100vw_-_2rem)] max-w-xl rounded-2xl! border-border bg-popover sm:top-[18svh]!"
       >
-        <Command onValueChange={updateSearchQuery} value={searchQuery}>
+        <Command shouldFilter={false} className="rounded-2xl p-2 [&_[data-slot=command-input-wrapper]>div]:h-12!">
           <CommandInput
             autoFocus
-            placeholder="Рейс, маршрут, пассажир или телефон"
+            value={searchQuery}
+            onValueChange={updateSearchQuery}
+            maxLength={120}
+            aria-label="Глобальный поиск"
+            placeholder="Раздел, пассажир, телефон или ID брони…"
+            className="h-10 px-2"
           />
-          <CommandList className="max-h-[min(32rem,70svh)]">
-            {searchQuery.trim().length < 2 ? (
+          <CommandList aria-busy={searchLoading} className="mt-2 max-h-[min(28rem,60svh)]">
+            {visibleNavigation.some(item => item.label.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())) ? (
               <CommandGroup heading="РАЗДЕЛЫ">
-                {visibleNavigation.map((item) => (
+                {visibleNavigation.filter(item => item.label.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())).map((item) => (
                   <CommandItem
                     key={item.href}
                     onSelect={() => navigate(item.href)}
-                    value={item.label}
+                    value={`page:${item.href}`}
+                    className="min-h-10 cursor-pointer"
                   >
                     <HugeiconsIcon
                       icon={item.icon}
@@ -919,7 +882,7 @@ export function AppShell({
               </CommandGroup>
             ) : null}
             {searchLoading ? (
-              <p className="px-3 py-5 text-sm text-muted-foreground">Ищем…</p>
+              <p role="status" className="px-3 py-5 text-sm text-muted-foreground">Ищем…</p>
             ) : null}
             {searchError ? (
               <p className="m-1 rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -927,18 +890,19 @@ export function AppShell({
               </p>
             ) : null}
             {canShowSearchResults &&
-            customers.length + bookings.length === 0 ? (
-              <CommandEmpty>
+            customers.length + bookings.length === 0 && !visibleNavigation.some(item => item.label.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())) ? (
+              <div role="status" className="px-4 py-8 text-center text-sm text-muted-foreground">
                 Ничего не найдено. Попробуйте имя, телефон или маршрут.
-              </CommandEmpty>
+              </div>
             ) : null}
             {customers.length > 0 ? (
               <CommandGroup heading="КЛИЕНТЫ">
                 {customers.map((customer) => (
                   <CommandItem
                     key={customer.id}
-                    onSelect={() => navigate("/customers")}
-                    value={`${customer.fullName} ${customer.phone}`}
+                    onSelect={() => navigate(searchPageHref("/customers", customer.phone))}
+                    value={`customer:${customer.id}`}
+                    className="min-h-12 cursor-pointer"
                   >
                     <span className="min-w-0">
                       <span className="block font-semibold">
@@ -953,12 +917,13 @@ export function AppShell({
               </CommandGroup>
             ) : null}
             {bookings.length > 0 ? (
-              <CommandGroup heading="БРОНИРОВАНИЯ И РЕЙСЫ">
+              <CommandGroup heading="БРОНИРОВАНИЯ">
                 {bookings.map((booking) => (
                   <CommandItem
                     key={booking.id}
-                    onSelect={() => navigate("/bookings")}
-                    value={`${booking.origin} ${booking.destination} ${booking.customerName} ${booking.customerPhone}`}
+                    onSelect={() => navigate(searchPageHref("/bookings", booking.id))}
+                    value={`booking:${booking.id}`}
+                    className="min-h-12 cursor-pointer"
                   >
                     <span className="min-w-0">
                       <span className="block font-semibold">
@@ -967,6 +932,7 @@ export function AppShell({
                       <span className="block text-xs text-muted-foreground">
                         {booking.customerName} · {booking.customerPhone}
                       </span>
+                      <span className="block text-xs text-muted-foreground">ID: {booking.id}</span>
                     </span>
                   </CommandItem>
                 ))}
@@ -974,6 +940,7 @@ export function AppShell({
             ) : null}
           </CommandList>
         </Command>
+        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground"><span>↑ ↓ выбрать · Enter открыть</span><span>Esc закрыть</span></div>
       </CommandDialog>
     </SidebarProvider>
   )

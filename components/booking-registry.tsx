@@ -1,6 +1,7 @@
 "use client"
 
 import { sessionFetch } from "@/lib/session-navigation"
+import { usePageSearch } from "@/hooks/use-page-search"
 import { bookingPassengers } from "@/lib/booking-checkout"
 
 import * as React from "react"
@@ -222,7 +223,7 @@ export function BookingRegistry() {
   const [cancellingID, setCancellingID] = React.useState<string | null>(null)
   const [confirmingID, setConfirmingID] = React.useState<string | null>(null)
   const [status, setStatus] = React.useState<"" | BookingStatus>("")
-  const [query, setQuery] = React.useState("")
+  const [query, setQuery] = usePageSearch()
   const [date, setDate] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
@@ -238,7 +239,11 @@ export function BookingRegistry() {
   const [bookingForm, setBookingForm] =
     React.useState<BookingForm>(emptyBookingForm)
 
+  const loadController = React.useRef<AbortController | null>(null)
   const load = React.useCallback(async () => {
+    loadController.current?.abort()
+    const controller = new AbortController()
+    loadController.current = controller
     setLoading(true)
     setError(null)
     const params = new URLSearchParams({ limit: "200" })
@@ -250,6 +255,7 @@ export function BookingRegistry() {
         `/api/bookings?${params.toString()}`,
         {
           cache: "no-store",
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
         }
       )
       const payload: unknown = await response.json()
@@ -257,22 +263,24 @@ export function BookingRegistry() {
         throw new Error(
           errorFrom(payload, "Не удалось загрузить бронирования.")
         )
+      if (controller.signal.aborted) return
       setItems(payload.items)
       setTimezone(payload.timezone)
     } catch (reason) {
+      if (controller.signal.aborted) return
       setError(
         reason instanceof Error
           ? reason.message
           : "Не удалось загрузить бронирования."
       )
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [date, query, status])
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
+    const timer = window.setTimeout(() => void load(), 250)
+    return () => { window.clearTimeout(timer); loadController.current?.abort() }
   }, [load])
 
   React.useEffect(() => {

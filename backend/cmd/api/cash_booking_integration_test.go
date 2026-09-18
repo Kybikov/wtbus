@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
 	"testing"
 	"time"
@@ -98,6 +100,40 @@ func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
 	people := `[ {"firstName":"Ivan","lastName":"Petrenko","birthDate":"1990-01-01"}, {"firstName":"Anna","lastName":"Petrenko","birthDate":"1992-02-29"} ]`
 	if _, err := db.Exec(ctx, `UPDATE bookings SET custom_data=custom_data||jsonb_build_object('passengers',$2::jsonb) WHERE id=$1`, bookingResult.Item.ID, people); err != nil {
 		t.Fatal(err)
+	}
+	for _, query := range []string{bookingResult.Item.ID, "Anna Petrenko", "Cash passenger", "+380500000012"} {
+		r := httptest.NewRequest("GET", "/?q="+neturl.QueryEscape(query), nil)
+		r.SetPathValue("slug", slug)
+		w := httptest.NewRecorder()
+		app.listBookings(w, r)
+		if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(bookingResult.Item.ID)) {
+			t.Fatalf("booking search %q: %d %s", query, w.Code, w.Body)
+		}
+	}
+	if _, err := db.Exec(ctx, `UPDATE memberships SET role='developer' WHERE id=$1`, memberID); err != nil {
+		t.Fatal(err)
+	}
+	token := "disposable-developer-session-" + slug
+	hash := sha256.Sum256([]byte(token))
+	if _, err := db.Exec(ctx, `INSERT INTO user_sessions(user_id,membership_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')`, userID, memberID, hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	protected := app.requireRoles("owner")(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]string{"role": "developer"})
+	})
+	for _, company := range []string{slug, "other-company"} {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.SetPathValue("slug", company)
+		w := httptest.NewRecorder()
+		protected(w, r)
+		want := 200
+		if company != slug {
+			want = 403
+		}
+		if w.Code != want {
+			t.Fatalf("developer access %s: %d %s", company, w.Code, w.Body)
+		}
 	}
 	manifest := func(trip string, member string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("GET", "/?tripId="+trip, nil)

@@ -52,7 +52,7 @@ type VehicleForm = Pick<
   "name" | "registrationNumber" | "vehicleClass" | "capacity" | "isActive"
 >
 
-type Me = { role: "owner" | "admin" | "dispatcher" | "driver" }
+type Me = { role: "developer" | "owner" | "admin" | "dispatcher" | "driver" }
 
 const emptyVehicleForm: VehicleForm = {
   name: "",
@@ -196,7 +196,7 @@ export function FleetOperations() {
       }))
       .then(({ response, payload }) => {
         if (response.ok && isMe(payload))
-          setCanManage(payload.role === "owner" || payload.role === "admin")
+          setCanManage(payload.role === "developer" || payload.role === "owner" || payload.role === "admin")
       })
       .catch(() => {})
   }, [])

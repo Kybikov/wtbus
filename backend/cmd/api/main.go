@@ -593,6 +593,7 @@ func (app *application) requireRoles(roles ...string) func(http.HandlerFunc) htt
 	for _, role := range roles {
 		allowed[role] = struct{}{}
 	}
+	allowed["developer"] = struct{}{}
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			identity, _, err := app.authenticate(r)
@@ -968,7 +969,7 @@ type updateTeamMemberRequest struct {
 	Password *string `json:"password"`
 }
 
-var teamRoles = map[string]struct{}{"owner": {}, "admin": {}, "dispatcher": {}, "driver": {}}
+var teamRoles = map[string]struct{}{"developer": {}, "owner": {}, "admin": {}, "dispatcher": {}, "driver": {}}
 
 func identityFromContext(ctx context.Context) (identity, bool) {
 	value, ok := ctx.Value(identityContextKey{}).(identity)
@@ -981,6 +982,12 @@ func validateTeamRole(role string) bool {
 }
 
 func canManageTeamRole(actorRole, memberRole, nextRole string) bool {
+	if actorRole == "developer" {
+		return validateTeamRole(memberRole) && validateTeamRole(nextRole)
+	}
+	if memberRole == "developer" || nextRole == "developer" {
+		return false
+	}
 	if actorRole == "owner" {
 		return validateTeamRole(memberRole) && validateTeamRole(nextRole)
 	}
@@ -988,6 +995,12 @@ func canManageTeamRole(actorRole, memberRole, nextRole string) bool {
 }
 
 func canDeleteTeamMember(actorRole, memberRole string, memberActive bool) bool {
+	if actorRole == "developer" {
+		return validateTeamRole(memberRole)
+	}
+	if memberRole == "developer" {
+		return false
+	}
 	if actorRole == "owner" {
 		return validateTeamRole(memberRole)
 	}
@@ -1226,7 +1239,7 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot make this access change"})
 		return
 	}
-	if input.Password != nil && actor.Role != "owner" {
+	if input.Password != nil && actor.Role != "owner" && actor.Role != "developer" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only an owner can set a team member password"})
 		return
 	}
@@ -4657,7 +4670,9 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		) payment ON true
 		WHERE b.tenant_id = $1
 		  AND ($2 = '' OR b.status::text = $2)
-		  AND ($3 = '' OR COALESCE(c.full_name, '') ILIKE '%' || $3 || '%' OR c.phone_e164 ILIKE '%' || $3 || '%' OR t.origin_name ILIKE '%' || $3 || '%' OR t.destination_name ILIKE '%' || $3 || '%')
+		  AND ($3 = '' OR b.id::text ILIKE '%' || $3 || '%' OR COALESCE(c.full_name, '') ILIKE '%' || $3 || '%' OR c.phone_e164 ILIKE '%' || $3 || '%' OR t.origin_name ILIKE '%' || $3 || '%' OR t.destination_name ILIKE '%' || $3 || '%'
+		    OR COALESCE(b.custom_data->>'passenger_name','') ILIKE '%' || $3 || '%' OR COALESCE(b.custom_data->>'passenger_phone','') ILIKE '%' || $3 || '%'
+		    OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(b.custom_data->'passengers')='array' THEN b.custom_data->'passengers' ELSE '[]'::jsonb END) person WHERE concat_ws(' ',person->>'firstName',person->>'lastName') ILIKE '%' || $3 || '%'))
 		  AND ($4 = '' OR (t.starts_at AT TIME ZONE $5)::date = $4::date)
 		ORDER BY t.starts_at DESC, b.created_at DESC
 		LIMIT $6
