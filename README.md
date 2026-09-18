@@ -1,5 +1,7 @@
 # Vivat Bus
 
+Public passenger booking: `/book` or `/book/{tenant-slug}`. The Ukrainian page searches database-backed city pairs and departures, then creates a cash-on-boarding booking without login or an IBAN. Staff can open it from the profile menu. See [public booking](docs/public-booking.md) for API boundaries, migration and verification.
+
 ## Local Docker preview
 
 Run the complete local stack (frontend, Go API, PostgreSQL, Redis, and migrations):

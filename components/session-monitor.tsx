@@ -3,11 +3,12 @@
 import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { sessionFetch } from "@/lib/session-navigation"
+import { isPublicBookingPath } from "@/lib/public-booking"
 
 export function SessionMonitor() {
   const pathname = usePathname()
   useEffect(() => {
-    if (pathname === "/login" || pathname.startsWith("/offline")) return
+    if (pathname === "/login" || pathname.startsWith("/offline") || isPublicBookingPath(pathname)) return
     const controller = new AbortController()
     let pending = false
     async function check() {

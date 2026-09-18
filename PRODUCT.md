@@ -11,7 +11,7 @@ web
 - Owners and administrators configure a transfer company, its branding, routes, fares, staff, and access.
 - Dispatchers coordinate bookings, vehicles, drivers, and live trip status throughout the day.
 - Drivers use a phone-first PWA opened from Telegram to manage an active trip and share GPS location.
-- Passengers make and manage bookings entirely in the Telegram bot.
+- Passengers book in Telegram or on an anonymous web page. The web flow searches actual database routes and offers cash-on-boarding checkout; booking management remains with the bot and staff.
 
 ## Product Purpose
 
@@ -19,11 +19,11 @@ Vivat Bus is a SaaS CRM/TMS for international passenger transfers. It centralize
 
 ## Positioning
 
-It combines dispatcher operations and a Telegram-first passenger booking flow in one tenant-isolated product, while allowing each transport company to use its own brand.
+It combines dispatcher operations, Telegram booking and public web booking in one tenant-isolated product, while allowing each transport company to use its own brand.
 
 ## Operating Context
 
-Dispatchers primarily work from a desktop dashboard. Drivers work on a phone. The first release is Russian-only; multilingual support is planned for the bot. The current initial tenant brand is Vivat Bus, using the provided black-and-gold logo.
+Dispatchers primarily work from a desktop dashboard. Drivers work on a phone. The operations interface is Russian; the public passenger booking surface is Ukrainian. The current initial tenant brand is Vivat Bus, using the provided black-and-gold logo.
 
 ## Capabilities and Constraints
 

@@ -5,6 +5,34 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Passenger pages inherit Vivat's brand without the staff member's UI scale. */
+html:has([data-public-booking]) {
+  font-size: 16px;
+  --app-radius: 1rem;
+}
+body:has([data-public-booking]) {
+  --primary: #e9b74d;
+  --primary-foreground: #241e10;
+  --ring: #e9b74d;
+}
+
+@media print {
+  body:has([data-public-booking]), [data-public-booking] {
+    --background: #fff;
+    --card: #fff;
+    --foreground: #111;
+    --muted-foreground: #555;
+    --primary: #111;
+    --border: #ccc;
+    background: #fff;
+    color: #111;
+  }
+  [data-public-booking] > header, [data-public-booking] > footer,
+  [data-trip-checkout] > header, [data-trip-checkout] > footer,
+  [data-trip-checkout] button, [data-trip-checkout] ol { display: none; }
+  [data-trip-checkout] { min-height: 0; border: 0; }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);

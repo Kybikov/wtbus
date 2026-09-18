@@ -48,7 +48,7 @@ type Booking = {
   seats: number
   priceMinor: number
   currency: string
-  source: "telegram" | "dispatcher" | "import"
+  source: "telegram" | "dispatcher" | "import" | "web"
   createdAt: string
   customerName: string
   customerPhone: string
@@ -105,6 +105,7 @@ const sourceLabels: Record<Booking["source"], string> = {
   telegram: "Telegram",
   dispatcher: "Диспетчер",
   import: "Импорт",
+  web: "Сайт",
 }
 
 function isCollection(value: unknown): value is BookingCollection {

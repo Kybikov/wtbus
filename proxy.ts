@@ -2,9 +2,10 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { checkSession } from "@/lib/session-check"
 import { loginPath } from "@/lib/session-navigation"
+import { isPublicBookingPath } from "@/lib/public-booking"
 
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === "/login") {
+  if (request.nextUrl.pathname === "/login" || isPublicBookingPath(request.nextUrl.pathname)) {
     return NextResponse.next()
   }
   const session = await checkSession(

@@ -843,6 +843,7 @@ export function AppShell({
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem render={<Link href="/profile" />}>Личный профиль</DropdownMenuItem>
+                <DropdownMenuItem render={<Link href={`/book/${brand.tenantSlug}`} target="_blank" rel="noopener noreferrer" />}>Страница бронирования</DropdownMenuItem>
                 <DropdownMenuItem onClick={openInterfaceSettings}>
                   Интерфейс
                 </DropdownMenuItem>
