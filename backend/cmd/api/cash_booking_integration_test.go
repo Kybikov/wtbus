@@ -113,6 +113,14 @@ func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
 	if _, err := db.Exec(ctx, `UPDATE memberships SET role='developer' WHERE id=$1`, memberID); err != nil {
 		t.Fatal(err)
 	}
+	app.bootstrapEmail, app.bootstrapPassword, app.bootstrapTenant = slug+"@test.invalid", "disposable-owner-password", slug
+	if err := app.ensureBootstrapOwner(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var bootstrapRole string
+	if err := db.QueryRow(ctx, `SELECT role::text FROM memberships WHERE id=$1`, memberID).Scan(&bootstrapRole); err != nil || bootstrapRole != "developer" {
+		t.Fatalf("bootstrap overwrote developer role: %s %v", bootstrapRole, err)
+	}
 	token := "disposable-developer-session-" + slug
 	hash := sha256.Sum256([]byte(token))
 	if _, err := db.Exec(ctx, `INSERT INTO user_sessions(user_id,membership_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')`, userID, memberID, hash[:]); err != nil {

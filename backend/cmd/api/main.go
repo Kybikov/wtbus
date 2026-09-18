@@ -305,7 +305,8 @@ func (app *application) ensureBootstrapOwner(ctx context.Context) error {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO memberships (tenant_id, user_id, role, is_active)
 		VALUES ($1, $2, 'owner', true)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = 'owner', is_active = true
+		ON CONFLICT (tenant_id, user_id) DO UPDATE
+		SET role = CASE WHEN memberships.role::text = 'developer' THEN memberships.role ELSE 'owner'::membership_role END, is_active = true
 	`, tenantID, userID); err != nil {
 		return fmt.Errorf("create bootstrap membership: %w", err)
 	}
