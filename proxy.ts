@@ -5,7 +5,10 @@ import { loginPath } from "@/lib/session-navigation"
 import { isPublicBookingPath } from "@/lib/public-booking"
 
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === "/login" || isPublicBookingPath(request.nextUrl.pathname)) {
+  if (
+    request.nextUrl.pathname === "/login" ||
+    isPublicBookingPath(request.nextUrl.pathname)
+  ) {
     return NextResponse.next()
   }
   const session = await checkSession(
@@ -47,6 +50,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline|brand/).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|sw.js|offline|brand/).*)",
   ],
 }

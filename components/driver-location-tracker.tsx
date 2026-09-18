@@ -3,6 +3,10 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { realtimeEvent } from "@/lib/realtime"
+import { NotificationsBell } from "@/components/notifications-inbox"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Car01Icon, Clock01Icon, Route01Icon } from "@hugeicons/core-free-icons"
 
@@ -116,6 +120,7 @@ function formatMoney(amountMinor: number, currency: string) {
 }
 
 export function DriverLocationTracker() {
+  const router = useRouter()
   const [vehicles, setVehicles] = React.useState<Vehicle[]>([])
   const [cashSummary, setCashSummary] =
     React.useState<DriverCashSummaryItem | null>(null)
@@ -127,13 +132,15 @@ export function DriverLocationTracker() {
   const [identity, setIdentity] = React.useState<DriverIdentity | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const loadInFlight = React.useRef(false)
-  const selectedVehicle = [...vehicles].sort(
-    (a, b) =>
-      Number(b.activeTrip?.status === "in_progress") -
-        Number(a.activeTrip?.status === "in_progress") ||
-      Date.parse(a.activeTrip?.startsAt ?? "") -
-        Date.parse(b.activeTrip?.startsAt ?? "")
-  )[0]
+  const selectedVehicle = vehicles
+    .filter((vehicle) => vehicle.activeTrip)
+    .sort(
+      (a, b) =>
+        Number(b.activeTrip?.status === "in_progress") -
+          Number(a.activeTrip?.status === "in_progress") ||
+        Date.parse(a.activeTrip?.startsAt ?? "") -
+          Date.parse(b.activeTrip?.startsAt ?? "")
+    )[0]
   const gps = useDriverGPS(
     identity && selectedVehicle?.activeTrip
       ? {
@@ -161,6 +168,16 @@ export function DriverLocationTracker() {
         signal: AbortSignal.timeout(10_000),
       })
       const session = await sessionResponse.json().catch(() => null)
+      if (
+        sessionResponse.ok &&
+        typeof session?.role === "string" &&
+        session.role !== "driver"
+      ) {
+        setIdentity(null)
+        setVehicles([])
+        router.replace("/")
+        return
+      }
       if (
         !sessionResponse.ok ||
         session?.role !== "driver" ||
@@ -199,7 +216,7 @@ export function DriverLocationTracker() {
       loadInFlight.current = false
       setLoading(false)
     }
-  }, [])
+  }, [router])
 
   const loadCashSummary = React.useCallback(async () => {
     setCashLoading(true)
@@ -226,24 +243,31 @@ export function DriverLocationTracker() {
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadFleet()
-      void loadCashSummary()
     }, 0)
     const refresh = () => {
       if (document.visibilityState === "visible") {
         void loadFleet()
-        void loadCashSummary()
+        if (identity?.role === "driver") void loadCashSummary()
       }
     }
     const poll = window.setInterval(refresh, 30_000)
     window.addEventListener("online", refresh)
+    window.addEventListener(realtimeEvent, refresh)
     document.addEventListener("visibilitychange", refresh)
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(poll)
       window.removeEventListener("online", refresh)
+      window.removeEventListener(realtimeEvent, refresh)
       document.removeEventListener("visibilitychange", refresh)
     }
-  }, [loadCashSummary, loadFleet])
+  }, [identity?.role, loadCashSummary, loadFleet])
+
+  React.useEffect(() => {
+    if (identity?.role !== "driver") return
+    const timer = window.setTimeout(() => void loadCashSummary(), 0)
+    return () => window.clearTimeout(timer)
+  }, [identity?.role, loadCashSummary])
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -362,7 +386,20 @@ export function DriverLocationTracker() {
           </div>
         </div>
 
-        <div className="mt-10">
+        <nav
+          aria-label="Навигация приложения"
+          className="mt-5 flex flex-wrap gap-2"
+        >
+          <Button render={<Link href="/profile" />} variant="outline">
+            Профиль и настройки
+          </Button>
+          <Button render={<Link href="/" />} variant="ghost">
+            Главная
+          </Button>
+          <NotificationsBell />
+        </nav>
+
+        <div className="mt-6">
           <h1 className="text-3xl font-bold tracking-[-.035em]">
             Передача геолокации
           </h1>
@@ -374,7 +411,10 @@ export function DriverLocationTracker() {
 
         {selectedVehicle?.activeTrip ? (
           <>
-            <DriverPassengerManifest key={selectedVehicle.activeTrip.id} tripId={selectedVehicle.activeTrip.id} />
+            <DriverPassengerManifest
+              key={selectedVehicle.activeTrip.id}
+              tripId={selectedVehicle.activeTrip.id}
+            />
             <div className="mt-7 rounded-2xl border border-border bg-background/40 p-4">
               <p className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
                 <HugeiconsIcon icon={Route01Icon} size={15} />
@@ -457,7 +497,9 @@ export function DriverLocationTracker() {
           </>
         ) : (
           <div className="mt-7 rounded-2xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
-            <p>Нет назначенного рейса.</p>
+            <p>
+              {loading ? "Загружаем назначения…" : "Нет назначенного рейса."}
+            </p>
             <p className="mt-1 text-xs">
               Назначения обновляются каждые 30 секунд, пока приложение открыто.
             </p>
@@ -480,9 +522,9 @@ export function DriverLocationTracker() {
           >
             {error || gps.error}
             {gps.authRequired ? (
-              <a className="mt-2 block underline" href="/login?next=/driver">
+              <Link className="mt-2 block underline" href="/login?next=/driver">
                 Войти снова
-              </a>
+              </Link>
             ) : null}
           </div>
         ) : null}
@@ -504,85 +546,88 @@ export function DriverLocationTracker() {
           </div>
         ) : null}
 
-        <div className="mt-auto pt-8">
-          <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
-            <span
-              className={
-                tracking &&
-                gps.fresh &&
-                online &&
-                pendingCount === 0 &&
-                !gps.error
-                  ? "size-2 rounded-full bg-emerald-500"
-                  : "size-2 rounded-full bg-muted-foreground/50"
-              }
-            />
-            <HugeiconsIcon icon={Clock01Icon} size={15} />
-            Последняя отправка: {timeLabel(lastSent)}
-          </div>
-          <div
-            className="mb-4 space-y-2 text-sm text-muted-foreground"
-            role="status"
-          >
-            <p>
-              {tracking
-                ? gps.fresh
-                  ? "GPS включён"
-                  : "GPS включён · ожидаем свежую позицию"
-                : "GPS остановлен"}
-              {gps.accuracy !== null
-                ? ` · точность ±${Math.round(gps.accuracy)} м`
-                : ""}
-            </p>
-            {gps.notice ? <p>{gps.notice}</p> : null}
-            {tracking ? (
-              <p>
-                {gps.wakeLocked
-                  ? "Экран удерживается включённым."
-                  : "Держите экран включённым: браузер не разрешил удержание экрана."}
-              </p>
-            ) : null}
-          </div>
-          <div className="grid gap-3 [&_button]:min-h-11">
-            <Button
-              disabled={
-                loading ||
-                !identity ||
-                !selectedVehicle?.activeTrip ||
-                sending ||
-                updatingTripStatus ||
-                gps.authRequired
-              }
-              onClick={gps.sendOnce}
-              size="lg"
-              variant="outline"
+        {selectedVehicle?.activeTrip && identity?.role === "driver" ? (
+          <div className="mt-auto pt-8">
+            <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <span
+                className={
+                  tracking &&
+                  gps.fresh &&
+                  online &&
+                  pendingCount === 0 &&
+                  !gps.error
+                    ? "size-2 rounded-full bg-emerald-500"
+                    : "size-2 rounded-full bg-muted-foreground/50"
+                }
+              />
+              <HugeiconsIcon icon={Clock01Icon} size={15} />
+              Последняя отправка: {timeLabel(lastSent)}
+            </div>
+            <div
+              className="mb-4 space-y-2 text-sm text-muted-foreground"
+              role="status"
             >
-              {sending ? "Передаём координаты…" : "Передать точку сейчас"}
-            </Button>
-            <Button
-              disabled={
-                !tracking &&
-                (loading ||
+              <p>
+                {tracking
+                  ? gps.fresh
+                    ? "GPS включён"
+                    : "GPS включён · ожидаем свежую позицию"
+                  : "GPS остановлен"}
+                {gps.accuracy !== null
+                  ? ` · точность ±${Math.round(gps.accuracy)} м`
+                  : ""}
+              </p>
+              {gps.notice ? <p>{gps.notice}</p> : null}
+              {tracking ? (
+                <p>
+                  {gps.wakeLocked
+                    ? "Экран удерживается включённым."
+                    : "Держите экран включённым: браузер не разрешил удержание экрана."}
+                </p>
+              ) : null}
+            </div>
+            <div className="grid gap-3 [&_button]:min-h-11">
+              <Button
+                disabled={
+                  loading ||
                   !identity ||
                   !selectedVehicle?.activeTrip ||
                   sending ||
                   updatingTripStatus ||
-                  gps.authRequired)
-              }
-              onClick={tracking ? gps.stop : gps.start}
-              size="lg"
-            >
-              {tracking ? "Остановить передачу" : "Начать передачу GPS"}
-            </Button>
+                  gps.authRequired
+                }
+                onClick={gps.sendOnce}
+                size="lg"
+                variant="outline"
+              >
+                {sending ? "Передаём координаты…" : "Передать точку сейчас"}
+              </Button>
+              <Button
+                disabled={
+                  !tracking &&
+                  (loading ||
+                    !identity ||
+                    !selectedVehicle?.activeTrip ||
+                    sending ||
+                    updatingTripStatus ||
+                    gps.authRequired)
+                }
+                onClick={tracking ? gps.stop : gps.start}
+                size="lg"
+              >
+                {tracking ? "Остановить передачу" : "Начать передачу GPS"}
+              </Button>
+            </div>
+            <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
+              При активной передаче координаты отправляются не чаще одного раза
+              в 25 секунд. Остановить можно в любой момент. Добавьте приложение
+              на главный экран телефона, чтобы открывать его как обычное
+              приложение. При блокировке экрана или сворачивании GPS может
+              приостановиться. Во время рейса держите приложение открытым и
+              телефон на зарядке.
+            </p>
           </div>
-          <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
-            При активной передаче координаты отправляются не чаще одного раза в
-            25 секунд. Остановить можно в любой момент. Добавьте приложение на
-            главный экран телефона, чтобы открывать его как обычное приложение.
-            При блокировке экрана или сворачивании GPS может приостановиться. Во
-            время рейса держите приложение открытым и телефон на зарядке.
-          </p>
-        </div>
+        ) : null}
       </div>
     </main>
   )

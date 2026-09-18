@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        API_INTERNAL_URL: http://vivat-api:8080
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -11,6 +13,7 @@ services:
       # The private alias prevents this frontend from resolving an `api`
       # container belonging to a different Coolify application.
       API_INTERNAL_URL: http://vivat-api:8080
+      APP_ORIGIN: ${CORS_ORIGIN:-https://vivat.wtmelon.store}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
     expose:
       - "3000"
@@ -92,6 +95,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://vivat.wtmelon.store}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-https://vivat.wtmelon.store}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:support@wtmelon.store}
       SAAS_CONTROL_SECRET: ${SAAS_CONTROL_SECRET:-}
       BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:?BOOTSTRAP_OWNER_EMAIL is required}
       BOOTSTRAP_OWNER_PASSWORD: ${BOOTSTRAP_OWNER_PASSWORD:?BOOTSTRAP_OWNER_PASSWORD is required}
@@ -110,6 +115,7 @@ services:
       vivat-internal:
         aliases:
           - vivat-api
+      push-egress: {}
 
   bot:
     build:
@@ -138,3 +144,5 @@ networks:
     external: true
   vivat-internal:
     internal: true
+  # Push needs outbound HTTPS. API still has no public ports/proxy labels.
+  push-egress: {}

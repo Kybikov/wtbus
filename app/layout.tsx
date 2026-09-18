@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 
 import "./globals.css"
 import { PWARegistrar } from "@/components/pwa-registrar"
+import { DeviceNotificationMonitor } from "@/components/device-notification-monitor"
 import { LayoutPreferencesProvider } from "@/components/layout-preferences-provider"
 import { SessionMonitor } from "@/components/session-monitor"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -60,6 +61,7 @@ export default async function RootLayout({
           >
             <TooltipProvider>
               <PWARegistrar />
+              <DeviceNotificationMonitor />
               <SessionMonitor />
               {children}
             </TooltipProvider>

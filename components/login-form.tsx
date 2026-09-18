@@ -6,6 +6,8 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { LockPasswordIcon, Login03Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Eye, EyeOff } from "lucide-react"
 import { safeReturnPath } from "@/lib/session-navigation"
 
 type CompanyChoice = {
@@ -60,6 +62,7 @@ export function LoginForm() {
   const router = useRouter()
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
+  const [showPassword, setShowPassword] = React.useState(false)
   const [companySelection, setCompanySelection] =
     React.useState<CompanySelection | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
@@ -120,7 +123,9 @@ export function LoginForm() {
       router.refresh()
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "Не удалось выбрать компанию."
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось выбрать компанию."
       )
     } finally {
       setSubmitting(false)
@@ -147,7 +152,7 @@ export function LoginForm() {
             <div className="space-y-2" role="list">
               {companySelection.companies.map((company) => (
                 <button
-                  className="flex w-full items-center justify-between rounded-2xl border border-border bg-background px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full items-center justify-between rounded-2xl border border-border bg-background px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-primary/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={submitting}
                   key={company.slug}
                   onClick={() => selectCompany(company)}
@@ -167,6 +172,7 @@ export function LoginForm() {
               onClick={() => {
                 setCompanySelection(null)
                 setPassword("")
+                setShowPassword(false)
                 setError(null)
               }}
               size="lg"
@@ -180,7 +186,7 @@ export function LoginForm() {
           <form className="mt-7 space-y-4" onSubmit={submit}>
             <label className="grid gap-2 text-sm font-semibold">
               Email
-              <input
+              <Input
                 autoComplete="email"
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 onChange={(event) => setEmail(event.target.value)}
@@ -189,17 +195,34 @@ export function LoginForm() {
                 value={email}
               />
             </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Пароль
-              <input
-                autoComplete="current-password"
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                type="password"
-                value={password}
-              />
-            </label>
+            <div className="grid gap-2 text-sm font-semibold">
+              <label htmlFor="login-password">Пароль</label>
+              <div className="relative">
+                <Input
+                  id="login-password"
+                  autoComplete="current-password"
+                  className="h-11 rounded-xl border border-border bg-background pr-12 pl-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                />
+                <Button
+                  aria-label={
+                    showPassword ? "Скрыть пароль" : "Показать пароль"
+                  }
+                  aria-pressed={showPassword}
+                  aria-controls="login-password"
+                  className="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  size="icon-lg"
+                  type="button"
+                  variant="ghost"
+                >
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </Button>
+              </div>
+            </div>
             <Button
               className="w-full"
               disabled={submitting}

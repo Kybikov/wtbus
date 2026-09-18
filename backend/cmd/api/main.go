@@ -34,15 +34,18 @@ import (
 )
 
 type application struct {
-	db                *pgxpool.Pool
-	redis             *redis.Client
-	log               *slog.Logger
-	saasControlSecret string
-	bootstrapEmail    string
-	bootstrapPassword string
-	bootstrapTenant   string
-	bootstrapReset    bool
-	seedDemoData      bool
+	db                  *pgxpool.Pool
+	redis               *redis.Client
+	log                 *slog.Logger
+	saasControlSecret   string
+	bootstrapEmail      string
+	bootstrapPassword   string
+	bootstrapTenant     string
+	bootstrapReset      bool
+	seedDemoData        bool
+	pushPublicKey       string
+	pushPrivateKey      string
+	notificationContext context.Context
 }
 
 func main() {
@@ -103,6 +106,15 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if err := app.ensurePushKeys(ctx); err != nil {
+		logger.Error("initialize push keys (run database migrations first)", "error", err)
+		os.Exit(1)
+	}
+	signalContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	app.notificationContext = signalContext
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); app.notificationWorker(signalContext) }()
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           app.routes(),
@@ -117,14 +129,16 @@ func main() {
 		}
 	}()
 
-	signalContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	<-signalContext.Done()
 
 	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	if err := server.Shutdown(shutdownContext); err != nil {
 		logger.Error("shutdown api", "error", err)
+	}
+	select {
+	case <-workerDone:
+	case <-shutdownContext.Done():
 	}
 }
 
@@ -141,6 +155,11 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/{slug}/trips", app.publicTrips)
 	mux.HandleFunc("POST /api/v1/public/{slug}/bookings", app.publicCreateBooking)
 	staff := app.requireRoles("owner", "admin", "dispatcher", "driver")
+	mux.HandleFunc("GET /api/v1/realtime", app.realtime)
+	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
+		mux.HandleFunc(method+" /api/v1/me/notifications", staff(app.notifications))
+		mux.HandleFunc(method+" /api/v1/me/push", staff(app.pushSettings))
+	}
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))

@@ -1,6 +1,8 @@
 "use client"
 
 import { sessionFetch } from "@/lib/session-navigation"
+import { NotificationsBell } from "@/components/notifications-inbox"
+import { realtimeEvent } from "@/lib/realtime"
 
 import * as React from "react"
 import { useLayoutPreferences } from "@/components/layout-preferences-provider"
@@ -13,7 +15,6 @@ import {
   Calendar01Icon,
   Car01Icon,
   DashboardSquare01Icon,
-  Notification01Icon,
   InformationCircleIcon,
   RefreshIcon,
   Route01Icon,
@@ -112,14 +113,6 @@ type SearchBooking = {
   origin: string
   destination: string
   startsAt: string
-}
-type TransferRequestPreview = {
-  id: string
-  status: "new" | "in_progress" | "closed" | "cancelled"
-  passengerName: string
-  origin: string
-  destination: string
-  createdAt: string
 }
 type SidebarVariant = "default" | "inset" | "floating"
 
@@ -421,14 +414,6 @@ export function AppShell({
   const [searchError, setSearchError] = React.useState<string | null>(null)
   const [customers, setCustomers] = React.useState<SearchCustomer[]>([])
   const [bookings, setBookings] = React.useState<SearchBooking[]>([])
-  const [notificationsOpen, setNotificationsOpen] = React.useState(false)
-  const [notificationsLoading, setNotificationsLoading] = React.useState(false)
-  const [notificationError, setNotificationError] = React.useState<
-    string | null
-  >(null)
-  const [newRequests, setNewRequests] = React.useState<
-    TransferRequestPreview[]
-  >([])
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -570,24 +555,27 @@ export function AppShell({
     window.addEventListener("vivat-branding-change", change)
     return () => window.removeEventListener("vivat-branding-change", change)
   }, [])
-  const loadNotifications = React.useCallback(async () => {
-    setNotificationsLoading(true)
-    setNotificationError(null)
-    try {
-      const response = await sessionFetch(
-        "/api/individual-transfer-requests?status=new&limit=5",
-        { cache: "no-store" }
-      )
-      const payload: unknown = await response.json().catch(() => null)
-      if (!response.ok || !hasItems<TransferRequestPreview>(payload))
-        throw new Error()
-      setNewRequests(payload.items)
-    } catch {
-      setNotificationError("Не удалось загрузить уведомления.")
-    } finally {
-      setNotificationsLoading(false)
+  const realtimeRefresh = React.useRef(onRefresh)
+  React.useEffect(() => { realtimeRefresh.current = onRefresh }, [onRefresh])
+  React.useEffect(() => {
+    let pending = false
+    let busy = false
+    async function refresh() {
+      if (!pending || busy || document.visibilityState !== "visible") return
+      // Do not reset an in-progress edit, a dialog or an unsaved profile/settings form.
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]') ||
+        /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName ?? "") ||
+        document.activeElement?.getAttribute("contenteditable") === "true") return
+      pending = false; busy = true
+      try { if (realtimeRefresh.current && pathname !== "/profile" && pathname !== "/settings") await realtimeRefresh.current() }
+      catch { /* Existing page error states handle network failures. */ }
+      finally { busy = false }
     }
-  }, [])
+    const invalidate = () => { pending = true }
+    window.addEventListener(realtimeEvent, invalidate)
+    const timer = setInterval(() => void refresh(), 1000)
+    return () => { clearInterval(timer); window.removeEventListener(realtimeEvent, invalidate) }
+  }, [pathname])
   const updateSearchQuery = React.useCallback((value: string) => {
     setSearchQuery(value)
     setCustomers([])
@@ -729,93 +717,7 @@ export function AppShell({
               </TooltipTrigger>
               <TooltipContent>{isRefreshing ? "Обновляем данные…" : "Обновить данные"}</TooltipContent>
             </Tooltip>
-            <DropdownMenu
-              onOpenChange={(open) => {
-                setNotificationsOpen(open)
-                if (open) void loadNotifications()
-              }}
-              open={notificationsOpen}
-            >
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          aria-label="Уведомления"
-                          className="relative size-9 rounded-lg"
-                          size="icon-lg"
-                          variant="ghost"
-                        />
-                      }
-                    />
-                  }
-                >
-                  <HugeiconsIcon icon={Notification01Icon} strokeWidth={1.8} />
-                  {newRequests.length > 0 ? (
-                    <span className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />
-                  ) : null}
-                </TooltipTrigger>
-                <TooltipContent>Уведомления</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent
-                align="end"
-                className="w-[min(23rem,calc(100vw-2rem))] p-2"
-              >
-                <div className="flex items-center justify-between gap-3 px-2 py-1">
-                  <p className="p-0 text-sm font-semibold">Уведомления</p>
-                  <Button
-                    onClick={() => void loadNotifications()}
-                    size="xs"
-                    variant="ghost"
-                  >
-                    Обновить
-                  </Button>
-                </div>
-                <DropdownMenuSeparator />
-                {notificationsLoading ? (
-                  <p className="px-2 py-4 text-sm text-muted-foreground">
-                    Загружаем…
-                  </p>
-                ) : null}
-                {notificationError ? (
-                  <p className="mx-1 rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {notificationError}
-                  </p>
-                ) : null}
-                {!notificationsLoading &&
-                !notificationError &&
-                newRequests.length === 0 ? (
-                  <p className="px-2 py-4 text-sm text-muted-foreground">
-                    Новых заявок нет.
-                  </p>
-                ) : null}
-                {!notificationsLoading && newRequests.length > 0
-                  ? newRequests.map((request) => (
-                      <DropdownMenuItem
-                        key={request.id}
-                        render={<Link href="/requests" />}
-                      >
-                        <span className="min-w-0">
-                          <span className="block font-semibold">
-                            Новая индивидуальная заявка
-                          </span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {request.passengerName}: {request.origin} →{" "}
-                            {request.destination}
-                          </span>
-                        </span>
-                      </DropdownMenuItem>
-                    ))
-                  : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem render={<Link href="/requests" />}>
-                  <span className="font-semibold text-primary">
-                    Открыть все заявки
-                  </span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <NotificationsBell />
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={

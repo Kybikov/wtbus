@@ -11,6 +11,7 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       API_INTERNAL_URL: http://api:8080
+      APP_ORIGIN: http://localhost:${WEB_PORT:-3001},http://127.0.0.1:${WEB_PORT:-3001}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     restart: unless-stopped
     depends_on:
@@ -75,6 +76,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-vivat}:${POSTGRES_PASSWORD:-vivat_local_only}@postgres:5432/${POSTGRES_DB:-vivat}?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGIN: http://localhost:${WEB_PORT:-3001}
+      WS_ALLOWED_ORIGINS: http://localhost:${WEB_PORT:-3001},http://127.0.0.1:${WEB_PORT:-3001}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:support@wtmelon.store}
       SAAS_CONTROL_SECRET: ${SAAS_CONTROL_SECRET:-}
       BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:-admin@vivat.local}
       BOOTSTRAP_OWNER_PASSWORD: ${BOOTSTRAP_OWNER_PASSWORD:-vivat-local-change-me}

@@ -1,4 +1,4 @@
-const CACHE_NAME = "vivat-bus-shell-v3"
+const CACHE_NAME = "vivat-bus-shell-v5"
 const APP_SHELL = ["/offline.html", "/brand/vivat-bus.png"]
 
 self.addEventListener("install", (event) => {
@@ -46,4 +46,42 @@ self.addEventListener("fetch", (event) => {
       })
     )
   }
+})
+
+const notificationPaths = new Set(["/requests", "/bookings", "/finance", "/trips", "/driver", "/profile"])
+function notificationPath(value) { return notificationPaths.has(value) ? value : "/profile" }
+
+self.addEventListener("push", (event) => {
+  let payload
+  try { payload = event.data?.json() } catch { payload = null }
+  if (!payload || typeof payload.title !== "string" || typeof payload.body !== "string") return
+  event.waitUntil(self.registration.showNotification(payload.title.slice(0, 120), {
+    body: payload.body.slice(0, 300), icon: "/icon/192", badge: "/icon/64",
+    tag: typeof payload.tag === "string" ? payload.tag.slice(0, 100) : "vivat-notification",
+    data: { url: notificationPath(payload.url) },
+  }))
+})
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  // A client with an authenticated session can safely rebind/renew its subscription.
+  // Never re-register a departed user's endpoint from an unauthenticated background worker.
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    for (const client of windows) client.postMessage({ type: "vivat-push-subscription-changed" })
+  }))
+})
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+  const requested = event.notification.data?.url
+  const path = notificationPath(requested)
+  const url = new URL(path, self.location.origin).href
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+    for (const client of windows) {
+      if (new URL(client.url).origin === self.location.origin) {
+        await client.navigate(url)
+        return client.focus()
+      }
+    }
+    return self.clients.openWindow(url)
+  }))
 })

@@ -436,6 +436,10 @@ export function useDriverGPS(target: GPSTarget | null) {
 
   return {
     ...state,
+    error: target ? state.error : null,
+    notice: target ? state.notice : null,
+    authRequired: !!target && state.authRequired,
+    locating: !!target && state.locating,
     tracking: !!target && state.tracking,
     start: () => runtime.current?.start(),
     stop: () => runtime.current?.stop(),

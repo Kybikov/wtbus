@@ -3,24 +3,24 @@ import type { MetadataRoute } from "next"
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/driver",
-    name: "Vivat Bus — водительское приложение",
+    name: "Vivat Bus",
     short_name: "Vivat Bus",
-    description: "Водительское приложение Vivat Bus для передачи геолокации.",
-    start_url: "/driver",
+    description: "Рейсы, бронирования и управление перевозками.",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     background_color: "#1f1f1b",
     theme_color: "#1f1f1b",
     icons: [
       {
-        src: "/brand/vivat-bus.png",
-        sizes: "1280x1280",
+        src: "/icon/192",
+        sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/brand/vivat-bus.png",
-        sizes: "1280x1280",
+        src: "/icon/512",
+        sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
       },

@@ -1,5 +1,7 @@
 # Vivat Bus
 
+CRM notifications, background Web Push, profile settings and authenticated WebSocket updates are described in [notifications](docs/notifications.md), including migration 31, deployment configuration and verification.
+
 Public passenger booking: `/book` or `/book/{tenant-slug}`. The Ukrainian page searches database-backed city pairs and departures, then creates a cash-on-boarding booking without login or an IBAN. Staff can open it from the profile menu. See [public booking](docs/public-booking.md) for API boundaries, migration and verification.
 
 ## Local Docker preview

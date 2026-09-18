@@ -4,7 +4,7 @@ ARG COMMAND=api
 
 WORKDIR /src
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
@@ -15,6 +15,7 @@ FROM alpine:3.22
 ARG COMMAND=api
 
 RUN addgroup -S app && adduser -S app -G app
+RUN apk add --no-cache ca-certificates
 
 USER app
 COPY --from=builder /out/vivat-${COMMAND} /vivat

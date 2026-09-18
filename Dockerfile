@@ -12,6 +12,9 @@ RUN npm ci
 
 FROM base AS builder
 
+ARG API_INTERNAL_URL=http://api:8080
+ENV API_INTERNAL_URL=$API_INTERNAL_URL
+
 WORKDIR /app
 
 COPY --from=dependencies /app/node_modules ./node_modules
