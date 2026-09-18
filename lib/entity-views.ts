@@ -1,7 +1,18 @@
 import type { EntityMetric } from "./entity-metrics.ts"
-export type EntityCollection = "customers" | "bookings" | "team"
+export const entityCollections = [
+  "customers",
+  "bookings",
+  "team",
+  "routes",
+  "fleet",
+  "requests",
+  "availability",
+  "trips",
+  "cash-balances",
+] as const
+export type EntityCollection = (typeof entityCollections)[number]
 export type EntityViewMode =
-  "table" | "list" | "kanban" | "calendar" | "gallery"
+  "table" | "list" | "kanban" | "calendar" | "gallery" | "schedule"
 export type EntityViewConfig = {
   mode: EntityViewMode
   columns: string[]
@@ -29,6 +40,7 @@ export const entityModeLabels: Record<EntityViewMode, string> = {
   kanban: "Канбан",
   calendar: "Календарь",
   gallery: "Галерея",
+  schedule: "Расписание",
 }
 
 export function normalizeViewConfig(

@@ -10,6 +10,12 @@ import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
+import { DatePicker } from "@/components/ui/date-picker"
+import { Input } from "@/components/ui/input"
+import { EntityDataView } from "@/components/entity-data-view"
+import { textColumn, moneyColumn } from "@/lib/entity-columns"
+import { usePageSearch } from "@/hooks/use-page-search"
+import { useEntitySelection } from "@/hooks/use-entity-selection"
 
 type CurrencySummary = {
   currency: string
@@ -73,6 +79,10 @@ function formatMoney(minor: number, currency: string) {
 }
 
 export function FinanceDashboard() {
+  const [query, setQuery] = usePageSearch()
+  const selection = useEntitySelection<DriverCashBalance>(
+    (item) => item.driverId + ":" + item.currency
+  )
   const defaults = React.useMemo(() => monthRange(), [])
   const [from, setFrom] = React.useState(defaults.from)
   const [to, setTo] = React.useState(defaults.to)
@@ -241,6 +251,12 @@ export function FinanceDashboard() {
   )
   return (
     <AppShell
+      localSearch={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Водитель или валюта",
+        label: "Поиск кассы водителей",
+      }}
       onRefresh={load}
       refreshing={loading}
       pageDescription="Выручка, касса водителей и расходы"
@@ -252,22 +268,20 @@ export function FinanceDashboard() {
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-semibold text-muted-foreground">
               С
-              <input
-                className="mt-1 block h-10 rounded-xl border border-border bg-background px-3 text-sm text-foreground"
-                max={to}
-                onChange={(event) => setFrom(event.target.value)}
-                type="date"
+              <DatePicker
+                label="Начало периода"
                 value={from}
+                max={to}
+                onValueChange={setFrom}
               />
             </label>
             <label className="text-xs font-semibold text-muted-foreground">
               По
-              <input
-                className="mt-1 block h-10 rounded-xl border border-border bg-background px-3 text-sm text-foreground"
-                min={from}
-                onChange={(event) => setTo(event.target.value)}
-                type="date"
+              <DatePicker
+                label="Конец периода"
                 value={to}
+                min={from}
+                onValueChange={setTo}
               />
             </label>
           </div>
@@ -387,30 +401,59 @@ export function FinanceDashboard() {
               зависит от выбранного периода.
             </p>
           </div>
-          {loading ? (
-            <div className="h-20 animate-pulse bg-muted/30" />
-          ) : summary?.driverCashBalances.length ? (
-            <div className="divide-y divide-border">
-              {summary.driverCashBalances.map((item) => (
-                <div
-                  className="grid gap-1 px-5 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_10rem] sm:items-center sm:gap-4"
-                  key={`${item.driverId}:${item.currency}`}
-                >
-                  <p className="font-semibold">{item.driverName}</p>
-                  <p className="text-xs font-semibold text-primary">
-                    {item.currency}
-                  </p>
-                  <p className="font-bold tabular-nums sm:text-right">
-                    {formatMoney(item.balanceMinor, item.currency)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="px-5 py-5 text-sm text-muted-foreground">
-              У водителей нет несданных наличных.
-            </p>
-          )}
+          <div className="space-y-3 p-2">
+            <EntityDataView
+              collection="cash-balances"
+              columns={[
+                textColumn<DriverCashBalance>(
+                  "name",
+                  "Водитель",
+                  (item) => item.driverName
+                ),
+                textColumn<DriverCashBalance>(
+                  "currency",
+                  "Валюта",
+                  (item) => item.currency
+                ),
+                moneyColumn<DriverCashBalance>(
+                  "balance",
+                  "Остаток",
+                  (item) => item.balanceMinor,
+                  (item) => item.currency
+                ),
+                textColumn<DriverCashBalance>(
+                  "driverId",
+                  "ID водителя",
+                  (item) => item.driverId,
+                  false
+                ),
+              ]}
+              items={(summary?.driverCashBalances ?? []).filter((item) =>
+                [item.driverName, item.currency]
+                  .join(" ")
+                  .toLowerCase()
+                  .includes(query.trim().toLowerCase())
+              )}
+              getId={(item) => item.driverId + ":" + item.currency}
+              getLabel={(item) => item.driverName}
+              loading={loading}
+              selected={selection.selected}
+              onSelectedChange={selection.setSelected}
+              modes={["table", "list", "gallery"]}
+              filters={[
+                {
+                  id: "currency",
+                  label: "Валюта",
+                  options: [
+                    { value: "EUR", label: "EUR" },
+                    { value: "UAH", label: "UAH" },
+                  ],
+                  matches: (item, value) => item.currency === value,
+                },
+              ]}
+              emptyText="Несданных наличных не найдено."
+            />
+          </div>
         </section>
         <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5">
           <div className="flex items-center gap-2">
@@ -474,7 +517,7 @@ export function FinanceDashboard() {
             </label>
             <label className="text-sm font-semibold">
               Сумма
-              <input
+              <Input
                 className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
                 inputMode="decimal"
                 onChange={(event) => setAmount(event.target.value)}
@@ -539,7 +582,7 @@ export function FinanceDashboard() {
             </label>
             <label className="text-sm font-semibold">
               Сумма
-              <input
+              <Input
                 className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
                 inputMode="decimal"
                 onChange={(event) => setExpenseAmount(event.target.value)}
@@ -549,7 +592,7 @@ export function FinanceDashboard() {
             </label>
             <label className="text-sm font-semibold">
               Комментарий
-              <input
+              <Input
                 className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
                 maxLength={500}
                 onChange={(event) => setExpenseDescription(event.target.value)}

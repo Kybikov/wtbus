@@ -51,6 +51,7 @@ import {
 
 const control = adminControlClassName
 type Props<T> = {
+  extras?: React.ReactNode
   collection: EntityCollection
   config: EntityViewConfig
   defaults: EntityViewConfig
@@ -62,6 +63,7 @@ type Props<T> = {
 }
 
 export function EntityViewToolbar<T>({
+  extras,
   collection,
   config,
   defaults,
@@ -195,10 +197,12 @@ export function EntityViewToolbar<T>({
   return (
     <>
       <div
+        role="region"
         className="workspace-panel flex min-h-[50px] flex-wrap items-center justify-between gap-2 p-2"
         aria-label="Виды и настройки отображения"
       >
         <div className="flex flex-wrap items-center gap-2">
+          {extras}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={

@@ -143,6 +143,7 @@ func (app *application) routes() http.Handler {
 	staff := app.requireRoles("owner", "admin", "dispatcher", "driver")
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-views", operations(app.entityViews))
 	}
@@ -4501,7 +4502,7 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 	rows, err := app.db.Query(r.Context(), `
 		SELECT id::text, customer_id::text, telegram_id, status, origin_name, destination_name,
 			requested_departure_at, passenger_name, passenger_phone_e164, passenger_birth_date,
-			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at
+			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at, count(*) OVER()
 		FROM individual_transfer_requests
 		WHERE tenant_id = $1
 		  AND ($2 = '' OR status = $2)
@@ -4516,9 +4517,10 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 	}
 	defer rows.Close()
 	items := make([]individualTransferRequestListItem, 0)
+	total := 0
 	for rows.Next() {
 		var item individualTransferRequestListItem
-		if err := rows.Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt, &total); err != nil {
 			app.log.Error("scan individual transfer request", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load individual transfer requests"})
 			return
@@ -4530,7 +4532,7 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load individual transfer requests"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "timezone": tenant.Timezone})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "timezone": tenant.Timezone})
 }
 
 func (app *application) updateIndividualTransferRequest(w http.ResponseWriter, r *http.Request) {

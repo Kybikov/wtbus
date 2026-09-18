@@ -42,12 +42,15 @@ type entityViewInput struct {
 var entityColumnID = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,100}$`)
 
 func validateEntityView(entity string, input *entityViewInput) bool {
+	if !validEntityCollection(entity) {
+		return false
+	}
 	input.Name = strings.TrimSpace(input.Name)
 	if len([]rune(input.Name)) < 1 || len([]rune(input.Name)) > 80 || (input.Visibility != "private" && input.Visibility != "shared") || len(input.Config.Columns) < 1 || len(input.Config.Columns) > 100 {
 		return false
 	}
 	mode := input.Config.Mode
-	if mode != "table" && mode != "list" && mode != "gallery" && !(mode == "kanban" && (entity == "bookings" || entity == "team")) && !(mode == "calendar" && entity == "bookings") {
+	if mode != "table" && mode != "list" && mode != "gallery" && !(mode == "schedule" && entity == "trips") && !(mode == "kanban" && (entity == "bookings" || entity == "team" || entity == "requests" || entity == "trips" || entity == "fleet")) && !(mode == "calendar" && (entity == "bookings" || entity == "requests" || entity == "trips" || entity == "availability")) {
 		return false
 	}
 	seen := map[string]bool{}
@@ -101,6 +104,16 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 			if key == "status" {
 				valid = value == "pending" || value == "awaiting_payment" || value == "cash_on_boarding" || value == "confirmed" || value == "cancelled" || value == "completed" || value == "expired"
 			}
+		case "routes", "fleet":
+			valid = key == "active" && (value == "active" || value == "inactive")
+		case "requests":
+			valid = key == "status" && (value == "new" || value == "in_progress" || value == "closed" || value == "cancelled")
+		case "availability":
+			valid = key == "scope" && (value == "all" || value == "route")
+		case "trips":
+			valid = (key == "kind" && (value == "regular" || value == "individual")) || (key == "status" && (value == "draft" || value == "new" || value == "assigned" || value == "in_progress" || value == "completed" || value == "cancelled"))
+		case "cash-balances":
+			valid = key == "currency" && (value == "EUR" || value == "UAH")
 		}
 		if !valid {
 			return false
@@ -129,11 +142,11 @@ func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entity := r.URL.Query().Get("entity")
-	if entity != "customers" && entity != "bookings" && entity != "team" {
+	if !validEntityCollection(entity) {
 		writeJSON(w, 400, map[string]string{"error": "Оберіть колекцію."})
 		return
 	}
-	if entity == "team" && actor.Role != "owner" && actor.Role != "admin" && actor.Role != "developer" {
+	if (entity == "team" || entity == "cash-balances") && actor.Role != "owner" && actor.Role != "admin" && actor.Role != "developer" {
 		writeJSON(w, 403, map[string]string{"error": "Доступ до команди заборонено."})
 		return
 	}

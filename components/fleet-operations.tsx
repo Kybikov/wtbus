@@ -4,18 +4,24 @@ import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Add01Icon,
-  Car01Icon,
-  Clock01Icon,
-  Edit02Icon,
-} from "@hugeicons/core-free-icons"
+import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { FleetLocationMap } from "@/components/fleet-location-map"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { Input } from "@/components/ui/input"
+import { EntityDataView } from "@/components/entity-data-view"
+import {
+  textColumn,
+  numberColumn,
+  dateColumn,
+  statusColumn,
+  activeOptions,
+  activeFilter,
+} from "@/lib/entity-columns"
+import { usePageSearch } from "@/hooks/use-page-search"
+import { useEntitySelection } from "@/hooks/use-entity-selection"
 
 type FleetTrip = {
   id: string
@@ -78,7 +84,8 @@ function isMe(value: unknown): value is Me {
     typeof value === "object" &&
     value !== null &&
     "role" in value &&
-    (value.role === "owner" ||
+    (value.role === "developer" ||
+      value.role === "owner" ||
       value.role === "admin" ||
       value.role === "dispatcher" ||
       value.role === "driver")
@@ -94,17 +101,6 @@ function errorFrom(payload: unknown, fallback: string) {
     : fallback
 }
 
-function dateTime(value: string, timeZone: string) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone,
-  }).format(new Date(value))
-}
-
 function relativeTime(value: string, now: number) {
   const minutes = Math.round((now - new Date(value).getTime()) / 60_000)
   if (minutes < 1) return "только что"
@@ -114,15 +110,9 @@ function relativeTime(value: string, now: number) {
   return `${Math.floor(hours / 24)} дн назад`
 }
 
-function statusLabel(status?: FleetTrip["status"]) {
-  return status === "in_progress"
-    ? "В пути"
-    : status === "assigned"
-      ? "Назначен"
-      : "Нет активного рейса"
-}
-
 export function FleetOperations() {
+  const [query, setQuery] = usePageSearch()
+  const selection = useEntitySelection<Vehicle>((item) => item.id)
   const requestInFlight = React.useRef(false)
   const [now, setNow] = React.useState(0)
   const [fleet, setFleet] = React.useState<Vehicle[]>([])
@@ -196,7 +186,11 @@ export function FleetOperations() {
       }))
       .then(({ response, payload }) => {
         if (response.ok && isMe(payload))
-          setCanManage(payload.role === "developer" || payload.role === "owner" || payload.role === "admin")
+          setCanManage(
+            payload.role === "developer" ||
+              payload.role === "owner" ||
+              payload.role === "admin"
+          )
       })
       .catch(() => {})
   }, [])
@@ -320,8 +314,99 @@ export function FleetOperations() {
       : []
   )
 
+  const filteredFleet = fleet.filter((item) =>
+    [item.name, item.registrationNumber, item.driver, item.id]
+      .join(" ")
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+  )
+  const columns = [
+    textColumn<Vehicle>("name", "Автомобиль", (item) => item.name),
+    textColumn<Vehicle>(
+      "registration",
+      "Госномер",
+      (item) => item.registrationNumber
+    ),
+    numberColumn<Vehicle>("capacity", "Мест", (item) => item.capacity),
+    textColumn<Vehicle>("driver", "Водитель", (item) => item.driver),
+    statusColumn<Vehicle>(
+      "active",
+      "Активность",
+      (item) => (item.isActive ? "active" : "inactive"),
+      activeOptions
+    ),
+    textColumn<Vehicle>("trip", "Текущий рейс", (item) =>
+      item.activeTrip
+        ? `${item.activeTrip.origin} → ${item.activeTrip.destination}`
+        : ""
+    ),
+    textColumn<Vehicle>("gps", "GPS", (item) =>
+      item.lastLocation
+        ? `${relativeTime(item.lastLocation.recordedAt, now)} · ${item.lastLocation.latitude.toFixed(5)}, ${item.lastLocation.longitude.toFixed(5)}`
+        : "Нет сигнала"
+    ),
+    textColumn<Vehicle>("class", "Класс", (item) => item.vehicleClass, false),
+    dateColumn<Vehicle>(
+      "recordedAt",
+      "GPS получен",
+      (item) => item.lastLocation?.recordedAt,
+      timezone,
+      false
+    ),
+    numberColumn<Vehicle>(
+      "latitude",
+      "Широта",
+      (item) => item.lastLocation?.latitude,
+      false
+    ),
+    numberColumn<Vehicle>(
+      "longitude",
+      "Долгота",
+      (item) => item.lastLocation?.longitude,
+      false
+    ),
+    numberColumn<Vehicle>(
+      "accuracy",
+      "Точность GPS, м",
+      (item) => item.lastLocation?.accuracyMeters,
+      false
+    ),
+    textColumn<Vehicle>("id", "ID", (item) => item.id, false),
+  ]
+  async function bulkActive(active: boolean) {
+    await selection.run(
+      fleet,
+      async (item) => {
+        const response = await sessionFetch(
+          `/api/fleet?id=${encodeURIComponent(item.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: item.name,
+              registrationNumber: item.registrationNumber,
+              vehicleClass: item.vehicleClass,
+              capacity: item.capacity,
+              isActive: active,
+            }),
+          }
+        )
+        const payload = await response.json()
+        if (!response.ok)
+          throw new Error(payload.error ?? "Не удалось изменить автомобиль.")
+      },
+      () => load(true)
+    )
+  }
   return (
     <AppShell
+      collectionFooter
+      localSearch={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Автомобиль, госномер или водитель",
+        label: "Поиск автопарка",
+      }}
       onRefresh={() => load(true)}
       refreshing={loading || refreshing}
       pageActions={
@@ -398,7 +483,7 @@ export function FleetOperations() {
             </div>
             <label className="grid gap-2 text-sm font-semibold">
               Название автомобиля
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={160}
@@ -410,7 +495,7 @@ export function FleetOperations() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Госномер
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal uppercase outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={64}
@@ -424,7 +509,7 @@ export function FleetOperations() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Класс транспорта
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={80}
@@ -438,7 +523,7 @@ export function FleetOperations() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Количество мест
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 max={150}
@@ -452,7 +537,7 @@ export function FleetOperations() {
               />
             </label>
             <label className="flex items-center gap-3 text-sm font-semibold sm:col-span-2">
-              <input
+              <Input
                 checked={form.isActive}
                 className="size-4 accent-primary"
                 disabled={saving}
@@ -483,146 +568,68 @@ export function FleetOperations() {
           </form>
         ) : null}
 
-        <div className="@container overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25">
-          <div className="hidden grid-cols-[minmax(13rem,1.35fr)_minmax(12rem,1.1fr)_minmax(12rem,1fr)_minmax(12rem,.9fr)] gap-4 border-b border-border px-5 py-3 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase @4xl:grid">
-            <span>Автомобиль</span>
-            <span>Текущий рейс</span>
-            <span>Последняя точка</span>
-            <span>Статус GPS</span>
-          </div>
-          {loading ? (
-            <div className="p-8 text-sm text-muted-foreground">
-              Загружаем транспорт…
-            </div>
-          ) : fleet.length === 0 ? (
-            <div className="p-8 text-sm text-muted-foreground">
-              Активный транспорт ещё не добавлен.
-            </div>
-          ) : (
-            fleet.map((vehicle) => (
-              <article
-                className={cn(
-                  "grid gap-4 border-b border-border px-4 py-4 last:border-b-0 @4xl:grid-cols-[minmax(13rem,1.35fr)_minmax(12rem,1.1fr)_minmax(12rem,1fr)_minmax(12rem,.9fr)] @4xl:items-center @4xl:px-5",
-                  !vehicle.isActive && "opacity-65"
-                )}
-                key={vehicle.id}
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
-                    <HugeiconsIcon icon={Car01Icon} size={20} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{vehicle.name}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {vehicle.registrationNumber} · {vehicle.capacity} мест
-                    </p>
-                    {vehicle.driver ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Водитель: {vehicle.driver}
-                      </p>
-                    ) : null}
-                    {!vehicle.isActive ? (
-                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        Неактивен
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase md:hidden">
-                    Текущий рейс
-                  </p>
-                  {vehicle.activeTrip ? (
-                    <>
-                      <p className="mt-1 font-semibold md:mt-0">
-                        {vehicle.activeTrip.origin} →{" "}
-                        {vehicle.activeTrip.destination}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {dateTime(vehicle.activeTrip.startsAt, timezone)} —{" "}
-                        {dateTime(vehicle.activeTrip.endsAt, timezone)}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-sm text-muted-foreground md:mt-0">
-                      Нет активного рейса
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase md:hidden">
-                    Последняя точка
-                  </p>
-                  {vehicle.lastLocation ? (
-                    <>
-                      <p className="mt-1 font-semibold tabular-nums md:mt-0">
-                        {vehicle.lastLocation.latitude.toFixed(5)},{" "}
-                        {vehicle.lastLocation.longitude.toFixed(5)}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Точность{" "}
-                        {vehicle.lastLocation.accuracyMeters == null
-                          ? "неизвестна"
-                          : `±${Math.round(vehicle.lastLocation.accuracyMeters)} м`}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-sm text-muted-foreground md:mt-0">
-                      Ожидаем GPS-точку
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={cn(
-                      "size-2 rounded-full",
-                      vehicle.lastLocation &&
-                        now - Date.parse(vehicle.lastLocation.recordedAt) <=
-                          120_000
-                        ? "bg-emerald-500"
-                        : "bg-amber-600"
-                    )}
-                  />
-                  <div>
-                    <p className="font-semibold">
-                      {statusLabel(vehicle.activeTrip?.status)}
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                      <HugeiconsIcon icon={Clock01Icon} size={13} />
-                      {vehicle.lastLocation
-                        ? `${now - Date.parse(vehicle.lastLocation.recordedAt) > 120_000 ? "GPS устарел · " : ""}${relativeTime(vehicle.lastLocation.recordedAt, now)}`
-                        : "нет сигнала"}
-                    </p>
-                  </div>
-                  {canManage ? (
-                    <div className="ml-auto flex gap-2">
-                      <Button
-                        disabled={saving}
-                        onClick={() => startEdit(vehicle)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <HugeiconsIcon icon={Edit02Icon} size={15} />
-                        Изменить
-                      </Button>
-                      <Button
-                        disabled={saving}
-                        onClick={() => void toggleVehicle(vehicle)}
-                        size="sm"
-                        variant={vehicle.isActive ? "outline" : "secondary"}
-                      >
-                        {vehicle.isActive ? "Выключить" : "Включить"}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            ))
-          )}
-        </div>
+        {selection.error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {selection.error}
+          </p>
+        ) : null}
+        <EntityDataView
+          collection="fleet"
+          columns={columns}
+          items={filteredFleet}
+          getId={(item) => item.id}
+          getLabel={(item) => item.name}
+          loading={loading}
+          selected={selection.selected}
+          onSelectedChange={selection.setSelected}
+          modes={["table", "list", "kanban", "gallery"]}
+          filters={[activeFilter<Vehicle>((item) => item.isActive)]}
+          groupBy={(item) => item.activeTrip?.status || "idle"}
+          kanbanGroups={[
+            { id: "idle", label: "Свободны" },
+            { id: "assigned", label: "Назначены" },
+            { id: "in_progress", label: "В пути" },
+          ]}
+          actions={
+            canManage
+              ? [
+                  {
+                    label: "Редактировать",
+                    onSelect: startEdit,
+                    disabled: () => saving || selection.pending,
+                  },
+                  {
+                    label: "Включить / выключить",
+                    onSelect: (item) => void toggleVehicle(item),
+                    disabled: () => saving || selection.pending,
+                  },
+                ]
+              : []
+          }
+          bulkActions={
+            canManage ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || selection.pending}
+                  onClick={() => void bulkActive(true)}
+                >
+                  Включить
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || selection.pending}
+                  onClick={() => void bulkActive(false)}
+                >
+                  Отключить
+                </Button>
+              </>
+            ) : null
+          }
+          emptyText="Автомобилей не найдено."
+        />
       </div>
     </AppShell>
   )

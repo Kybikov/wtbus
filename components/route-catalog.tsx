@@ -4,15 +4,23 @@ import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Add01Icon,
-  Edit02Icon,
-} from "@hugeicons/core-free-icons"
+import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { EntityDataView } from "@/components/entity-data-view"
+import {
+  textColumn,
+  moneyColumn,
+  statusColumn,
+  activeOptions,
+  activeFilter,
+} from "@/lib/entity-columns"
+import { usePageSearch } from "@/hooks/use-page-search"
+import { useEntitySelection } from "@/hooks/use-entity-selection"
+
 import { FieldSelect } from "@/components/ui/field-select"
 
 type Route = {
@@ -45,14 +53,6 @@ function parsePriceMinor(value: string) {
   return Number.isSafeInteger(result) && result >= 0 && result <= 10_000_000_000
     ? result
     : null
-}
-
-function formatMoney(minor: number, currency: string) {
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(minor / 100)
 }
 
 function isRoutes(
@@ -99,6 +99,63 @@ export function RouteCatalog() {
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
+  const [query, setQuery] = usePageSearch()
+  const selection = useEntitySelection<Route>((item) => item.id)
+  const filteredRoutes = routes.filter((item) =>
+    [item.name, item.origin, item.destination, item.id]
+      .join(" ")
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+  )
+  const columns = [
+    textColumn<Route>("name", "Маршрут", (item) => item.name),
+    textColumn<Route>("origin", "Откуда", (item) => item.origin),
+    textColumn<Route>("destination", "Куда", (item) => item.destination),
+    moneyColumn<Route>(
+      "price",
+      "Базовая цена",
+      (item) => item.defaultPriceMinor,
+      (item) => item.currency
+    ),
+    statusColumn<Route>(
+      "active",
+      "Активность",
+      (item) => (item.isActive ? "active" : "inactive"),
+      activeOptions
+    ),
+    textColumn<Route>("pricing", "Модель цены", (item) =>
+      item.defaultPricingMode === "per_booking" ? "За бронь" : "За пассажира"
+    ),
+    textColumn<Route>("currency", "Валюта", (item) => item.currency, false),
+    textColumn<Route>("id", "ID", (item) => item.id, false),
+  ]
+  async function bulkActive(active: boolean) {
+    await selection.run(
+      routes,
+      async (item) => {
+        const response = await sessionFetch(
+          `/api/routes?id=${encodeURIComponent(item.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: item.name,
+              origin: item.origin,
+              destination: item.destination,
+              currency: item.currency,
+              defaultPriceMinor: item.defaultPriceMinor,
+              defaultPricingMode: item.defaultPricingMode,
+              isActive: active,
+            }),
+          }
+        )
+        const payload = await response.json()
+        if (!response.ok)
+          throw new Error(payload.error ?? "Не удалось изменить маршрут.")
+      },
+      load
+    )
+  }
   const isEditing = editingID !== null
 
   const load = React.useCallback(async () => {
@@ -246,6 +303,13 @@ export function RouteCatalog() {
 
   return (
     <AppShell
+      collectionFooter
+      localSearch={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Название, города или ID",
+        label: "Поиск маршрутов",
+      }}
       onRefresh={load}
       refreshing={loading}
       pageActions={
@@ -258,188 +322,182 @@ export function RouteCatalog() {
       pageTitle="Каталог маршрутов"
       utilities={<ThemeCustomizer />}
     >
-      <Card className="w-full min-w-0 rounded-[calc(var(--radius)*1.35)] border border-border shadow-none">
-        <CardContent className="space-y-5 px-4 sm:px-6">
-          {error ? (
-            <div
-              className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-              role="alert"
-            >
-              {error}
-            </div>
-          ) : null}
-
-          {editorOpen ? (
-            <form
-              className="grid gap-3 rounded-[calc(var(--radius)*1.35)] border border-border bg-background/30 p-5 md:grid-cols-2"
-              onSubmit={save}
-            >
-              <div className="md:col-span-2">
-                <h2 className="text-base font-bold">
-                  {isEditing ? "Изменить маршрут" : "Новый маршрут"}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {isEditing
-                    ? "Изменения сразу будут доступны при планировании регулярных рейсов."
-                    : "Создайте шаблон, чтобы не вводить точки отправления и прибытия вручную."}
-                </p>
-              </div>
-              <label className="grid gap-2 text-sm font-semibold">
-                Название
-                <input
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  maxLength={160}
-                  onChange={(event) => updateForm("name", event.target.value)}
-                  required
-                  value={form.name}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Валюта
-                <input
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal uppercase transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  maxLength={3}
-                  onChange={(event) =>
-                    updateForm("currency", event.target.value.toUpperCase())
-                  }
-                  required
-                  value={form.currency}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Модель цены
-                <FieldSelect
-                  onValueChange={(value) =>
-                    updateForm(
-                      "defaultPricingMode",
-                      value as RouteForm["defaultPricingMode"]
-                    )
-                  }
-                  options={[
-                    { value: "per_passenger", label: "За пассажира" },
-                    { value: "per_booking", label: "За всю бронь" },
-                  ]}
-                  value={form.defaultPricingMode}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                {form.defaultPricingMode === "per_booking"
-                  ? "Цена за всю бронь"
-                  : "Цена за пассажира"}
-                <input
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  inputMode="decimal"
-                  min="0"
-                  onChange={(event) => updateForm("price", event.target.value)}
-                  placeholder="Например, 79"
-                  required
-                  step="0.01"
-                  type="number"
-                  value={form.price}
-                />
-                <span className="text-xs font-normal text-muted-foreground">
-                  Подставляется в регулярный рейс, но её можно изменить для
-                  конкретного выезда.
-                </span>
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Откуда
-                <input
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  maxLength={120}
-                  onChange={(event) => updateForm("origin", event.target.value)}
-                  required
-                  value={form.origin}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Куда
-                <input
-                  className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  maxLength={120}
-                  onChange={(event) =>
-                    updateForm("destination", event.target.value)
-                  }
-                  required
-                  value={form.destination}
-                />
-              </label>
-              <div className="flex justify-end gap-2 md:col-span-2">
-                <Button
-                  disabled={saving}
-                  onClick={closeEditor}
-                  type="button"
-                  variant="ghost"
-                >
-                  Отмена
-                </Button>
-                <Button disabled={saving} type="submit">
-                  {saving
-                    ? "Сохраняем…"
-                    : isEditing
-                      ? "Сохранить изменения"
-                      : "Создать маршрут"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
-
-          <div className="overflow-hidden rounded-xl border border-border bg-background/20">
-            {loading ? (
-              <p className="p-6 text-sm text-muted-foreground">
-                Загружаем маршруты…
-              </p>
-            ) : null}
-            {!loading && routes.length === 0 ? (
-              <div className="p-6">
-                <p className="font-semibold">Регулярных маршрутов пока нет</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Создайте первый шаблон для планирования рейсов.
-                </p>
-              </div>
-            ) : null}
-            {!loading
-              ? routes.map((route) => (
-                  <article
-                    className="flex flex-col gap-3 border-b border-border p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
-                    key={route.id}
-                  >
-                    <div>
-                      <p className="font-bold">{route.name}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {route.origin} → {route.destination} ·{" "}
-                        {formatMoney(route.defaultPriceMinor, route.currency)}
-                        {route.defaultPricingMode === "per_booking"
-                          ? " за бронь"
-                          : " за пассажира"}
-                        {!route.isActive ? " · Неактивен" : ""}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        disabled={saving}
-                        onClick={() => startEdit(route)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <HugeiconsIcon icon={Edit02Icon} size={16} />
-                        Изменить
-                      </Button>
-                      <Button
-                        disabled={saving}
-                        onClick={() => void toggle(route)}
-                        size="sm"
-                        variant={route.isActive ? "outline" : "secondary"}
-                      >
-                        {route.isActive ? "Выключить" : "Включить"}
-                      </Button>
-                    </div>
-                  </article>
-                ))
-              : null}
+      <section className="space-y-4">
+        {error ? (
+          <div
+            className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+            role="alert"
+          >
+            {error}
           </div>
-        </CardContent>
-      </Card>
+        ) : null}
+
+        {editorOpen ? (
+          <form
+            className="grid gap-3 rounded-[calc(var(--radius)*1.35)] border border-border bg-background/30 p-5 md:grid-cols-2"
+            onSubmit={save}
+          >
+            <div className="md:col-span-2">
+              <h2 className="text-base font-bold">
+                {isEditing ? "Изменить маршрут" : "Новый маршрут"}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isEditing
+                  ? "Изменения сразу будут доступны при планировании регулярных рейсов."
+                  : "Создайте шаблон, чтобы не вводить точки отправления и прибытия вручную."}
+              </p>
+            </div>
+            <label className="grid gap-2 text-sm font-semibold">
+              Название
+              <Input
+                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                maxLength={160}
+                onChange={(event) => updateForm("name", event.target.value)}
+                required
+                value={form.name}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Валюта
+              <Input
+                className="h-11 rounded-xl border border-border bg-background px-3 font-normal uppercase transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                maxLength={3}
+                onChange={(event) =>
+                  updateForm("currency", event.target.value.toUpperCase())
+                }
+                required
+                value={form.currency}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Модель цены
+              <FieldSelect
+                onValueChange={(value) =>
+                  updateForm(
+                    "defaultPricingMode",
+                    value as RouteForm["defaultPricingMode"]
+                  )
+                }
+                options={[
+                  { value: "per_passenger", label: "За пассажира" },
+                  { value: "per_booking", label: "За всю бронь" },
+                ]}
+                value={form.defaultPricingMode}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              {form.defaultPricingMode === "per_booking"
+                ? "Цена за всю бронь"
+                : "Цена за пассажира"}
+              <Input
+                className="h-11 rounded-xl border border-border bg-background px-3 font-normal tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                inputMode="decimal"
+                min="0"
+                onChange={(event) => updateForm("price", event.target.value)}
+                placeholder="Например, 79"
+                required
+                step="0.01"
+                type="number"
+                value={form.price}
+              />
+              <span className="text-xs font-normal text-muted-foreground">
+                Подставляется в регулярный рейс, но её можно изменить для
+                конкретного выезда.
+              </span>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Откуда
+              <Input
+                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                maxLength={120}
+                onChange={(event) => updateForm("origin", event.target.value)}
+                required
+                value={form.origin}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Куда
+              <Input
+                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                maxLength={120}
+                onChange={(event) =>
+                  updateForm("destination", event.target.value)
+                }
+                required
+                value={form.destination}
+              />
+            </label>
+            <div className="flex justify-end gap-2 md:col-span-2">
+              <Button
+                disabled={saving}
+                onClick={closeEditor}
+                type="button"
+                variant="ghost"
+              >
+                Отмена
+              </Button>
+              <Button disabled={saving} type="submit">
+                {saving
+                  ? "Сохраняем…"
+                  : isEditing
+                    ? "Сохранить изменения"
+                    : "Создать маршрут"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+
+        {selection.error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {selection.error}
+          </p>
+        ) : null}
+        <EntityDataView
+          collection="routes"
+          columns={columns}
+          items={filteredRoutes}
+          getId={(item) => item.id}
+          getLabel={(item) => item.name}
+          loading={loading}
+          selected={selection.selected}
+          onSelectedChange={selection.setSelected}
+          modes={["table", "list", "gallery"]}
+          filters={[activeFilter<Route>((item) => item.isActive)]}
+          actions={[
+            {
+              label: "Редактировать",
+              onSelect: startEdit,
+              disabled: () => saving || selection.pending,
+            },
+            {
+              label: "Включить / выключить",
+              onSelect: (item) => void toggle(item),
+              disabled: () => saving || selection.pending,
+            },
+          ]}
+          bulkActions={
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selection.pending || saving}
+                onClick={() => void bulkActive(true)}
+              >
+                Включить
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selection.pending || saving}
+                onClick={() => void bulkActive(false)}
+              >
+                Отключить
+              </Button>
+            </>
+          }
+          emptyText="Маршрутов не найдено."
+        />
+      </section>
     </AppShell>
   )
 }

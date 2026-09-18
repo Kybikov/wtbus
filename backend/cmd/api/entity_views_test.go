@@ -2,6 +2,36 @@ package main
 
 import "testing"
 
+func TestEntityViewNewCollections(t *testing.T) {
+	for entity, config := range map[string]entityViewConfig{
+		"routes":        {Mode: "gallery", Filters: map[string]string{"active": "active"}},
+		"fleet":         {Mode: "kanban", Filters: map[string]string{"active": "inactive"}},
+		"requests":      {Mode: "calendar", Filters: map[string]string{"status": "in_progress"}},
+		"availability":  {Mode: "calendar", Filters: map[string]string{"scope": "route"}},
+		"trips":         {Mode: "schedule", Filters: map[string]string{"kind": "regular", "status": "assigned"}},
+		"cash-balances": {Mode: "list", Filters: map[string]string{"currency": "EUR"}},
+	} {
+		config.Columns = []string{"name"}
+		input := entityViewInput{Name: "New collection", Visibility: "shared", Config: config}
+		if !validateEntityView(entity, &input) {
+			t.Fatalf("%s config rejected", entity)
+		}
+		input.Config.Filters = map[string]string{"unknown": "x"}
+		if validateEntityView(entity, &input) {
+			t.Fatalf("%s accepts arbitrary filters", entity)
+		}
+		input.Config.Filters = nil
+		input.Config.Mode = "schedule"
+		if entity != "trips" && validateEntityView(entity, &input) {
+			t.Fatalf("%s accepts trip schedule", entity)
+		}
+	}
+	input := entityViewInput{Name: "Unknown", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name"}}}
+	if validateEntityView("unknown", &input) {
+		t.Fatal("unknown collection accepted")
+	}
+}
+
 func TestEntityViewValidation(t *testing.T) {
 	valid := func() entityViewInput {
 		return entityViewInput{Name: "  Active  ", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name", "custom:test"}, Filters: map[string]string{"status": "cash_on_boarding", "date": "2026-09-21"}}}

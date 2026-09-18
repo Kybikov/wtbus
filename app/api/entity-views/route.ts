@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiFetch } from "@/lib/api-fetch"
+import { entityCollections, type EntityCollection } from "@/lib/entity-views"
 
 export const dynamic = "force-dynamic"
 
 async function forward(request: NextRequest) {
   const entity = request.nextUrl.searchParams.get("entity") ?? ""
-  if (!["customers", "bookings", "team"].includes(entity))
+  if (!entityCollections.includes(entity as EntityCollection))
     return NextResponse.json({ error: "Оберіть колекцію." }, { status: 400 })
   const params = new URLSearchParams({ entity })
   const id = request.nextUrl.searchParams.get("id")

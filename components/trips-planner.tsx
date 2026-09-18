@@ -3,13 +3,13 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { Input } from "@/components/ui/input"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Add01Icon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Car01Icon,
-  FilterIcon,
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons"
 
@@ -24,6 +24,17 @@ import {
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import { cn } from "@/lib/utils"
+import { DatePicker } from "@/components/ui/date-picker"
+import { EntityDataView } from "@/components/entity-data-view"
+import {
+  textColumn,
+  numberColumn,
+  dateColumn,
+  moneyColumn,
+  statusColumn,
+} from "@/lib/entity-columns"
+import { usePageSearch } from "@/hooks/use-page-search"
+import { useEntitySelection } from "@/hooks/use-entity-selection"
 
 type APITrip = {
   id: string
@@ -35,6 +46,7 @@ type APITrip = {
   endsAt: string
   capacity: number
   priceMinor: number
+  currency: string
   pricingMode: "per_passenger" | "per_booking"
   routeId?: string
   vehicleId?: string
@@ -341,31 +353,6 @@ const tripStatusLabels: Record<string, string> = {
   cancelled: "Отменен",
 }
 
-function FilterPill({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean
-  children: React.ReactNode
-  onClick: () => void
-}) {
-  return (
-    <button
-      className={cn(
-        "rounded-xl px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-    </button>
-  )
-}
-
 export function TripsPlanner() {
   const [weekStart, setWeekStart] = React.useState(() =>
     startOfWeek(new Date())
@@ -374,9 +361,8 @@ export function TripsPlanner() {
     const weekday = new Date().getDay()
     return weekday === 0 ? 6 : weekday - 1
   })
-  const [filter, setFilter] = React.useState<"all" | "regular" | "custom">(
-    "all"
-  )
+  const [query, setQuery] = usePageSearch()
+  const selection = useEntitySelection<CalendarTrip>((item) => item.id)
   const [notice, setNotice] = React.useState<string | null>(null)
   const [trips, setTrips] = React.useState<APITrip[]>([])
   const [scheduleTimeZone, setScheduleTimeZone] =
@@ -545,15 +531,81 @@ export function TripsPlanner() {
     [lanes]
   )
 
-  const showTrip = (kind: CalendarTrip["kind"]) =>
-    filter === "all" ||
-    (filter === "regular" ? kind === "regular" : kind === "individual")
-  const filteredTrips = mobileTrips.filter((trip) => showTrip(trip.kind))
-  const filterContext =
-    filter === "all"
-      ? `${lanes.length} ${lanes.length === 1 ? "машина в плане" : "машин в плане"}`
-      : `${new Set(filteredTrips.map((trip) => trip.vehicle)).size} машин в фильтре`
-
+  const filteredTrips = mobileTrips.filter((item) =>
+    [item.title, item.vehicle, item.driver, item.id]
+      .join(" ")
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+  )
+  const tripOptions = Object.entries(tripStatusLabels).map(
+    ([value, label]) => ({
+      value,
+      label,
+      tone:
+        value === "completed"
+          ? ("success" as const)
+          : value === "cancelled"
+            ? ("danger" as const)
+            : ("info" as const),
+    })
+  )
+  const columns = [
+    textColumn<CalendarTrip>("name", "Рейс", (item) => item.title),
+    statusColumn<CalendarTrip>(
+      "status",
+      "Статус",
+      (item) => item.status,
+      tripOptions
+    ),
+    dateColumn<CalendarTrip>(
+      "start",
+      "Отправление",
+      (item) => item.startsAt,
+      scheduleTimeZone
+    ),
+    dateColumn<CalendarTrip>(
+      "end",
+      "Прибытие",
+      (item) => item.endsAt,
+      scheduleTimeZone
+    ),
+    textColumn<CalendarTrip>("vehicle", "Автомобиль", (item) => item.vehicle),
+    textColumn<CalendarTrip>("driver", "Водитель", (item) => item.driver),
+    numberColumn<CalendarTrip>("capacity", "Мест", (item) => item.capacity),
+    moneyColumn<CalendarTrip>(
+      "price",
+      "Цена",
+      (item) => item.priceMinor,
+      (item) => item.currency
+    ),
+    textColumn<CalendarTrip>("kind", "Тип", (item) => item.kindLabel),
+    textColumn<CalendarTrip>("notes", "Заметки", (item) => item.notes, false),
+    textColumn<CalendarTrip>(
+      "routeId",
+      "ID маршрута",
+      (item) => item.routeId,
+      false
+    ),
+    textColumn<CalendarTrip>(
+      "vehicleId",
+      "ID автомобиля",
+      (item) => item.vehicleId,
+      false
+    ),
+    textColumn<CalendarTrip>(
+      "driverId",
+      "ID водителя",
+      (item) => item.driverId,
+      false
+    ),
+    textColumn<CalendarTrip>(
+      "pricing",
+      "Модель цены",
+      (item) => item.pricingMode,
+      false
+    ),
+    textColumn<CalendarTrip>("id", "ID", (item) => item.id, false),
+  ]
   function openCreateTrip() {
     setEditingTripID(null)
     setTripForm(createEmptyTripForm(day.iso))
@@ -806,6 +858,13 @@ export function TripsPlanner() {
   return (
     <>
       <AppShell
+        collectionFooter
+        localSearch={{
+          value: query,
+          onChange: setQuery,
+          placeholder: "Маршрут, автомобиль или водитель",
+          label: "Поиск рейсов",
+        }}
         onRefresh={() => setRequestVersion((version) => version + 1)}
         refreshing={isLoading || isResourcesLoading}
         pageActions={
@@ -832,265 +891,320 @@ export function TripsPlanner() {
               </button>
             </div>
           ) : null}
-          <section className="surface-card overflow-hidden">
-            <div className="flex flex-col gap-4 border-b border-border p-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex items-center gap-2">
-                <Button
-                  aria-label="Предыдущая неделя"
-                  onClick={() =>
-                    setWeekStart((current) => addDays(current, -7))
-                  }
-                  size="icon"
-                  variant="outline"
-                >
-                  <HugeiconsIcon icon={ArrowLeft01Icon} size={18} />
-                </Button>
-                <div className="min-w-36 text-center">
-                  <p className="font-bold">{weekLabel}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {weekStart.getFullYear()} · локальная база
-                  </p>
-                </div>
-                <Button
-                  aria-label="Следующая неделя"
-                  onClick={() => setWeekStart((current) => addDays(current, 7))}
-                  size="icon"
-                  variant="outline"
-                >
-                  <HugeiconsIcon icon={ArrowRight01Icon} size={18} />
-                </Button>
-              </div>
-              <div className="flex flex-1 items-center gap-1 rounded-2xl border border-border bg-background/60 p-1">
-                {days.map((item, index) => (
-                  <button
-                    className={cn(
-                      "min-w-0 flex-1 rounded-xl px-1 py-2 text-center transition-colors",
-                      selectedDay === index
-                        ? "bg-secondary text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                    key={item.iso}
-                    onClick={() => setSelectedDay(index)}
-                    type="button"
-                  >
-                    <span className="block text-xs font-bold uppercase">
-                      {item.short}
-                    </span>
-                    <span className="mt-1 block text-sm font-bold">
-                      {item.date}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-1">
-                <HugeiconsIcon
-                  className="text-muted-foreground"
-                  icon={FilterIcon}
-                  size={17}
-                />
-                <FilterPill
-                  active={filter === "all"}
-                  onClick={() => setFilter("all")}
-                >
-                  Все
-                </FilterPill>
-                <FilterPill
-                  active={filter === "regular"}
-                  onClick={() => setFilter("regular")}
-                >
-                  Регулярные
-                </FilterPill>
-                <FilterPill
-                  active={filter === "custom"}
-                  onClick={() => setFilter("custom")}
-                >
-                  Индивидуальные
-                </FilterPill>
-              </div>
-              <p aria-live="polite" className="text-sm text-muted-foreground">
-                <span className="font-semibold text-foreground">
-                  {day.full}
-                </span>{" "}
-                · {filterContext}
-              </p>
-            </div>
-            {loadError ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-destructive/35 bg-destructive/10 px-4 py-3 text-sm">
-                <span role="alert">{loadError}</span>
-                <Button
-                  onClick={() => setRequestVersion((version) => version + 1)}
-                  size="sm"
-                  variant="outline"
-                >
-                  Повторить
-                </Button>
-              </div>
-            ) : null}
-            <div className="hidden overflow-x-auto md:block" id="calendar">
-              <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
-                Перетяните черновик, новый или назначенный рейс на нужную машину
-                и время. Водитель сохраняется; шаг — 15 минут.
-              </p>
-              <div className="min-w-[960px]">
-                <div className="grid grid-cols-[15rem_repeat(9,minmax(5rem,1fr))] border-b border-border text-xs text-muted-foreground">
-                  <div className="p-4 font-semibold">Транспорт и водитель</div>
-                  {[
-                    "06:00",
-                    "08:00",
-                    "10:00",
-                    "12:00",
-                    "14:00",
-                    "16:00",
-                    "18:00",
-                    "20:00",
-                    "22:00",
-                  ].map((time) => (
-                    <div
-                      className="border-l border-border px-3 py-4 tabular-nums"
-                      key={time}
+          <EntityDataView
+            collection="trips"
+            columns={columns}
+            items={filteredTrips}
+            getId={(item) => item.id}
+            getLabel={(item) => item.title}
+            loading={isLoading}
+            selected={selection.selected}
+            onSelectedChange={selection.setSelected}
+            modes={[
+              "table",
+              "list",
+              "kanban",
+              "calendar",
+              "gallery",
+              "schedule",
+            ]}
+            filters={[
+              {
+                id: "kind",
+                label: "Тип",
+                options: [
+                  { value: "regular", label: "Регулярный" },
+                  { value: "individual", label: "Индивидуальный" },
+                ],
+                matches: (item, value) => item.kind === value,
+              },
+              {
+                id: "status",
+                label: "Статус",
+                options: tripOptions,
+                matches: (item, value) => item.status === value,
+              },
+            ]}
+            groupBy={(item) => item.status}
+            kanbanGroups={tripOptions.map((option) => ({
+              id: option.value,
+              label: option.label,
+            }))}
+            dateValue={(item) =>
+              new Intl.DateTimeFormat("en-CA", {
+                timeZone: scheduleTimeZone,
+              }).format(new Date(item.startsAt))
+            }
+            toolbarExtras={
+              <DatePicker
+                label="Дата рейсов"
+                className="h-9 w-36"
+                value={day.iso}
+                onValueChange={(value) => {
+                  if (!value) return
+                  const date = new Date(value + "T12:00:00")
+                  setWeekStart(startOfWeek(date))
+                  setSelectedDay(date.getDay() === 0 ? 6 : date.getDay() - 1)
+                }}
+              />
+            }
+            actions={[
+              {
+                label: "Управление рейсом",
+                onSelect: (trip) => {
+                  setSelectedTripError(null)
+                  setIsCancelConfirmation(false)
+                  setSelectedTrip(trip)
+                },
+              },
+            ]}
+            renderSchedule={(viewTrips) => (
+              <section className="surface-card overflow-hidden">
+                <div className="flex flex-col gap-4 border-b border-border p-4 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      aria-label="Предыдущая неделя"
+                      onClick={() =>
+                        setWeekStart((current) => addDays(current, -7))
+                      }
+                      size="icon"
+                      variant="outline"
                     >
-                      {time}
+                      <HugeiconsIcon icon={ArrowLeft01Icon} size={18} />
+                    </Button>
+                    <div className="min-w-36 text-center">
+                      <p className="font-bold">{weekLabel}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {weekStart.getFullYear()} · локальная база
+                      </p>
                     </div>
-                  ))}
-                </div>
-                {isLoading ? (
-                  <div className="p-8 text-center text-sm text-muted-foreground">
-                    Загружаем рейсы на выбранную дату…
-                  </div>
-                ) : null}
-                {!isLoading && lanes.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-muted-foreground">
-                    На {day.full} доступных автобусов пока нет. Добавьте
-                    транспорт в автопарк, чтобы планировать рейсы.
-                  </div>
-                ) : null}
-                {!isLoading
-                  ? lanes.map((lane) => (
-                      <div
-                        className="grid grid-cols-[15rem_minmax(40rem,1fr)] border-b border-border last:border-0"
-                        key={lane.vehicle}
-                      >
-                        <div className="p-4">
-                          <p className="text-sm font-bold">{lane.vehicle}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {lane.driver} · {lane.capacity}
-                          </p>
-                        </div>
-                        <div
-                          className={cn(
-                            "calendar-lane relative min-h-20 border-l border-border",
-                            draggingTripID && "bg-primary/5"
-                          )}
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={(event) => void rescheduleTrip(event, lane)}
-                        >
-                          {lane.trips
-                            .filter((trip) => showTrip(trip.kind))
-                            .map((trip) => (
-                              <button
-                                className={cn(
-                                  "calendar-trip absolute top-3 flex h-14 flex-col justify-center overflow-hidden rounded-xl px-3 text-left text-xs font-semibold transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-75",
-                                  `calendar-${trip.tone}`
-                                )}
-                                disabled={isRescheduling}
-                                draggable={[
-                                  "draft",
-                                  "new",
-                                  "assigned",
-                                ].includes(trip.status)}
-                                key={`${lane.vehicle}-${trip.title}`}
-                                onDragEnd={() => setDraggingTripID(null)}
-                                onDragStart={(event) => {
-                                  event.dataTransfer.effectAllowed = "move"
-                                  event.dataTransfer.setData(
-                                    "text/plain",
-                                    trip.id
-                                  )
-                                  setDraggingTripID(trip.id)
-                                }}
-                                onClick={() => {
-                                  setSelectedTripError(null)
-                                  setIsCancelConfirmation(false)
-                                  setSelectedTrip(trip)
-                                }}
-                                style={{ left: trip.left, width: trip.width }}
-                                type="button"
-                              >
-                                <span className="truncate">{trip.title}</span>
-                                <span className="mt-1 text-xs font-medium opacity-75">
-                                  {trip.time} · {trip.kindLabel}
-                                </span>
-                              </button>
-                            ))}
-                        </div>
-                      </div>
-                    ))
-                  : null}
-              </div>
-            </div>
-            <div className="divide-y divide-border md:hidden">
-              {isLoading ? (
-                <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  Загружаем рейсы…
-                </p>
-              ) : null}
-              {!isLoading
-                ? filteredTrips.map((trip) => (
-                    <button
-                      className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/50"
-                      key={`${trip.vehicle}-${trip.title}`}
-                      onClick={() => {
-                        setSelectedTripError(null)
-                        setIsCancelConfirmation(false)
-                        setSelectedTrip(trip)
-                      }}
-                      type="button"
+                    <Button
+                      aria-label="Следующая неделя"
+                      onClick={() =>
+                        setWeekStart((current) => addDays(current, 7))
+                      }
+                      size="icon"
+                      variant="outline"
                     >
-                      <span
+                      <HugeiconsIcon icon={ArrowRight01Icon} size={18} />
+                    </Button>
+                  </div>
+                  <div className="flex flex-1 items-center gap-1 rounded-2xl border border-border bg-background/60 p-1">
+                    {days.map((item, index) => (
+                      <button
                         className={cn(
-                          "grid size-10 shrink-0 place-items-center rounded-xl",
-                          `calendar-${trip.tone}`
+                          "min-w-0 flex-1 rounded-xl px-1 py-2 text-center transition-colors",
+                          selectedDay === index
+                            ? "bg-secondary text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
                         )}
+                        key={item.iso}
+                        onClick={() => setSelectedDay(index)}
+                        type="button"
                       >
-                        <HugeiconsIcon icon={Car01Icon} size={18} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold">
-                          {trip.title}
+                        <span className="block text-xs font-bold uppercase">
+                          {item.short}
                         </span>
-                        <span className="mt-1 block truncate text-xs text-muted-foreground">
-                          {trip.time} · {trip.vehicle}
+                        <span className="mt-1 block text-sm font-bold">
+                          {item.date}
                         </span>
-                      </span>
-                      <span className="text-xs font-bold text-muted-foreground">
-                        {trip.kind === "regular" ? "Рейс" : "Трансфер"}
-                      </span>
-                    </button>
-                  ))
-                : null}
-              {!isLoading && filteredTrips.length === 0 ? (
-                <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  Для выбранного фильтра нет рейсов.
-                </p>
-              ) : null}
-            </div>
-            <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-primary" />
-                Регулярный рейс
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-violet-400" />
-                Индивидуальный трансфер
-              </span>
-              <Button size="icon" variant="ghost">
-                <HugeiconsIcon icon={MoreHorizontalIcon} />
-                <span className="sr-only">Дополнительные действия</span>
-              </Button>
-            </div>
-          </section>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {loadError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-destructive/35 bg-destructive/10 px-4 py-3 text-sm">
+                    <span role="alert">{loadError}</span>
+                    <Button
+                      onClick={() =>
+                        setRequestVersion((version) => version + 1)
+                      }
+                      size="sm"
+                      variant="outline"
+                    >
+                      Повторить
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="hidden overflow-x-auto md:block" id="calendar">
+                  <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+                    Перетяните черновик, новый или назначенный рейс на нужную
+                    машину и время. Водитель сохраняется; шаг — 15 минут.
+                  </p>
+                  <div className="min-w-[960px]">
+                    <div className="grid grid-cols-[15rem_repeat(9,minmax(5rem,1fr))] border-b border-border text-xs text-muted-foreground">
+                      <div className="p-4 font-semibold">
+                        Транспорт и водитель
+                      </div>
+                      {[
+                        "06:00",
+                        "08:00",
+                        "10:00",
+                        "12:00",
+                        "14:00",
+                        "16:00",
+                        "18:00",
+                        "20:00",
+                        "22:00",
+                      ].map((time) => (
+                        <div
+                          className="border-l border-border px-3 py-4 tabular-nums"
+                          key={time}
+                        >
+                          {time}
+                        </div>
+                      ))}
+                    </div>
+                    {isLoading ? (
+                      <div className="p-8 text-center text-sm text-muted-foreground">
+                        Загружаем рейсы на выбранную дату…
+                      </div>
+                    ) : null}
+                    {!isLoading && lanes.length === 0 ? (
+                      <div className="p-8 text-center text-sm text-muted-foreground">
+                        На {day.full} доступных автобусов пока нет. Добавьте
+                        транспорт в автопарк, чтобы планировать рейсы.
+                      </div>
+                    ) : null}
+                    {!isLoading
+                      ? lanes.map((lane) => (
+                          <div
+                            className="grid grid-cols-[15rem_minmax(40rem,1fr)] border-b border-border last:border-0"
+                            key={lane.vehicle}
+                          >
+                            <div className="p-4">
+                              <p className="text-sm font-bold">
+                                {lane.vehicle}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {lane.driver} · {lane.capacity}
+                              </p>
+                            </div>
+                            <div
+                              className={cn(
+                                "calendar-lane relative min-h-20 border-l border-border",
+                                draggingTripID && "bg-primary/5"
+                              )}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={(event) =>
+                                void rescheduleTrip(event, lane)
+                              }
+                            >
+                              {lane.trips
+                                .filter((trip) =>
+                                  viewTrips.some((item) => item.id === trip.id)
+                                )
+                                .map((trip) => (
+                                  <button
+                                    className={cn(
+                                      "calendar-trip absolute top-3 flex h-14 flex-col justify-center overflow-hidden rounded-xl px-3 text-left text-xs font-semibold transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-75",
+                                      `calendar-${trip.tone}`
+                                    )}
+                                    disabled={isRescheduling}
+                                    draggable={[
+                                      "draft",
+                                      "new",
+                                      "assigned",
+                                    ].includes(trip.status)}
+                                    key={`${lane.vehicle}-${trip.title}`}
+                                    onDragEnd={() => setDraggingTripID(null)}
+                                    onDragStart={(event) => {
+                                      event.dataTransfer.effectAllowed = "move"
+                                      event.dataTransfer.setData(
+                                        "text/plain",
+                                        trip.id
+                                      )
+                                      setDraggingTripID(trip.id)
+                                    }}
+                                    onClick={() => {
+                                      setSelectedTripError(null)
+                                      setIsCancelConfirmation(false)
+                                      setSelectedTrip(trip)
+                                    }}
+                                    style={{
+                                      left: trip.left,
+                                      width: trip.width,
+                                    }}
+                                    type="button"
+                                  >
+                                    <span className="truncate">
+                                      {trip.title}
+                                    </span>
+                                    <span className="mt-1 text-xs font-medium opacity-75">
+                                      {trip.time} · {trip.kindLabel}
+                                    </span>
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        ))
+                      : null}
+                  </div>
+                </div>
+                <div className="divide-y divide-border md:hidden">
+                  {isLoading ? (
+                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      Загружаем рейсы…
+                    </p>
+                  ) : null}
+                  {!isLoading
+                    ? viewTrips.map((trip) => (
+                        <button
+                          className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/50"
+                          key={`${trip.vehicle}-${trip.title}`}
+                          onClick={() => {
+                            setSelectedTripError(null)
+                            setIsCancelConfirmation(false)
+                            setSelectedTrip(trip)
+                          }}
+                          type="button"
+                        >
+                          <span
+                            className={cn(
+                              "grid size-10 shrink-0 place-items-center rounded-xl",
+                              `calendar-${trip.tone}`
+                            )}
+                          >
+                            <HugeiconsIcon icon={Car01Icon} size={18} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-bold">
+                              {trip.title}
+                            </span>
+                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                              {trip.time} · {trip.vehicle}
+                            </span>
+                          </span>
+                          <span className="text-xs font-bold text-muted-foreground">
+                            {trip.kind === "regular" ? "Рейс" : "Трансфер"}
+                          </span>
+                        </button>
+                      ))
+                    : null}
+                  {!isLoading && filteredTrips.length === 0 ? (
+                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      Для выбранного фильтра нет рейсов.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-primary" />
+                    Регулярный рейс
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-violet-400" />
+                    Индивидуальный трансфер
+                  </span>
+                  <Button size="icon" variant="ghost">
+                    <HugeiconsIcon icon={MoreHorizontalIcon} />
+                    <span className="sr-only">Дополнительные действия</span>
+                  </Button>
+                </div>
+              </section>
+            )}
+            emptyText="Рейсов на эту дату не найдено."
+          />
         </div>
       </AppShell>
       {isCreateOpen ? (
@@ -1214,7 +1328,7 @@ export function TripsPlanner() {
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Откуда
-                <input
+                <Input
                   className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                   disabled={
                     tripForm.kind === "regular" && tripForm.routeId !== ""
@@ -1233,7 +1347,7 @@ export function TripsPlanner() {
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Куда
-                <input
+                <Input
                   className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                   disabled={
                     tripForm.kind === "regular" && tripForm.routeId !== ""
@@ -1252,7 +1366,7 @@ export function TripsPlanner() {
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Отправление
-                <input
+                <Input
                   className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                   onChange={(event) =>
                     setTripForm((current) => ({
@@ -1267,7 +1381,7 @@ export function TripsPlanner() {
               </label>
               <label className="grid gap-2 text-sm font-semibold">
                 Прибытие
-                <input
+                <Input
                   className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                   onChange={(event) =>
                     setTripForm((current) => ({
@@ -1301,7 +1415,7 @@ export function TripsPlanner() {
                   ? "Цена за всю бронь"
                   : "Цена за пассажира"}{" "}
                 · {resources.currency}
-                <input
+                <Input
                   className="h-11 rounded-xl border border-border bg-background px-3 text-sm tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                   disabled={isResourcesLoading}
                   inputMode="decimal"
@@ -1335,7 +1449,7 @@ export function TripsPlanner() {
                   </div>
                   <label className="grid gap-2 text-sm font-semibold sm:max-w-xs">
                     Повторять еженедельно до
-                    <input
+                    <Input
                       className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                       min={tripForm.startsAt.slice(0, 10)}
                       onChange={(event) =>

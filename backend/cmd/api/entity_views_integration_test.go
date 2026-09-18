@@ -121,6 +121,13 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 	request("PATCH", "customers", shared.ID, input, manager, 409)
 	request("GET", "team", "", nil, author, 403)
 	request("GET", "team", "", nil, manager, 200)
+	request("GET", "cash-balances", "", nil, author, 403)
+	for _, entity := range []string{"routes", "fleet", "requests", "availability", "trips", "cash-balances"} {
+		newInput := entityViewInput{Name: "New collection", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name"}}}
+		created := decode(request("POST", entity, "", newInput, manager, 201))
+		request("GET", entity, "", nil, manager, 200)
+		request("DELETE", entity, created.ID, nil, manager, 200)
+	}
 	request("DELETE", "customers", shared.ID, nil, manager, 200)
 	request("DELETE", "customers", private.ID, nil, author, 200)
 }

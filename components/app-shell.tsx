@@ -60,7 +60,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { isSearchShortcut, searchPageHref } from "@/lib/admin-search"
+import { isSearchShortcut } from "@/lib/admin-search"
+import { entityDetailHref } from "@/lib/entity-details"
 import { AdminSearchField } from "@/components/admin-search-field"
 import { useSearchShortcutLabel } from "@/hooks/use-search-shortcut-label"
 import { EntityFooterContext } from "@/components/entity-footer-context"
@@ -909,7 +910,7 @@ export function AppShell({
                 {customers.map((customer) => (
                   <CommandItem
                     key={customer.id}
-                    onSelect={() => navigate(searchPageHref("/customers", customer.phone))}
+                    onSelect={() => navigate(entityDetailHref("customers", customer.id))}
                     value={`customer:${customer.id}`}
                     className="min-h-12 cursor-pointer"
                   >
@@ -930,7 +931,7 @@ export function AppShell({
                 {bookings.map((booking) => (
                   <CommandItem
                     key={booking.id}
-                    onSelect={() => navigate(searchPageHref("/bookings", booking.id))}
+                    onSelect={() => navigate(entityDetailHref("bookings", booking.id))}
                     value={`booking:${booking.id}`}
                     className="min-h-12 cursor-pointer"
                   >

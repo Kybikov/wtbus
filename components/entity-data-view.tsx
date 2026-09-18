@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { entityDetailHref } from "@/lib/entity-details"
 import { createPortal } from "react-dom"
 import { EntityFooterContext } from "@/components/entity-footer-context"
 
@@ -77,6 +80,8 @@ type Props<T> = {
   filterValues?: Record<string, string>
   onFiltersChange?: (filters: Record<string, string>) => void
   items: T[]
+  renderSchedule?: (items: T[]) => React.ReactNode
+  toolbarExtras?: React.ReactNode
   totalCount?: number
   getId: (item: T) => string
   getLabel: (item: T) => string
@@ -144,7 +149,7 @@ export function EntityDataView<T>({
   getId,
   getLabel,
   columns,
-  actions,
+  actions: sourceActions,
   selected,
   onSelectedChange,
   emptyText,
@@ -162,7 +167,23 @@ export function EntityDataView<T>({
   bulkActions,
   className,
   isSelectable = () => true,
+  renderSchedule,
+  toolbarExtras,
 }: Props<T>) {
+  const router = useRouter()
+  const detailEnabled = collection !== "cash-balances"
+  const actions: EntityAction<T>[] = [
+    ...(detailEnabled
+      ? [
+          {
+            label: "Открыть детали",
+            onSelect: (item: T) =>
+              router.push(entityDetailHref(collection, getId(item))),
+          },
+        ]
+      : []),
+    ...(sourceActions ?? []),
+  ]
   const footerContext = React.useContext(EntityFooterContext)
   const [mode, setMode] = React.useState<EntityViewMode>(
     modes.includes(defaultMode) ? defaultMode : modes[0]
@@ -239,6 +260,11 @@ export function EntityDataView<T>({
   const allSelected =
     selectableItems.length > 0 &&
     selectableItems.every((item) => selected.has(getId(item)))
+  React.useEffect(() => {
+    const ids = new Set(sourceItems.map(getId))
+    const next = new Set([...selected].filter((id) => ids.has(id)))
+    if (next.size !== selected.size) onSelectedChange(next)
+  }, [sourceItems, getId, selected, onSelectedChange])
   const toggleAll = (checked: boolean) =>
     onSelectedChange(checked ? new Set(selectableItems.map(getId)) : new Set())
   const toggleOne = (item: T, checked: boolean) => {
@@ -249,7 +275,7 @@ export function EntityDataView<T>({
     else next.delete(id)
     onSelectedChange(next)
   }
-  const card = (item: T) =>
+  const cardContent = (item: T) =>
     renderCard?.(item) ?? (
       <div className="space-y-2">
         <p className="font-semibold">{getLabel(item)}</p>
@@ -262,6 +288,33 @@ export function EntityDataView<T>({
       </div>
     )
 
+  const card = (item: T, withSelection = false) => (
+    <div className="flex min-w-0 gap-3">
+      {withSelection ? (
+        <Checkbox
+          aria-label={`Выбрать ${getLabel(item)}`}
+          className="mt-1 shrink-0"
+          checked={selected.has(getId(item))}
+          disabled={!isSelectable(item)}
+          onCheckedChange={(checked) => toggleOne(item, checked)}
+          onKeyDown={(event) => event.stopPropagation()}
+        />
+      ) : null}
+      <div className="min-w-0 flex-1 space-y-2">
+        {cardContent(item)}
+        {detailEnabled ? (
+          <Button
+            size="sm"
+            variant="link"
+            className="h-7 px-0"
+            render={<Link href={entityDetailHref(collection, getId(item))} />}
+          >
+            Открыть детали
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
   return (
     <section className={cn("space-y-3", className)}>
       <EntityViewToolbar
@@ -274,6 +327,7 @@ export function EntityDataView<T>({
         modes={modes}
         columns={columns}
         filters={filters}
+        extras={toolbarExtras}
       />
       {selected.size ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -295,6 +349,8 @@ export function EntityDataView<T>({
           <div className="surface-card p-8 text-center text-sm text-muted-foreground">
             {loadingText}
           </div>
+        ) : mode === "schedule" && renderSchedule ? (
+          renderSchedule(items)
         ) : items.length === 0 ? (
           <div className="surface-card p-8 text-center text-sm text-muted-foreground">
             {emptyText}
@@ -351,7 +407,20 @@ export function EntityDataView<T>({
                             className={column.className}
                             key={column.id}
                           >
-                            {column.value(item)}
+                            {detailEnabled &&
+                            column.id ===
+                              (collection === "bookings"
+                                ? "passenger"
+                                : "name") ? (
+                              <Link
+                                href={entityDetailHref(collection, getId(item))}
+                                className="block rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                              >
+                                {column.value(item)}
+                              </Link>
+                            ) : (
+                              column.value(item)
+                            )}
                           </TableCell>
                         ))}
                         {actions?.length ? (
@@ -480,7 +549,7 @@ export function EntityDataView<T>({
             renderCard={(item) => (
               <ContextMenu>
                 <ContextMenuTrigger render={<div />}>
-                  {card(item)}
+                  {card(item, true)}
                 </ContextMenuTrigger>
                 <EntityMenu
                   actions={actions}
@@ -503,12 +572,20 @@ export function EntityDataView<T>({
                         (item) => (dateValue?.(item) ?? "Без даты") === date
                       )
                       .map((item) => (
-                        <div
-                          className="rounded-xl bg-muted/60 p-3"
-                          key={getId(item)}
-                        >
-                          {card(item)}
-                        </div>
+                        <ContextMenu key={getId(item)}>
+                          <ContextMenuTrigger
+                            render={
+                              <div className="rounded-xl bg-muted/60 p-3" />
+                            }
+                          >
+                            {card(item, true)}
+                          </ContextMenuTrigger>
+                          <EntityMenu
+                            actions={actions}
+                            item={item}
+                            label={getLabel(item)}
+                          />
+                        </ContextMenu>
                       ))}
                   </div>
                 </section>
@@ -521,7 +598,7 @@ export function EntityDataView<T>({
                 <ContextMenuTrigger
                   render={<article className="surface-card p-4" />}
                 >
-                  {card(item)}
+                  {card(item, true)}
                 </ContextMenuTrigger>
                 <EntityMenu
                   actions={actions}

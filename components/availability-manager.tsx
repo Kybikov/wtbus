@@ -4,16 +4,17 @@ import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  Add01Icon,
-  CalendarBlock01Icon,
-  Delete02Icon,
-} from "@hugeicons/core-free-icons"
+import { Add01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
+import { Input } from "@/components/ui/input"
+import { EntityDataView } from "@/components/entity-data-view"
+import { textColumn, dateColumn } from "@/lib/entity-columns"
+import { usePageSearch } from "@/hooks/use-page-search"
+import { useEntitySelection } from "@/hooks/use-entity-selection"
 
 type Route = { id: string; name: string }
 type Block = {
@@ -79,6 +80,8 @@ function errorFrom(payload: unknown, fallback: string) {
 }
 
 export function AvailabilityManager() {
+  const [query, setQuery] = usePageSearch()
+  const selection = useEntitySelection<Block>((item) => item.id)
   const [blocks, setBlocks] = React.useState<Block[]>([])
   const [routes, setRoutes] = React.useState<Route[]>([])
   const [timezone, setTimezone] = React.useState("")
@@ -175,8 +178,58 @@ export function AvailabilityManager() {
     }
   }
 
+  const filteredBlocks = blocks.filter((item) =>
+    [item.routeName, item.reason, item.id]
+      .join(" ")
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+  )
+  const columns = [
+    textColumn<Block>(
+      "name",
+      "Маршрут",
+      (item) => item.routeName || "Все маршруты"
+    ),
+    dateColumn<Block>(
+      "start",
+      "Начало",
+      (item) => item.startsAt,
+      timezone || "Europe/Warsaw"
+    ),
+    dateColumn<Block>(
+      "end",
+      "Окончание",
+      (item) => item.endsAt,
+      timezone || "Europe/Warsaw"
+    ),
+    textColumn<Block>("reason", "Причина", (item) => item.reason),
+    textColumn<Block>("routeId", "ID маршрута", (item) => item.routeId, false),
+    textColumn<Block>("id", "ID", (item) => item.id, false),
+  ]
+  async function bulkRemove() {
+    await selection.run(
+      blocks,
+      async (item) => {
+        const response = await sessionFetch(
+          `/api/availability-blocks?id=${encodeURIComponent(item.id)}`,
+          { method: "DELETE" }
+        )
+        const payload = await response.json()
+        if (!response.ok)
+          throw new Error(payload.error ?? "Не удалось снять блокировку.")
+      },
+      load
+    )
+  }
   return (
     <AppShell
+      collectionFooter
+      localSearch={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Маршрут, причина или ID",
+        label: "Поиск блокировок",
+      }}
       onRefresh={load}
       refreshing={loading}
       pageActions={
@@ -237,7 +290,7 @@ export function AvailabilityManager() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Причина (необязательно)
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={500}
@@ -253,7 +306,7 @@ export function AvailabilityManager() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Начало
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 onChange={(event) =>
@@ -269,7 +322,7 @@ export function AvailabilityManager() {
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Окончание
-              <input
+              <Input
                 className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 onChange={(event) =>
@@ -298,67 +351,58 @@ export function AvailabilityManager() {
             </div>
           </form>
         ) : null}
-        <div className="overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border">
-          {loading ? (
-            <p className="p-6 text-sm text-muted-foreground">
-              Загружаем доступность…
-            </p>
-          ) : null}
-          {!loading && blocks.length === 0 ? (
-            <div className="p-6">
-              <div className="flex items-center gap-2 font-semibold">
-                <HugeiconsIcon
-                  className="text-primary"
-                  icon={CalendarBlock01Icon}
-                  size={18}
-                />
-                Свободных ограничений нет
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Все активные маршруты доступны для планирования и бронирования.
-              </p>
-            </div>
-          ) : null}
-          {!loading
-            ? blocks.map((block) => (
-                <article
-                  className="flex flex-col gap-3 border-b border-border p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
-                  key={block.id}
-                >
-                  <div>
-                    <p className="font-bold">
-                      {block.routeName || "Все маршруты"}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {new Intl.DateTimeFormat("ru-RU", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(block.startsAt))}{" "}
-                      —{" "}
-                      {new Intl.DateTimeFormat("ru-RU", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(block.endsAt))}
-                    </p>
-                    {block.reason ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {block.reason}
-                      </p>
-                    ) : null}
-                  </div>
-                  <Button
-                    disabled={saving}
-                    onClick={() => void remove(block)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <HugeiconsIcon icon={Delete02Icon} size={16} />
-                    Снять
-                  </Button>
-                </article>
-              ))
-            : null}
-        </div>
+        {selection.error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {selection.error}
+          </p>
+        ) : null}
+        <EntityDataView
+          collection="availability"
+          columns={columns}
+          items={filteredBlocks}
+          getId={(item) => item.id}
+          getLabel={(item) => item.routeName || "Все маршруты"}
+          loading={loading}
+          selected={selection.selected}
+          onSelectedChange={selection.setSelected}
+          modes={["table", "list", "calendar", "gallery"]}
+          dateValue={(item) =>
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: timezone || "Europe/Warsaw",
+            }).format(new Date(item.startsAt))
+          }
+          filters={[
+            {
+              id: "scope",
+              label: "Область",
+              options: [
+                { value: "all", label: "Все маршруты" },
+                { value: "route", label: "Конкретный маршрут" },
+              ],
+              matches: (item, value) =>
+                value === "all" ? !item.routeId : !!item.routeId,
+            },
+          ]}
+          actions={[
+            {
+              label: "Снять блокировку",
+              onSelect: (item) => void remove(item),
+              destructive: true,
+              disabled: () => saving || selection.pending,
+            },
+          ]}
+          bulkActions={
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={saving || selection.pending}
+              onClick={() => void bulkRemove()}
+            >
+              Снять блокировки
+            </Button>
+          }
+          emptyText="Блокировок не найдено."
+        />
       </section>
     </AppShell>
   )
