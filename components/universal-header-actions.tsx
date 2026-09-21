@@ -202,69 +202,64 @@ export function UniversalHeaderActions({
               ))}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Данные</DropdownMenuLabel>
-            <DropdownMenuItem
-              disabled={busy !== null || dataActions?.importing}
-              onClick={() =>
-                dataActions
-                  ? dataActions.onImport()
-                  : fileInput.current?.click()
-              }
+          <DropdownMenuItem
+            disabled={busy !== null || dataActions?.importing}
+            onClick={() =>
+              dataActions ? dataActions.onImport() : fileInput.current?.click()
+            }
+          >
+            {busy === "import" || dataActions?.importing ? (
+              <Loader2 className="size-4 motion-safe:animate-spin" />
+            ) : (
+              <Upload className="size-4" />
+            )}
+            <span>
+              Импорт данных
+              <span className="block text-xs text-muted-foreground">
+                Клиенты · CSV / XLSX
+              </span>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger
+              disabled={busy !== null || dataActions?.exporting}
             >
-              {busy === "import" || dataActions?.importing ? (
+              {busy === "export" || dataActions?.exporting ? (
                 <Loader2 className="size-4 motion-safe:animate-spin" />
               ) : (
-                <Upload className="size-4" />
+                <Download className="size-4" />
               )}
-              <span>
-                Импорт
-                <span className="block text-xs text-muted-foreground">
-                  Клиенты · CSV / XLSX
-                </span>
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger
-                disabled={busy !== null || dataActions?.exporting}
-              >
-                {busy === "export" || dataActions?.exporting ? (
-                  <Loader2 className="size-4 motion-safe:animate-spin" />
-                ) : (
-                  <Download className="size-4" />
-                )}
-                Экспорт
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-72">
-                {viewExport && (
-                  <DropdownMenuItem
-                    disabled={viewExport.loading || !viewExport.rows}
-                    onClick={() =>
-                      download(
-                        new Blob([viewExport.csv], {
-                          type: "text/csv;charset=utf-8",
-                        }),
-                        viewExport.filename
-                      )
-                    }
-                  >
-                    <span>
-                      Текущий вид · CSV
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {viewExport.rows} строк · видимые колонки
-                        {viewExport.total > viewExport.loaded
-                          ? " · загруженная часть"
-                          : ""}
-                      </span>
+              Экспорт данных
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-72">
+              {viewExport && (
+                <DropdownMenuItem
+                  disabled={viewExport.loading || !viewExport.rows}
+                  onClick={() =>
+                    download(
+                      new Blob([viewExport.csv], {
+                        type: "text/csv;charset=utf-8",
+                      }),
+                      viewExport.filename
+                    )
+                  }
+                >
+                  <span>
+                    Текущий вид · CSV
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {viewExport.rows} строк · видимые колонки
+                      {viewExport.total > viewExport.loaded
+                        ? " · загруженная часть"
+                        : ""}
                     </span>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => void exportCustomers()}>
-                  Клиенты · XLSX (вся база)
+                  </span>
                 </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          </DropdownMenuGroup>
+              )}
+              <DropdownMenuItem onClick={() => void exportCustomers()}>
+                Клиенты · XLSX (вся база)
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
       <input
