@@ -27,7 +27,7 @@ import ReactBitsKanban, {
   type ReactBitsKanbanColumn,
 } from "@/components/kanban-3"
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
@@ -546,14 +546,16 @@ export function EntityDataView<T>({
       <div className="min-w-0 flex-1 space-y-2">
         {cardContent(item)}
         {detailEnabled ? (
-          <Button
-            size="sm"
-            variant="link"
-            className="h-7 px-0"
-            render={<Link href={entityDetailHref(collection, getId(item))} />}
+          <Link
+            className={buttonVariants({
+              size: "sm",
+              variant: "link",
+              className: "h-7 px-0",
+            })}
+            href={entityDetailHref(collection, getId(item))}
           >
             Открыть детали
-          </Button>
+          </Link>
         ) : null}
       </div>
     </div>
@@ -672,17 +674,15 @@ export function EntityDataView<T>({
                       ))}
                     </dl>
                     {detailEnabled ? (
-                      <Button
-                        className="mt-3 w-full"
-                        variant="outline"
-                        render={
-                          <Link
-                            href={entityDetailHref(collection, getId(item))}
-                          />
-                        }
+                      <Link
+                        className={buttonVariants({
+                          variant: "outline",
+                          className: "mt-3 w-full",
+                        })}
+                        href={entityDetailHref(collection, getId(item))}
                       >
                         Открыть детали
-                      </Button>
+                      </Link>
                     ) : null}
                   </CardContent>
                 </Card>
@@ -789,76 +789,87 @@ export function EntityDataView<T>({
                             />
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-56">
-                            <ContextMenuLabel>{column.label}</ContextMenuLabel>
-                            <ContextMenuItem
-                              onClick={() =>
-                                setSort({
-                                  columnId: column.id,
-                                  direction: "asc",
-                                })
-                              }
-                            >
-                              <ArrowDownAZ /> По возрастанию
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onClick={() =>
-                                setSort({
-                                  columnId: column.id,
-                                  direction: "desc",
-                                })
-                              }
-                            >
-                              <ArrowUpAZ /> По убыванию
-                            </ContextMenuItem>
-                            {activeSort ? (
-                              <ContextMenuItem onClick={() => setSort(null)}>
-                                <X /> Сбросить сортировку
-                              </ContextMenuItem>
-                            ) : null}
-                            {matchingFilter ? (
+                            <ContextMenuGroup>
+                              <ContextMenuLabel>
+                                {column.label}
+                              </ContextMenuLabel>
                               <ContextMenuItem
-                                onClick={() => setFilterRequest(column.id)}
+                                onClick={() =>
+                                  setSort({
+                                    columnId: column.id,
+                                    direction: "asc",
+                                  })
+                                }
                               >
-                                <Filter /> Добавить фильтр
+                                <ArrowDownAZ /> По возрастанию
                               </ContextMenuItem>
-                            ) : null}
-                            <ContextMenuSeparator />
-                            <ContextMenuSub>
-                              <ContextMenuSubTrigger>
-                                <PanelLeft className="mr-2" /> Закрепить
-                              </ContextMenuSubTrigger>
-                              <ContextMenuSubContent>
-                                <ContextMenuItem
-                                  onClick={() => pinColumn(column.id, "left")}
-                                >
-                                  <PanelLeft /> Слева
+                              <ContextMenuItem
+                                onClick={() =>
+                                  setSort({
+                                    columnId: column.id,
+                                    direction: "desc",
+                                  })
+                                }
+                              >
+                                <ArrowUpAZ /> По убыванию
+                              </ContextMenuItem>
+                              {activeSort ? (
+                                <ContextMenuItem onClick={() => setSort(null)}>
+                                  <X /> Сбросить сортировку
                                 </ContextMenuItem>
+                              ) : null}
+                              {matchingFilter ? (
                                 <ContextMenuItem
-                                  onClick={() => pinColumn(column.id, "right")}
+                                  onClick={() => setFilterRequest(column.id)}
                                 >
-                                  <PanelRight /> Справа
+                                  <Filter /> Добавить фильтр
                                 </ContextMenuItem>
-                                <ContextMenuItem
-                                  onClick={() => pinColumn(column.id, null)}
-                                >
-                                  <PinOff /> Открепить
-                                </ContextMenuItem>
-                              </ContextMenuSubContent>
-                            </ContextMenuSub>
-                            <ContextMenuItem
-                              disabled={visibleColumns.length === 1}
-                              onClick={() => {
-                                setVisible((current) => {
-                                  const next = new Set(current)
-                                  next.delete(column.id)
-                                  return next
-                                })
-                                pinColumn(column.id, null)
-                                if (sort?.columnId === column.id) setSort(null)
-                              }}
-                            >
-                              <Eye /> Скрыть колонку
-                            </ContextMenuItem>
+                              ) : null}
+                              <ContextMenuSeparator />
+                              <ContextMenuSub>
+                                <ContextMenuSubTrigger>
+                                  <PanelLeft className="mr-2" /> Закрепить
+                                </ContextMenuSubTrigger>
+                                <ContextMenuSubContent>
+                                  <ContextMenuGroup>
+                                    <ContextMenuItem
+                                      onClick={() =>
+                                        pinColumn(column.id, "left")
+                                      }
+                                    >
+                                      <PanelLeft /> Слева
+                                    </ContextMenuItem>
+                                    <ContextMenuItem
+                                      onClick={() =>
+                                        pinColumn(column.id, "right")
+                                      }
+                                    >
+                                      <PanelRight /> Справа
+                                    </ContextMenuItem>
+                                    <ContextMenuItem
+                                      onClick={() => pinColumn(column.id, null)}
+                                    >
+                                      <PinOff /> Открепить
+                                    </ContextMenuItem>
+                                  </ContextMenuGroup>
+                                </ContextMenuSubContent>
+                              </ContextMenuSub>
+                              <ContextMenuItem
+                                disabled={visibleColumns.length === 1}
+                                onClick={() => {
+                                  setVisible((current) => {
+                                    const next = new Set(current)
+                                    next.delete(column.id)
+                                    return next
+                                  })
+                                  pinColumn(column.id, null)
+                                  if (sort?.columnId === column.id)
+                                    setSort(null)
+                                }}
+                              >
+                                <Eye /> Скрыть колонку
+                              </ContextMenuItem>
+                            </ContextMenuGroup>
                           </ContextMenuContent>
                         </ContextMenu>
                       )
