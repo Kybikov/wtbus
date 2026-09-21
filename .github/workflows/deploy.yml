@@ -80,4 +80,25 @@ jobs:
             --exclude '.next/' \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           remote_command=$(printf 'cd %q && docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.vps.yml --profile bot up -d --build --remove-orphans' "$DEPLOY_PATH")
-          printf '%s\n' "$remote_command" | ssh "$DEPLOY_USER@$DEPLOY_HOST" sh -s
+          set +e
+          deploy_output=$(printf '%s\n' "$remote_command" | ssh "$DEPLOY_USER@$DEPLOY_HOST" sh -s 2>&1)
+          deploy_status=$?
+          set -e
+          printf '%s\n' "$deploy_output"
+          if [ "$deploy_status" -ne 0 ]; then
+            case "$deploy_output" in
+              *"network coolify declared as external"*) category="missing-coolify-network" ;;
+              *"Conflict. The container name"*) category="container-name-conflict" ;;
+              *"port is already allocated"*|*"address already in use"*) category="host-port-conflict" ;;
+              *"service \"migrate\" didn't complete successfully"*|*"Dirty database version"*) category="database-migration-failed" ;;
+              *"permission denied"*) category="docker-permission-denied" ;;
+              *"no space left on device"*) category="server-disk-full" ;;
+              *"failed to solve"*|*"process did not complete successfully"*) category="image-build-failed" ;;
+              *"manifest unknown"*|*"pull access denied"*) category="image-pull-failed" ;;
+              *"unknown flag"*|*"unsupported"*) category="compose-version-incompatible" ;;
+              *"is not set"*|*"required variable"*) category="production-environment-incomplete" ;;
+              *) category="unclassified-server-error" ;;
+            esac
+            echo "::error title=Production deployment failed::$category"
+            exit "$deploy_status"
+          fi
