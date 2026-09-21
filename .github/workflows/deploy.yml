@@ -72,13 +72,33 @@ jobs:
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_PATH"
           test -n "$DEPLOY_USER"
-          rsync -az --delete \
+          prepare_command=$(printf 'mkdir -p %q' "$DEPLOY_PATH")
+          if ! printf '%s\n' "$prepare_command" | ssh "$DEPLOY_USER@$DEPLOY_HOST" sh -s; then
+            echo "::error title=Production synchronization failed::ssh-or-deploy-path-unavailable"
+            exit 1
+          fi
+          set +e
+          sync_output=$(rsync -az --delete \
             --exclude '.git/' \
             --exclude '.env' \
             --exclude '.env.*' \
             --exclude 'node_modules/' \
             --exclude '.next/' \
-            ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/" 2>&1)
+          sync_status=$?
+          set -e
+          if [ "$sync_status" -ne 0 ]; then
+            case "$sync_output" in
+              *"Permission denied"*) category="deploy-path-permission-denied" ;;
+              *"No such file or directory"*) category="deploy-path-missing" ;;
+              *"Host key verification failed"*) category="ssh-host-key-rejected" ;;
+              *"Connection refused"*|*"Connection timed out"*) category="ssh-host-unreachable" ;;
+              *"No space left on device"*) category="server-disk-full" ;;
+              *) category="unclassified-rsync-error" ;;
+            esac
+            echo "::error title=Production synchronization failed::$category"
+            exit "$sync_status"
+          fi
           remote_command=$(printf 'cd %q && docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.vps.yml --profile bot up -d --build --remove-orphans' "$DEPLOY_PATH")
           set +e
           deploy_output=$(printf '%s\n' "$remote_command" | ssh "$DEPLOY_USER@$DEPLOY_HOST" sh -s 2>&1)
