@@ -11,7 +11,7 @@ test('CSV escapes separators, quotes and line breaks and protects formulas', () 
 })
 test('drivers cannot create CRM records; fleet and team require management rights', () => {
  assert.equal(createTargets.filter(t => t.roles.includes('driver')).length,0)
- assert.equal(createTargets.filter(t => t.roles.includes('developer')).length,7)
+ assert.equal(createTargets.filter(t => t.roles.includes('developer')).length,6)
  assert.equal(createTargets.find(t => t.href === '/team').roles.includes('dispatcher'),false)
  assert.equal(createTargets.find(t => t.href === '/fleet').roles.includes('dispatcher'),false)
 })

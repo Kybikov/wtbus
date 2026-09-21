@@ -111,7 +111,7 @@ export const activeOptions: StatusOption[] = [
 export function activeFilter<T>(get: (item: T) => boolean): EntityFilter<T> {
   return {
     id: "active",
-    label: "Активность",
+    label: "Статус",
     options: activeOptions,
     matches: (item, value) => get(item) === (value === "active"),
   }

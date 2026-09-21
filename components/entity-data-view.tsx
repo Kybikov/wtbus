@@ -126,7 +126,6 @@ type Props<T> = {
   bulkActions?: React.ReactNode
   className?: string
   isSelectable?: (item: T) => boolean
-  showMetrics?: boolean
 }
 
 function EntityMenu<T>({
@@ -243,7 +242,6 @@ export function EntityDataView<T>({
   isSelectable = () => true,
   renderSchedule,
   toolbarExtras,
-  showMetrics = true,
 }: Props<T>) {
   const router = useRouter()
   const detailEnabled = collection !== "cash-balances"
@@ -705,7 +703,7 @@ export function EntityDataView<T>({
               >
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 z-[4] w-12 border-r border-border/80 bg-card pl-4">
+                    <TableHead className="sticky left-0 z-[4] w-12 bg-card pl-4">
                       <Checkbox
                         aria-label="Выбрать все записи"
                         checked={allSelected}
@@ -731,7 +729,7 @@ export function EntityDataView<T>({
                                     : "none"
                                 }
                                 className={cn(
-                                  "group/header relative border-r border-border/80 bg-card p-0",
+                                  "group/header relative bg-card p-0",
                                   column.className,
                                   (pinnedColumns.left.includes(column.id) ||
                                     pinnedColumns.right.includes(column.id)) &&
@@ -783,7 +781,7 @@ export function EntityDataView<T>({
                             </button>
                             <button
                               aria-label={`Изменить ширину колонки ${column.label}`}
-                              className="absolute inset-y-0 right-[-2px] z-10 w-1 cursor-col-resize bg-transparent hover:bg-primary/70 focus:bg-primary/70"
+                              className="absolute top-1/2 right-0 z-10 h-4 w-3 -translate-y-1/2 cursor-col-resize after:absolute after:top-0 after:left-1/2 after:h-4 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border after:content-[''] hover:after:w-0.5 hover:after:bg-primary focus-visible:after:w-0.5 focus-visible:after:bg-primary"
                               onPointerDown={(event) =>
                                 startResize(event, column.id)
                               }
@@ -866,7 +864,7 @@ export function EntityDataView<T>({
                       )
                     })}
                     {actions?.length ? (
-                      <TableHead className="sticky right-0 z-[4] w-28 border-l border-border/80 bg-card text-right">
+                      <TableHead className="sticky right-0 z-[4] w-28 bg-card text-right">
                         Действия
                       </TableHead>
                     ) : null}
@@ -886,7 +884,7 @@ export function EntityDataView<T>({
                             />
                           }
                         >
-                          <TableCell className="sticky left-0 z-[3] w-12 border-r border-border/80 bg-card pl-4">
+                          <TableCell className="sticky left-0 z-[3] w-12 bg-card pl-4">
                             <Checkbox
                               aria-label={`Выбрать ${getLabel(item)}`}
                               checked={selected.has(id)}
@@ -899,7 +897,7 @@ export function EntityDataView<T>({
                           {visibleColumns.map((column) => (
                             <TableCell
                               className={cn(
-                                "overflow-hidden border-r border-border/80 bg-card",
+                                "overflow-hidden bg-card",
                                 column.className
                               )}
                               key={column.id}
@@ -930,7 +928,7 @@ export function EntityDataView<T>({
                             </TableCell>
                           ))}
                           {actions?.length ? (
-                            <TableCell className="sticky right-0 z-[3] w-28 border-l border-border/80 bg-card text-right">
+                            <TableCell className="sticky right-0 z-[3] w-28 bg-card text-right">
                               <EntityActionButtons
                                 actions={actions}
                                 item={item}
@@ -1063,29 +1061,27 @@ export function EntityDataView<T>({
           </div>
         )}
       </FadeContent>
-      {showMetrics
-        ? (() => {
-            const bar = (
-              <EntityMetricsBar
-                items={items}
-                total={totalCount ?? sourceItems.length}
-                loadedCount={sourceItems.length}
-                selectedCount={
-                  items.filter((item) => selected.has(getId(item))).length
-                }
-                fields={metricFields}
-                metrics={metrics}
-                onChange={setMetrics}
-                loading={loading}
-              />
-            )
-            return footerContext.enabled
-              ? footerContext.target
-                ? createPortal(bar, footerContext.target)
-                : null
-              : bar
-          })()
-        : null}
+      {(() => {
+        const bar = (
+          <EntityMetricsBar
+            items={items}
+            total={totalCount ?? sourceItems.length}
+            loadedCount={sourceItems.length}
+            selectedCount={
+              items.filter((item) => selected.has(getId(item))).length
+            }
+            fields={metricFields}
+            metrics={metrics}
+            onChange={setMetrics}
+            loading={loading}
+          />
+        )
+        return footerContext.enabled
+          ? footerContext.target
+            ? createPortal(bar, footerContext.target)
+            : null
+          : bar
+      })()}
     </section>
   )
 }

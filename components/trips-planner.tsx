@@ -14,7 +14,6 @@ import {
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
-import { AvailabilityManager } from "@/components/availability-manager"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import {
   CustomDataFields,
@@ -1190,7 +1189,6 @@ export function TripsPlanner() {
             )}
             emptyText="Рейсов на эту дату не найдено."
           />
-          <AvailabilityManager embedded />
         </div>
       </AppShell>
       {isCreateOpen ? (

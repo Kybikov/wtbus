@@ -9,7 +9,6 @@ import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EntityDataView } from "@/components/entity-data-view"
-import { AvailabilityManager } from "@/components/availability-manager"
 import {
   textColumn,
   moneyColumn,
@@ -106,7 +105,7 @@ export function RouteCatalog() {
     ),
     statusColumn<Route>(
       "active",
-      "Активность",
+      "Статус",
       (item) => (item.isActive ? "active" : "inactive"),
       activeOptions
     ),
@@ -467,7 +466,6 @@ export function RouteCatalog() {
           }
           emptyText="Маршрутов не найдено."
         />
-        <AvailabilityManager embedded />
       </section>
     </AppShell>
   )

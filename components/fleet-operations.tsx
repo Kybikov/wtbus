@@ -316,7 +316,7 @@ export function FleetOperations() {
     textColumn<Vehicle>("driver", "Водитель", (item) => item.driver),
     statusColumn<Vehicle>(
       "active",
-      "Активность",
+      "Статус",
       (item) => (item.isActive ? "active" : "inactive"),
       activeOptions
     ),

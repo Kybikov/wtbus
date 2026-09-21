@@ -49,7 +49,7 @@ export const entityFieldLabels: Record<string, string> = {
   default_price_minor: "Базовая цена",
   pricing_mode: "Модель цены",
   default_pricing_mode: "Модель цены",
-  is_active: "Активность",
+  is_active: "Статус",
   is_system: "Системный пользователь",
   role: "Роль",
   status: "Статус",
