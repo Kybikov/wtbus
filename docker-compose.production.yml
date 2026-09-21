@@ -28,6 +28,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}@redis:6379/0
 
   web:
+    ports: !reset []
     build:
       args:
         API_INTERNAL_URL: http://vivat-api:8080
