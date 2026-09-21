@@ -363,15 +363,17 @@ func systemActorEmail(tenantID string) string {
 	return "automation+" + strings.ReplaceAll(tenantID, "-", "") + "@system.local"
 }
 
+const systemActorDisplayName = "Vivat Pilot"
+
 func ensureSystemActor(ctx context.Context, store systemActorStore, tenantID string) (string, error) {
 	var userID string
 	if err := store.QueryRow(ctx, `
 		INSERT INTO users (email, display_name, is_system)
-		VALUES ($1, 'Автомат', true)
+		VALUES ($1, $2, true)
 		ON CONFLICT (email) DO UPDATE
 		SET display_name = EXCLUDED.display_name, is_system = true, updated_at = now()
 		RETURNING id::text
-	`, systemActorEmail(tenantID)).Scan(&userID); err != nil {
+	`, systemActorEmail(tenantID), systemActorDisplayName).Scan(&userID); err != nil {
 		return "", fmt.Errorf("create system user: %w", err)
 	}
 	var membershipID string

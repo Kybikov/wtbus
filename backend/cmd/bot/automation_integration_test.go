@@ -42,7 +42,7 @@ func TestExpiredBookingIsAttributedToSystemActor(t *testing.T) {
 			}
 		}
 	}()
-	row(`INSERT INTO users(email,display_name,is_system) VALUES($1,'Автомат',true) RETURNING id::text`, &systemUserID, fmt.Sprintf("automation-%d@test.invalid", suffix))
+	row(`INSERT INTO users(email,display_name,is_system) VALUES($1,'Vivat Pilot',true) RETURNING id::text`, &systemUserID, fmt.Sprintf("automation-%d@test.invalid", suffix))
 	row(`INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'admin') RETURNING id::text`, &systemMembershipID, tenantID, systemUserID)
 	row(`INSERT INTO trips(tenant_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,currency) VALUES($1,'regular','new','A','B',now()+interval '1 day',now()+interval '1 day 2 hours',8,'EUR') RETURNING id::text`, &tripID, tenantID)
 	row(`INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Passenger',$2) RETURNING id::text`, &customerID, tenantID, fmt.Sprintf("+3805%08d", suffix%100000000))
