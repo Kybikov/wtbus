@@ -8,6 +8,7 @@ import { LayoutPreferencesProvider } from "@/components/layout-preferences-provi
 import { SessionMonitor } from "@/components/session-monitor"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { Toaster } from "@/components/ui/sonner"
 import { MobileNavigationProvider } from "@/components/mobile-navigation-provider"
 import { cn } from "@/lib/utils"
 import { getInitialLayoutSnapshot } from "@/lib/server-layout-preferences"
@@ -71,6 +72,7 @@ export default async function RootLayout({
               <DeviceNotificationMonitor />
               <SessionMonitor />
               <MobileNavigationProvider>{children}</MobileNavigationProvider>
+              <Toaster />
             </TooltipProvider>
           </LayoutPreferencesProvider>
         </ThemeProvider>

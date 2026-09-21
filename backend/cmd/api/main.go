@@ -4668,6 +4668,21 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	source := strings.TrimSpace(r.URL.Query().Get("source"))
+	if source != "" && source != "telegram" && source != "dispatcher" && source != "import" && source != "web" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "booking source is invalid"})
+		return
+	}
+	tripStatus := strings.TrimSpace(r.URL.Query().Get("trip_status"))
+	if tripStatus != "" && tripStatus != "draft" && tripStatus != "new" && tripStatus != "assigned" && tripStatus != "in_progress" && tripStatus != "completed" && tripStatus != "cancelled" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip status is invalid"})
+		return
+	}
+	paymentMethod := strings.TrimSpace(r.URL.Query().Get("payment_method"))
+	if paymentMethod != "" && paymentMethod != "cash_on_boarding" && paymentMethod != "cash" && paymentMethod != "bank_transfer" && paymentMethod != "none" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment method is invalid"})
+		return
+	}
 	limit := 100
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
@@ -4701,9 +4716,15 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		    OR COALESCE(b.custom_data->>'passenger_name','') ILIKE '%' || $3 || '%' OR COALESCE(b.custom_data->>'passenger_phone','') ILIKE '%' || $3 || '%'
 		    OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(b.custom_data->'passengers')='array' THEN b.custom_data->'passengers' ELSE '[]'::jsonb END) person WHERE concat_ws(' ',person->>'firstName',person->>'lastName') ILIKE '%' || $3 || '%'))
 		  AND ($4 = '' OR (t.starts_at AT TIME ZONE $5)::date = $4::date)
+		  AND ($6 = '' OR b.source = $6)
+		  AND ($7 = '' OR t.status::text = $7)
+		  AND ($8 = ''
+		    OR ($8 = 'cash_on_boarding' AND (b.status = 'cash_on_boarding' OR COALESCE(b.custom_data->>'payment_method', '') = 'cash_on_boarding'))
+		    OR ($8 = 'none' AND COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = '')
+		    OR COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = $8)
 		ORDER BY t.starts_at DESC, b.created_at DESC
-		LIMIT $6
-	`, tenant.ID, status, query, day, tenant.Timezone, limit)
+		LIMIT $9
+	`, tenant.ID, status, query, day, tenant.Timezone, source, tripStatus, paymentMethod, limit)
 	if err != nil {
 		app.log.Error("list bookings", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load bookings"})

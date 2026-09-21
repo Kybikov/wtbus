@@ -5,6 +5,7 @@ import { usePageSearch } from "@/hooks/use-page-search"
 import { bookingPassengers } from "@/lib/booking-checkout"
 
 import * as React from "react"
+import { AdminNotice } from "@/components/admin-notice"
 
 import { AppShell } from "@/components/app-shell"
 import {
@@ -223,6 +224,9 @@ export function BookingRegistry() {
   const [cancellingID, setCancellingID] = React.useState<string | null>(null)
   const [confirmingID, setConfirmingID] = React.useState<string | null>(null)
   const [status, setStatus] = React.useState<"" | BookingStatus>("")
+  const [source, setSource] = React.useState("")
+  const [tripStatus, setTripStatus] = React.useState("")
+  const [paymentMethod, setPaymentMethod] = React.useState("")
   const [query, setQuery] = usePageSearch()
   const [date, setDate] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
@@ -250,6 +254,9 @@ export function BookingRegistry() {
     if (status) params.set("status", status)
     if (query.trim()) params.set("q", query.trim())
     if (date) params.set("date", date)
+    if (source) params.set("source", source)
+    if (tripStatus) params.set("trip_status", tripStatus)
+    if (paymentMethod) params.set("payment_method", paymentMethod)
     try {
       const response = await sessionFetch(
         `/api/bookings?${params.toString()}`,
@@ -280,7 +287,7 @@ export function BookingRegistry() {
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
-  }, [date, query, status])
+  }, [date, paymentMethod, query, source, status, tripStatus])
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 250)
@@ -764,18 +771,17 @@ export function BookingRegistry() {
               {error}
             </div>
           ) : null}
-          {notice ? (
-            <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-400">
-              {notice}
-            </div>
-          ) : null}
+          <AdminNotice message={notice} />
           <EntityDataView
             collection="bookings"
             totalCount={total}
-            filterValues={{ status, date }}
+            filterValues={{ status, date, source, tripStatus, paymentMethod }}
             onFiltersChange={(values) => {
               setStatus((values.status ?? "") as "" | BookingStatus)
               setDate(values.date ?? "")
+              setSource(values.source ?? "")
+              setTripStatus(values.tripStatus ?? "")
+              setPaymentMethod(values.paymentMethod ?? "")
             }}
             filters={[
               {
@@ -799,6 +805,36 @@ export function BookingRegistry() {
                 ),
               },
               { id: "date", label: "Дата рейса", type: "date" },
+              {
+                id: "source",
+                label: "Источник",
+                options: Object.entries(sourceLabels).map(([value, label]) => ({
+                  value,
+                  label,
+                })),
+              },
+              {
+                id: "tripStatus",
+                label: "Статус рейса",
+                options: [
+                  { value: "draft", label: "Черновик" },
+                  { value: "new", label: "Новый" },
+                  { value: "assigned", label: "Назначен" },
+                  { value: "in_progress", label: "В пути" },
+                  { value: "completed", label: "Завершён" },
+                  { value: "cancelled", label: "Отменён" },
+                ],
+              },
+              {
+                id: "paymentMethod",
+                label: "Способ оплаты",
+                options: [
+                  { value: "cash_on_boarding", label: "Наличными при посадке" },
+                  { value: "cash", label: "Наличные" },
+                  { value: "bank_transfer", label: "Банковский перевод" },
+                  { value: "none", label: "Не указан" },
+                ],
+              },
             ]}
             actions={actions}
             bulkActions={

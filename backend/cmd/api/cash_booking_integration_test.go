@@ -120,7 +120,7 @@ func TestCashOnBoardingWithoutPaymentConfiguration(t *testing.T) {
 	for _, check := range []struct {
 		params string
 		total  int
-	}{{"limit=1", 3}, {"limit=1&status=cancelled", 2}, {"limit=1&status=cash_on_boarding", 1}, {"limit=1&q=missing-passenger", 0}, {"limit=1&date=2030-01-01", 0}} {
+	}{{"limit=1", 3}, {"limit=1&status=cancelled", 2}, {"limit=1&status=cash_on_boarding", 1}, {"limit=1&source=dispatcher", 3}, {"limit=1&source=web", 0}, {"limit=1&trip_status=assigned", 3}, {"limit=1&payment_method=cash_on_boarding", 1}, {"limit=1&payment_method=none", 2}, {"limit=1&q=missing-passenger", 0}, {"limit=1&date=2030-01-01", 0}} {
 		r := httptest.NewRequest("GET", "/?"+check.params, nil)
 		r.SetPathValue("slug", slug)
 		w := httptest.NewRecorder()

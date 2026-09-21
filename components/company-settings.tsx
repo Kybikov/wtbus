@@ -3,6 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { AdminNotice } from "@/components/admin-notice"
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { CustomFieldManager } from "@/components/custom-field-manager"
@@ -166,11 +167,7 @@ export function CompanySettings() {
             {error}
           </div>
         ) : null}
-        {notice ? (
-          <div className="rounded-2xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm text-emerald-600 dark:text-emerald-400">
-            {notice}
-          </div>
-        ) : null}
+        <AdminNotice message={notice} />
         <form
           className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5"
           onSubmit={save}
@@ -285,8 +282,14 @@ export function CompanySettings() {
             </Button>
           </div>
         </form>
-        <PaymentSettings key={`payment-${refreshVersion}`} disabled={loading || isSubscriptionLocked} />
-        <CustomFieldManager key={`fields-${refreshVersion}`} disabled={loading || isSubscriptionLocked} />
+        <PaymentSettings
+          key={`payment-${refreshVersion}`}
+          disabled={loading || isSubscriptionLocked}
+        />
+        <CustomFieldManager
+          key={`fields-${refreshVersion}`}
+          disabled={loading || isSubscriptionLocked}
+        />
       </div>
     </AppShell>
   )

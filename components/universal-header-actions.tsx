@@ -2,6 +2,7 @@
 import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { Plus, Upload, Download, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -20,13 +21,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog"
 import { sessionFetch } from "@/lib/session-navigation"
 import { createTargets, type StaffRole } from "@/lib/admin-actions"
 import type { EntityExport } from "@/components/entity-export-context"
@@ -66,11 +60,6 @@ export function UniversalHeaderActions({
   const pathname = usePathname()
   const fileInput = React.useRef<HTMLInputElement>(null)
   const [busy, setBusy] = React.useState<"import" | "export" | null>(null)
-  const [message, setMessage] = React.useState<{
-    title: string
-    text: string
-    issues?: { row: number; message: string }[]
-  } | null>(null)
   const canOperate = ready && role !== "driver"
   React.useEffect(() => {
     if (!ready || !onCreate || createDisabled) return
@@ -111,26 +100,24 @@ export function UniversalHeaderActions({
         !Number.isInteger(result.skipped)
       )
         throw new Error("Некорректный ответ импорта.")
-      setMessage({
-        title: "Импорт завершён",
-        text: `Создано: ${result.created}. Обновлено: ${result.updated}. Пропущено: ${result.skipped}.`,
-        issues: Array.isArray(result.issues)
-          ? result.issues.filter(
-              (issue: unknown): issue is { row: number; message: string } =>
-                typeof issue === "object" &&
-                issue !== null &&
-                "row" in issue &&
-                Number.isInteger(issue.row) &&
-                "message" in issue &&
-                typeof issue.message === "string"
-            )
-          : [],
+      const issues = Array.isArray(result.issues)
+        ? result.issues.filter(
+            (issue: unknown): issue is { row: number; message: string } =>
+              typeof issue === "object" &&
+              issue !== null &&
+              "row" in issue &&
+              Number.isInteger(issue.row) &&
+              "message" in issue &&
+              typeof issue.message === "string"
+          )
+        : []
+      toast.success("Импорт завершён", {
+        description: `Создано: ${result.created}. Обновлено: ${result.updated}. Пропущено: ${result.skipped}.${issues.length ? ` Ошибок в строках: ${issues.length}.` : ""}`,
       })
       await onImported()
     } catch (error) {
-      setMessage({
-        title: "Ошибка импорта",
-        text:
+      toast.error("Ошибка импорта", {
+        description:
           error instanceof Error
             ? error.message
             : "Не удалось импортировать клиентов.",
@@ -152,10 +139,12 @@ export function UniversalHeaderActions({
       })
       if (!response.ok) throw new Error("Не удалось выгрузить базу клиентов.")
       download(await response.blob(), "vivat-customers.xlsx")
+      toast.success("Экспорт готов", {
+        description: "Файл клиентов сохранён в формате XLSX.",
+      })
     } catch (error) {
-      setMessage({
-        title: "Ошибка экспорта",
-        text:
+      toast.error("Ошибка экспорта", {
+        description:
           error instanceof Error
             ? error.message
             : "Не удалось выгрузить клиентов.",
@@ -290,28 +279,6 @@ export function UniversalHeaderActions({
           if (file) void importCustomers(file)
         }}
       />
-      <Dialog
-        open={message !== null}
-        onOpenChange={(open) => {
-          if (!open) setMessage(null)
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{message?.title}</DialogTitle>
-            <DialogDescription>{message?.text}</DialogDescription>
-          </DialogHeader>
-          {!!message?.issues?.length && (
-            <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
-              {message.issues.map((issue, index) => (
-                <li key={index}>
-                  Строка {issue.row}: {issue.message}
-                </li>
-              ))}
-            </ul>
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   )
 }

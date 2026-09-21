@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { AdminNotice } from "@/components/admin-notice"
 
 import { AppShell } from "@/components/app-shell"
 import {
@@ -516,14 +517,7 @@ export function TeamManager() {
             {error}
           </div>
         ) : null}
-        {notice ? (
-          <div
-            className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-400"
-            role="status"
-          >
-            {notice}
-          </div>
-        ) : null}
+        <AdminNotice message={notice} />
         <EntityDataView
           collection="team"
           filters={[

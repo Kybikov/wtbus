@@ -3,6 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { AdminNotice } from "@/components/admin-notice"
 
 import { Button } from "@/components/ui/button"
 
@@ -158,14 +159,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           {error}
         </div>
       ) : null}
-      {notice ? (
-        <div
-          className="mt-5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400"
-          role="status"
-        >
-          {notice}
-        </div>
-      ) : null}
+      <AdminNotice message={notice} />
       <div className="mt-6 grid gap-5 sm:grid-cols-2">
         {fields.map((field) => (
           <label className="text-sm font-semibold" key={field.key}>
@@ -220,9 +214,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           type="checkbox"
         />
         <span>
-          <span className="font-semibold">
-            Включить оплату в Telegram-боте
-          </span>
+          <span className="font-semibold">Включить оплату в Telegram-боте</span>
           <span className="mt-1 block leading-5 text-muted-foreground">
             Клиент сам выбирает банк для перевода по реквизитам или оплату
             наличными при посадке.

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { AdminNotice } from "@/components/admin-notice"
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
@@ -161,14 +162,7 @@ export function PersonalProfile() {
             {error}
           </p>
         ) : null}
-        {notice ? (
-          <p
-            role="status"
-            className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm"
-          >
-            {notice}
-          </p>
-        ) : null}
+        <AdminNotice message={notice} />
         <div className="grid items-start gap-5 xl:grid-cols-2">
           <SettingsFormSection
             title="Личные данные"

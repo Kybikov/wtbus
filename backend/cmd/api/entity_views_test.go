@@ -34,14 +34,14 @@ func TestEntityViewNewCollections(t *testing.T) {
 
 func TestEntityViewValidation(t *testing.T) {
 	valid := func() entityViewInput {
-		return entityViewInput{Name: "  Active  ", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name", "custom:test"}, Filters: map[string]string{"status": "cash_on_boarding", "date": "2026-09-21"}}}
+		return entityViewInput{Name: "  Active  ", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name", "custom:test"}, Filters: map[string]string{"status": "cash_on_boarding", "date": "2026-09-21", "source": "web", "tripStatus": "assigned", "paymentMethod": "cash_on_boarding"}}}
 	}
 	input := valid()
 	if !validateEntityView("bookings", &input) || input.Name != "Active" {
 		t.Fatal("valid config rejected")
 	}
 	for _, change := range []func(*entityViewInput){
-		func(v *entityViewInput) { v.Name = " " }, func(v *entityViewInput) { v.Visibility = "public" }, func(v *entityViewInput) { v.Config.Columns = []string{"name", "name"} }, func(v *entityViewInput) { v.Config.Columns = nil }, func(v *entityViewInput) { v.Config.Filters["date"] = "2026-02-30" }, func(v *entityViewInput) { v.Config.Filters["status"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["unknown"] = "yes" },
+		func(v *entityViewInput) { v.Name = " " }, func(v *entityViewInput) { v.Visibility = "public" }, func(v *entityViewInput) { v.Config.Columns = []string{"name", "name"} }, func(v *entityViewInput) { v.Config.Columns = nil }, func(v *entityViewInput) { v.Config.Filters["date"] = "2026-02-30" }, func(v *entityViewInput) { v.Config.Filters["status"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["source"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["tripStatus"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["paymentMethod"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["unknown"] = "yes" },
 	} {
 		input = valid()
 		change(&input)

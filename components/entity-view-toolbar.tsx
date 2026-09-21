@@ -12,6 +12,7 @@ import {
   Plus,
   Save,
   Users,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -194,238 +195,305 @@ export function EntityViewToolbar<T>({
     }
   }
   const filterCount = Object.values(config.filters).filter(Boolean).length
+  const activeFilters = filters.filter((filter) => config.filters[filter.id])
+  const clearFilter = (id: string) => {
+    const next = { ...config.filters }
+    delete next[id]
+    onChange({ ...config, filters: next })
+  }
+  const filterValueLabel = (filter: EntityFilter<T>) => {
+    const value = config.filters[filter.id]
+    if (!value) return ""
+    if (filter.type === "date") {
+      const [year, month, day] = value.split("-")
+      return year && month && day ? `${day}.${month}.${year}` : value
+    }
+    return String(
+      filter.options?.find((option) => option.value === value)?.label ?? value
+    )
+  }
   return (
     <>
       <div
         role="region"
-        className="workspace-panel flex min-h-[50px] flex-wrap items-center justify-between gap-2 p-2"
+        className="workspace-panel flex min-h-[50px] flex-col gap-2 p-2"
         aria-label="Виды и настройки отображения"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          {extras}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm" className={control} />
-              }
-            >
-              {current?.visibility === "shared" ? (
-                <Users />
-              ) : current ? (
-                <Lock />
-              ) : (
-                <LayoutGrid />
-              )}
-              <span className="max-w-28 truncate sm:max-w-44">
-                {current?.name ?? "По умолчанию"}
-              </span>
-              {dirty ? (
-                <span
-                  aria-label="Есть несохранённые изменения"
-                  className="size-1.5 rounded-full bg-primary"
-                />
-              ) : null}
-              <ChevronDown />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="max-h-80 w-64 overflow-y-auto"
-            >
-              <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => select()}>
-                  По умолчанию
-                </DropdownMenuItem>
-                {(["shared", "private"] as const).map((group) => (
-                  <React.Fragment key={group}>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel>
-                      {group === "shared" ? "Общие виды" : "Мои виды"}
-                    </DropdownMenuLabel>
-                    {views
-                      .filter((view) => view.visibility === group)
-                      .map((view) => (
-                        <DropdownMenuItem
-                          key={view.id}
-                          onClick={() => select(view)}
-                        >
-                          {view.name}
-                          {active === view.id ? " ✓" : ""}
-                        </DropdownMenuItem>
-                      ))}
-                  </React.Fragment>
-                ))}
-                {current?.canEdit ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => open("edit")}>
-                      Настроить и сохранить вид
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => open("delete")}
-                    >
-                      Удалить вид
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            variant="outline"
-            size="sm"
-            className={control}
-            disabled={!scope || busy}
-            onClick={() => open("create")}
-          >
-            <Plus />
-            <span className="sr-only sm:not-sr-only">Создать вид</span>
-          </Button>
-          {current?.canEdit && dirty ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className={control}
-              disabled={busy}
-              onClick={() => open("edit")}
-            >
-              <Save />
-              Сохранить
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm" className={control} />
-              }
-            >
-              <LayoutGrid />
-              {entityModeLabels[config.mode]}
-              <ChevronDown />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Режим отображения</DropdownMenuLabel>
-                {modes.map((mode) => (
-                  <DropdownMenuItem
-                    key={mode}
-                    onClick={() => onChange({ ...config, mode })}
-                  >
-                    {entityModeLabels[mode]}
-                    {mode === config.mode ? " ✓" : ""}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {filters.length ? (
-            <Popover>
-              <PopoverTrigger
+        <div className="flex w-full flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {extras}
+            <DropdownMenu>
+              <DropdownMenuTrigger
                 render={
                   <Button variant="outline" size="sm" className={control} />
                 }
               >
-                <Filter />
-                <span className="sr-only sm:not-sr-only">Фильтры</span>{filterCount ? ` · ${filterCount}` : null}
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="max-w-[calc(100vw-2rem)] rounded-xl"
+                {current?.visibility === "shared" ? (
+                  <Users />
+                ) : current ? (
+                  <Lock />
+                ) : (
+                  <LayoutGrid />
+                )}
+                <span className="max-w-28 truncate sm:max-w-44">
+                  {current?.name ?? "По умолчанию"}
+                </span>
+                {dirty ? (
+                  <span
+                    aria-label="Есть несохранённые изменения"
+                    className="size-1.5 rounded-full bg-primary"
+                  />
+                ) : null}
+                <ChevronDown />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-80 w-64 overflow-y-auto"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">Фильтры</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs"
-                    disabled={!filterCount}
-                    onClick={() => onChange({ ...config, filters: {} })}
-                  >
-                    Сбросить
-                  </Button>
-                </div>
-                {filters.map((filter) => (
-                  <div key={filter.id} className="space-y-1.5">
-                    <label
-                      className="text-xs text-muted-foreground"
-                      htmlFor={`${collection}-filter-${filter.id}`}
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => select()}>
+                    По умолчанию
+                  </DropdownMenuItem>
+                  {(["shared", "private"] as const).map((group) => (
+                    <React.Fragment key={group}>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>
+                        {group === "shared" ? "Общие виды" : "Мои виды"}
+                      </DropdownMenuLabel>
+                      {views
+                        .filter((view) => view.visibility === group)
+                        .map((view) => (
+                          <DropdownMenuItem
+                            key={view.id}
+                            onClick={() => select(view)}
+                          >
+                            {view.name}
+                            {active === view.id ? " ✓" : ""}
+                          </DropdownMenuItem>
+                        ))}
+                    </React.Fragment>
+                  ))}
+                  {current?.canEdit ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => open("edit")}>
+                        Настроить и сохранить вид
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => open("delete")}
+                      >
+                        Удалить вид
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant="outline"
+              size="sm"
+              className={control}
+              disabled={!scope || busy}
+              onClick={() => open("create")}
+            >
+              <Plus />
+              <span className="sr-only sm:not-sr-only">Создать вид</span>
+            </Button>
+            {current?.canEdit && dirty ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className={control}
+                disabled={busy}
+                onClick={() => open("edit")}
+              >
+                <Save />
+                Сохранить
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" className={control} />
+                }
+              >
+                <LayoutGrid />
+                {entityModeLabels[config.mode]}
+                <ChevronDown />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Режим отображения</DropdownMenuLabel>
+                  {modes.map((mode) => (
+                    <DropdownMenuItem
+                      key={mode}
+                      onClick={() => onChange({ ...config, mode })}
                     >
-                      {filter.label}
-                    </label>
-                    {filter.type === "date" ? (
-                      <DatePicker
-                        label={filter.label}
-                        id={`${collection}-filter-${filter.id}`}
-                        value={config.filters[filter.id] ?? ""}
-                        onValueChange={(value) =>
-                          onChange({
-                            ...config,
-                            filters: { ...config.filters, [filter.id]: value },
-                          })
-                        }
-                      />
-                    ) : (
-                      <FieldSelect
-                        aria-label={filter.label}
-                        value={config.filters[filter.id] ?? ""}
-                        onValueChange={(value) =>
-                          onChange({
-                            ...config,
-                            filters: { ...config.filters, [filter.id]: value },
-                          })
-                        }
-                        options={[
-                          { value: "", label: "Все" },
-                          ...(filter.options ?? []),
-                        ]}
-                      />
-                    )}
+                      {entityModeLabels[mode]}
+                      {mode === config.mode ? " ✓" : ""}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {filters.length ? (
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button variant="outline" size="sm" className={control} />
+                  }
+                >
+                  <Filter />
+                  <span className="sr-only sm:not-sr-only">Фильтры</span>
+                  {filterCount ? ` · ${filterCount}` : null}
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="w-80 max-w-[calc(100vw-2rem)] space-y-4 rounded-xl p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">Фильтры</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      disabled={!filterCount}
+                      onClick={() => onChange({ ...config, filters: {} })}
+                    >
+                      Сбросить
+                    </Button>
                   </div>
-                ))}
-              </PopoverContent>
-            </Popover>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm" className={control} />
-              }
-            >
-              <Columns3 />
-              <span className="sr-only sm:not-sr-only">Колонки</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="max-h-80 overflow-y-auto"
-            >
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Видимые колонки</DropdownMenuLabel>
-                {columns.map((column) => (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    checked={config.columns.includes(column.id)}
-                    disabled={
-                      config.columns.length === 1 &&
-                      config.columns.includes(column.id)
-                    }
-                    onCheckedChange={(checked) =>
-                      onChange({
-                        ...config,
-                        columns: checked
-                          ? [...config.columns, column.id]
-                          : config.columns.filter((id) => id !== column.id),
-                      })
-                    }
-                  >
-                    {column.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <p className="text-xs text-muted-foreground">
+                    Условия применяются одновременно. Пустое поле не
+                    ограничивает данные.
+                  </p>
+                  <div className="space-y-3">
+                    {filters.map((filter) => (
+                      <div key={filter.id} className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <label
+                            className="text-xs font-medium text-muted-foreground"
+                            htmlFor={`${collection}-filter-${filter.id}`}
+                          >
+                            {filter.label}
+                          </label>
+                          {config.filters[filter.id] ? (
+                            <Button
+                              aria-label={`Сбросить фильтр ${filter.label}`}
+                              className="size-6 text-muted-foreground"
+                              onClick={() => clearFilter(filter.id)}
+                              size="icon"
+                              variant="ghost"
+                            >
+                              <X className="size-3.5" />
+                            </Button>
+                          ) : null}
+                        </div>
+                        {filter.type === "date" ? (
+                          <DatePicker
+                            label={filter.label}
+                            id={`${collection}-filter-${filter.id}`}
+                            value={config.filters[filter.id] ?? ""}
+                            onValueChange={(value) =>
+                              onChange({
+                                ...config,
+                                filters: {
+                                  ...config.filters,
+                                  [filter.id]: value,
+                                },
+                              })
+                            }
+                          />
+                        ) : (
+                          <FieldSelect
+                            aria-label={filter.label}
+                            value={config.filters[filter.id] ?? ""}
+                            onValueChange={(value) =>
+                              onChange({
+                                ...config,
+                                filters: {
+                                  ...config.filters,
+                                  [filter.id]: value,
+                                },
+                              })
+                            }
+                            options={[
+                              { value: "", label: "Все" },
+                              ...(filter.options ?? []),
+                            ]}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" className={control} />
+                }
+              >
+                <Columns3 />
+                <span className="sr-only sm:not-sr-only">Колонки</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-80 overflow-y-auto"
+              >
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Видимые колонки</DropdownMenuLabel>
+                  {columns.map((column) => (
+                    <DropdownMenuCheckboxItem
+                      key={column.id}
+                      checked={config.columns.includes(column.id)}
+                      disabled={
+                        config.columns.length === 1 &&
+                        config.columns.includes(column.id)
+                      }
+                      onCheckedChange={(checked) =>
+                        onChange({
+                          ...config,
+                          columns: checked
+                            ? [...config.columns, column.id]
+                            : config.columns.filter((id) => id !== column.id),
+                        })
+                      }
+                    >
+                      {column.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+        {activeFilters.length ? (
+          <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-border/70 pt-2">
+            <span className="px-1 text-xs text-muted-foreground">
+              Активные:
+            </span>
+            {activeFilters.map((filter) => (
+              <Button
+                key={filter.id}
+                className="h-7 gap-1.5 rounded-lg px-2 text-xs font-normal"
+                onClick={() => clearFilter(filter.id)}
+                size="sm"
+                variant="secondary"
+              >
+                <span className="text-muted-foreground">{filter.label}:</span>
+                <span className="max-w-44 truncate">
+                  {filterValueLabel(filter)}
+                </span>
+                <X className="size-3" />
+              </Button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {error && !dialog ? (
         <div

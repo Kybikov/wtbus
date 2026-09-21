@@ -3,6 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { AdminNotice } from "@/components/admin-notice"
 import { Input } from "@/components/ui/input"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -873,19 +874,7 @@ export function TripsPlanner() {
         utilities={<ThemeCustomizer />}
       >
         <div className="w-full min-w-0 space-y-5">
-          {notice ? (
-            <div className="flex items-center justify-between rounded-2xl border border-primary/35 bg-primary/10 px-4 py-3 text-sm">
-              <span>{notice}</span>
-              <button
-                aria-label="Закрыть уведомление"
-                className="text-primary"
-                onClick={() => setNotice(null)}
-                type="button"
-              >
-                ×
-              </button>
-            </div>
-          ) : null}
+          <AdminNotice message={notice} />
           <EntityDataView
             collection="trips"
             columns={columns}

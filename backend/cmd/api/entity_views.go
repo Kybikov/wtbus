@@ -104,6 +104,15 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 			if key == "status" {
 				valid = value == "pending" || value == "awaiting_payment" || value == "cash_on_boarding" || value == "confirmed" || value == "cancelled" || value == "completed" || value == "expired"
 			}
+			if key == "source" {
+				valid = value == "telegram" || value == "dispatcher" || value == "import" || value == "web"
+			}
+			if key == "tripStatus" {
+				valid = value == "draft" || value == "new" || value == "assigned" || value == "in_progress" || value == "completed" || value == "cancelled"
+			}
+			if key == "paymentMethod" {
+				valid = value == "cash_on_boarding" || value == "cash" || value == "bank_transfer" || value == "none"
+			}
 		case "routes", "fleet":
 			valid = key == "active" && (value == "active" || value == "inactive")
 		case "requests":
