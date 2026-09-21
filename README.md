@@ -66,9 +66,9 @@ sh deploy/backup-postgres.sh /srv/vivat-backups/vivat-$(date +%F).dump
 
 The helper refuses to overwrite a dump and writes it with owner-only permissions. Restore in a separate verification database first with `pg_restore --clean --if-exists --no-owner`.
 
-### GitHub deployment
+### Production deployment
 
-The repository contains `.github/workflows/deploy.yml`. A push to `main` (or **Run workflow**) securely synchronizes the source to the server and runs the production Compose stack. It uses `docker-compose.vps.yml`, so it is ready for the existing Coolify/Traefik VPS proxy and does not bind a second process to ports 80/443. Create a protected GitHub Environment named `production` and add these GitHub Secrets:
+Coolify is the standard production deployment path and deploys the application after a push to `main`. The repository keeps `.github/workflows/deploy.yml` only as a manual SSH fallback; it never runs automatically on push. If that fallback is needed, use **Run workflow**, create a protected GitHub Environment named `production`, and add these GitHub Secrets:
 
 - `DEPLOY_HOST` — server hostname or IP;
 - `DEPLOY_USER` — non-root SSH user allowed to run Docker;
@@ -76,7 +76,7 @@ The repository contains `.github/workflows/deploy.yml`. A push to `main` (or **R
 - `DEPLOY_SSH_KEY` — deploy-only private SSH key;
 - `DEPLOY_KNOWN_HOSTS` — the exact server host key from `ssh-keyscan`, reviewed before saving.
 
-The workflow deliberately excludes `.env.production` from synchronization, so server credentials and Telegram tokens are never copied from GitHub. The first deployment directory and its private environment file must be created on the server manually; subsequent deployments are one push to `main`.
+The fallback workflow deliberately excludes `.env.production` from synchronization, so server credentials and Telegram tokens are never copied from GitHub. The deployment directory and its private environment file must be created on the server manually.
 
 ## Local access and staff roles
 
