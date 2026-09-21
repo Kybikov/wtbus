@@ -19,6 +19,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate deployment configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          missing=""
+          for name in DEPLOY_HOST DEPLOY_KNOWN_HOSTS DEPLOY_PATH DEPLOY_SSH_KEY DEPLOY_USER; do
+            if [ -z "${!name}" ]; then
+              missing="${missing}${missing:+, }${name}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Production configuration incomplete::Missing GitHub Environment secrets: $missing"
+            exit 1
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
