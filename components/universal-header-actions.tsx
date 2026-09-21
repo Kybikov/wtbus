@@ -3,7 +3,6 @@ import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { Plus, Upload, Download, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +10,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuGroup,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
   Tooltip,
@@ -41,45 +44,6 @@ function download(blob: Blob, filename: string) {
   a.download = filename
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-function ActionMenu({
-  label,
-  icon,
-  disabled,
-  children,
-}: {
-  label: string
-  icon: React.ReactNode
-  disabled?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  aria-label={label}
-                  className="size-9 rounded-lg"
-                  size="icon-lg"
-                  variant="ghost"
-                  disabled={disabled}
-                />
-              }
-            />
-          }
-        >
-          {icon}
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="w-64">
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
 }
 export function UniversalHeaderActions({
   role,
@@ -202,88 +166,118 @@ export function UniversalHeaderActions({
   }
   return (
     <>
-      <ActionMenu
-        label="Создать запись"
-        icon={<Plus className="size-4" />}
-        disabled={!canOperate}
-      >
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Создать</DropdownMenuLabel>
-          {createTargets
-            .filter((target) => target.roles.includes(role))
-            .map((target) => (
-              <DropdownMenuItem
-                key={target.href}
-                disabled={target.href === pathname && createDisabled}
-                onClick={() => {
-                  if (target.href === pathname && onCreate) onCreate()
-                  else router.push(target.href + "?create=1")
-                }}
-              >
-                {target.label}
-              </DropdownMenuItem>
-            ))}
-        </DropdownMenuGroup>
-      </ActionMenu>
-      <Separator
-        orientation="vertical"
-        className="mx-1 h-5 data-vertical:self-center"
-      />
-      <ActionMenu
-        label="Импорт"
-        disabled={!canOperate || busy !== null || dataActions?.importing}
-        icon={
-          busy === "import" || dataActions?.importing ? (
-            <Loader2 className="size-4 motion-safe:animate-spin" />
-          ) : (
-            <Upload className="size-4" />
-          )
-        }
-      >
-        <DropdownMenuItem
-          onClick={() =>
-            dataActions ? dataActions.onImport() : fileInput.current?.click()
-          }
-        >
-          Клиенты · CSV / XLSX
-        </DropdownMenuItem>
-      </ActionMenu>
-      <ActionMenu
-        label="Экспорт"
-        disabled={!canOperate || busy !== null || dataActions?.exporting}
-        icon={
-          busy === "export" || dataActions?.exporting ? (
-            <Loader2 className="size-4 motion-safe:animate-spin" />
-          ) : (
-            <Download className="size-4" />
-          )
-        }
-      >
-        {viewExport && (
-          <DropdownMenuItem
-            disabled={viewExport.loading || !viewExport.rows}
-            onClick={() =>
-              download(
-                new Blob([viewExport.csv], { type: "text/csv;charset=utf-8" }),
-                viewExport.filename
-              )
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    aria-label="Создать или перенести данные"
+                    className="size-9 rounded-lg"
+                    size="icon-lg"
+                    variant="ghost"
+                    disabled={!canOperate}
+                  />
+                }
+              />
             }
           >
-            <span>
-              Текущий вид · CSV
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {viewExport.rows} строк · видимые колонки
-                {viewExport.total > viewExport.loaded
-                  ? " · загруженная часть"
-                  : ""}
+            {busy || dataActions?.importing || dataActions?.exporting ? (
+              <Loader2 className="size-4 motion-safe:animate-spin" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+          </TooltipTrigger>
+          <TooltipContent>
+            Создать, импортировать или экспортировать
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-72">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Создать</DropdownMenuLabel>
+            {createTargets
+              .filter((target) => target.roles.includes(role))
+              .map((target) => (
+                <DropdownMenuItem
+                  key={target.href}
+                  disabled={target.href === pathname && createDisabled}
+                  onClick={() => {
+                    if (target.href === pathname && onCreate) onCreate()
+                    else router.push(target.href + "?create=1")
+                  }}
+                >
+                  <Plus className="size-4 text-muted-foreground" />
+                  {target.label}
+                </DropdownMenuItem>
+              ))}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Данные</DropdownMenuLabel>
+            <DropdownMenuItem
+              disabled={busy !== null || dataActions?.importing}
+              onClick={() =>
+                dataActions
+                  ? dataActions.onImport()
+                  : fileInput.current?.click()
+              }
+            >
+              {busy === "import" || dataActions?.importing ? (
+                <Loader2 className="size-4 motion-safe:animate-spin" />
+              ) : (
+                <Upload className="size-4" />
+              )}
+              <span>
+                Импорт
+                <span className="block text-xs text-muted-foreground">
+                  Клиенты · CSV / XLSX
+                </span>
               </span>
-            </span>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onClick={() => void exportCustomers()}>
-          Клиенты · XLSX (вся база)
-        </DropdownMenuItem>
-      </ActionMenu>
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger
+                disabled={busy !== null || dataActions?.exporting}
+              >
+                {busy === "export" || dataActions?.exporting ? (
+                  <Loader2 className="size-4 motion-safe:animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                Экспорт
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-72">
+                {viewExport && (
+                  <DropdownMenuItem
+                    disabled={viewExport.loading || !viewExport.rows}
+                    onClick={() =>
+                      download(
+                        new Blob([viewExport.csv], {
+                          type: "text/csv;charset=utf-8",
+                        }),
+                        viewExport.filename
+                      )
+                    }
+                  >
+                    <span>
+                      Текущий вид · CSV
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {viewExport.rows} строк · видимые колонки
+                        {viewExport.total > viewExport.loaded
+                          ? " · загруженная часть"
+                          : ""}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => void exportCustomers()}>
+                  Клиенты · XLSX (вся база)
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <input
         ref={fileInput}
         type="file"

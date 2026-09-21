@@ -20,10 +20,10 @@ export default function EntityDetailContent({
       initial={reduced ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
-      className="grid min-w-0 gap-3 lg:grid-cols-2"
+      className="grid min-h-[calc(100dvh-5.5rem)] min-w-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]"
     >
-      <Card className="workspace-panel min-w-0 shadow-none lg:col-span-2">
-        <CardHeader>
+      <Card className="workspace-panel min-w-0 shadow-none">
+        <CardHeader className="border-b border-border/70">
           <CardTitle>
             <h2 className="flex items-center gap-2">
               <Database aria-hidden className="size-4 text-muted-foreground" />
@@ -33,28 +33,30 @@ export default function EntityDetailContent({
         </CardHeader>
         <CardContent className="min-w-0">{overview}</CardContent>
       </Card>
-      <Card className="workspace-panel min-w-0 shadow-none">
-        <CardHeader>
-          <CardTitle>
-            <h2 className="flex items-center gap-2">
-              <Link2 aria-hidden className="size-4 text-muted-foreground" />
-              Связанные записи
-            </h2>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="min-w-0">{related}</CardContent>
-      </Card>
-      <Card className="workspace-panel min-w-0 shadow-none">
-        <CardHeader>
-          <CardTitle>
-            <h2 className="flex items-center gap-2">
-              <History aria-hidden className="size-4 text-muted-foreground" />
-              История действий
-            </h2>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="min-w-0">{activity}</CardContent>
-      </Card>
+      <div className="grid min-w-0 gap-3 lg:grid-rows-[minmax(18rem,auto)_minmax(14rem,1fr)]">
+        <Card className="workspace-panel min-w-0 shadow-none">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle>
+              <h2 className="flex items-center gap-2">
+                <Link2 aria-hidden className="size-4 text-muted-foreground" />
+                Связанные записи
+              </h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="min-w-0">{related}</CardContent>
+        </Card>
+        <Card className="workspace-panel min-w-0 shadow-none">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle>
+              <h2 className="flex items-center gap-2">
+                <History aria-hidden className="size-4 text-muted-foreground" />
+                История действий
+              </h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="min-w-0">{activity}</CardContent>
+        </Card>
+      </div>
     </motion.section>
   )
 }

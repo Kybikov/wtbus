@@ -32,9 +32,10 @@ var entityDetailQueries = map[string]string{
 }
 
 type entityRelation struct {
-	ID     string `json:"id"`
-	Entity string `json:"entity"`
-	Label  string `json:"label"`
+	ID     string          `json:"id"`
+	Entity string          `json:"entity"`
+	Label  string          `json:"label"`
+	Meta   json.RawMessage `json:"meta,omitempty"`
 }
 type entityActivity struct {
 	Action    string `json:"action"`
@@ -90,13 +91,13 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 	var relationQuery string
 	switch entity {
 	case "customers":
-		relationQuery = `SELECT b.id::text,'bookings',t.origin_name||' → '||t.destination_name FROM bookings b JOIN trips t ON t.id=b.trip_id AND t.tenant_id=b.tenant_id WHERE b.customer_id=$1 AND b.tenant_id=$2 ORDER BY b.created_at DESC LIMIT 20`
+		relationQuery = `SELECT b.id::text,'bookings',t.origin_name||' → '||t.destination_name,jsonb_strip_nulls(jsonb_build_object('status',b.status,'seats',b.seats,'starts_at',t.starts_at,'source',b.source)) FROM bookings b JOIN trips t ON t.id=b.trip_id AND t.tenant_id=b.tenant_id WHERE b.customer_id=$1 AND b.tenant_id=$2 ORDER BY b.created_at DESC LIMIT 20`
 	case "trips":
-		relationQuery = `SELECT b.id::text,'bookings',coalesce(c.full_name,c.phone_e164) FROM bookings b JOIN customers c ON c.id=b.customer_id AND c.tenant_id=b.tenant_id WHERE b.trip_id=$1 AND b.tenant_id=$2 ORDER BY b.created_at DESC LIMIT 20`
+		relationQuery = `SELECT b.id::text,'bookings',coalesce(c.full_name,c.phone_e164),jsonb_strip_nulls(jsonb_build_object('status',b.status,'seats',b.seats,'source',b.source,'created_at',b.created_at)) FROM bookings b JOIN customers c ON c.id=b.customer_id AND c.tenant_id=b.tenant_id WHERE b.trip_id=$1 AND b.tenant_id=$2 ORDER BY b.created_at DESC LIMIT 20`
 	case "routes":
-		relationQuery = `SELECT id::text,'trips',origin_name||' → '||destination_name FROM trips WHERE route_id=$1 AND tenant_id=$2 ORDER BY starts_at DESC LIMIT 20`
+		relationQuery = `SELECT t.id::text,'trips',t.origin_name||' → '||t.destination_name,jsonb_strip_nulls(jsonb_build_object('status',t.status,'occupied_seats',COALESCE((SELECT sum(b.seats) FROM bookings b WHERE b.trip_id=t.id AND (b.status IN ('pending','cash_on_boarding','confirmed','completed') OR (b.status='awaiting_payment' AND b.payment_hold_expires_at>now()))),0),'capacity',t.capacity,'starts_at',t.starts_at)) FROM trips t WHERE t.route_id=$1 AND t.tenant_id=$2 ORDER BY t.starts_at DESC LIMIT 20`
 	case "fleet":
-		relationQuery = `SELECT id::text,'trips',origin_name||' → '||destination_name FROM trips WHERE vehicle_id=$1 AND tenant_id=$2 ORDER BY starts_at DESC LIMIT 20`
+		relationQuery = `SELECT t.id::text,'trips',t.origin_name||' → '||t.destination_name,jsonb_strip_nulls(jsonb_build_object('status',t.status,'occupied_seats',COALESCE((SELECT sum(b.seats) FROM bookings b WHERE b.trip_id=t.id AND (b.status IN ('pending','cash_on_boarding','confirmed','completed') OR (b.status='awaiting_payment' AND b.payment_hold_expires_at>now()))),0),'capacity',t.capacity,'starts_at',t.starts_at)) FROM trips t WHERE t.vehicle_id=$1 AND t.tenant_id=$2 ORDER BY t.starts_at DESC LIMIT 20`
 	}
 	if relationQuery != "" {
 		rows, err := app.db.Query(r.Context(), relationQuery, id, company.ID)
@@ -106,7 +107,7 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 		}
 		for rows.Next() {
 			var ref entityRelation
-			if err = rows.Scan(&ref.ID, &ref.Entity, &ref.Label); err != nil {
+			if err = rows.Scan(&ref.ID, &ref.Entity, &ref.Label, &ref.Meta); err != nil {
 				rows.Close()
 				app.publicFailure(w, err)
 				return

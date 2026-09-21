@@ -12,5 +12,11 @@ export default async function Page({
     entity === "cash-balances"
   )
     notFound()
-  return <EntityDetailPage entity={entity as EntityCollection} id={id} />
+  return (
+    <EntityDetailPage
+      key={`${entity}:${id}`}
+      entity={entity as EntityCollection}
+      id={id}
+    />
+  )
 }

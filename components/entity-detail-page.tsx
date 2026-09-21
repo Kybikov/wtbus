@@ -5,6 +5,10 @@ import { Copy, ArrowUpRight, List } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import EntityDetailContent from "@/components/app-dialog-6"
 import EntityActivityTimeline from "@/components/billing-8"
+import {
+  EntityRelatedRecords,
+  type EntityRelatedRecord,
+} from "@/components/entity-related-records"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -22,7 +26,7 @@ import type { EntityCollection } from "@/lib/entity-views"
 type Detail = {
   item: Record<string, unknown>
   timezone: string
-  related: { id: string; entity: EntityCollection; label: string }[]
+  related: EntityRelatedRecord[]
   activity: { action: string; actor: string; kind: string; createdAt: string }[]
 }
 function isDetail(value: unknown): value is Detail {
@@ -38,7 +42,11 @@ function isDetail(value: unknown): value is Detail {
       (ref) =>
         typeof ref.id === "string" &&
         typeof ref.label === "string" &&
-        ref.entity in entityNames
+        ref.entity in entityNames &&
+        (!("meta" in ref) ||
+          (typeof ref.meta === "object" &&
+            ref.meta !== null &&
+            !Array.isArray(ref.meta)))
     ) &&
     Array.isArray(d.activity) &&
     d.activity.every(
@@ -66,9 +74,7 @@ export function EntityDetailPage({
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
-    setDetail(null)
     setLoading(true)
-    setCopied(false)
     setError(null)
     try {
       const response = await sessionFetch(
@@ -81,7 +87,6 @@ export function EntityDetailPage({
       if (!controller.signal.aborted) setDetail(payload)
     } catch (reason) {
       if (controller.signal.aborted) return
-      setDetail(null)
       setError(
         reason instanceof Error
           ? reason.message
@@ -192,20 +197,24 @@ export function EntityDetailPage({
       : String(value)
   }
   const relations = detail
-    ? [
-        ...Object.entries(relationFields).flatMap(([key, collection]) =>
-          typeof item?.[key] === "string"
-            ? [
-                {
-                  id: String(item[key]),
-                  entity: collection,
-                  label: entityNames[collection],
-                },
-              ]
-            : []
-        ),
-        ...detail.related,
-      ]
+    ? Array.from(
+        new Map(
+          [
+            ...Object.entries(relationFields).flatMap(([key, collection]) =>
+              typeof item?.[key] === "string"
+                ? [
+                    {
+                      id: String(item[key]),
+                      entity: collection,
+                      label: entityNames[collection],
+                    },
+                  ]
+                : []
+            ),
+            ...detail.related,
+          ].map((relation) => [`${relation.entity}:${relation.id}`, relation])
+        ).values()
+      )
     : []
   return (
     <AppShell
@@ -256,7 +265,7 @@ export function EntityDetailPage({
           </Button>
         </div>
       ) : null}
-      {loading ? (
+      {loading && !detail ? (
         <div
           className="grid gap-3 lg:grid-cols-2"
           aria-label="Загрузка деталей"
@@ -269,36 +278,39 @@ export function EntityDetailPage({
       ) : detail ? (
         <EntityDetailContent
           overview={
-            <dl className="grid min-w-0 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <dl className="min-w-0 divide-y divide-border/70">
               {Object.entries(detail.item)
                 .filter(
                   ([key]) => key !== "custom_data" && key !== "last_location"
                 )
                 .map(([key, value]) => (
-                  <div key={key} className="min-w-0">
-                    <dt className="mb-1 text-xs text-muted-foreground">
+                  <div
+                    key={key}
+                    className="grid min-w-0 gap-1.5 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(8rem,0.38fr)_minmax(0,1fr)] sm:gap-5"
+                  >
+                    <dt className="text-xs leading-5 text-muted-foreground">
                       {entityFieldLabels[key] ??
                         (relationFields[key]
                           ? entityNames[relationFields[key]]
                           : key.replaceAll("_", " "))}
                     </dt>
-                    <dd className="text-sm font-medium [overflow-wrap:anywhere] break-words">
+                    <dd className="text-sm leading-5 font-medium [overflow-wrap:anywhere] break-words">
                       {fieldValue(key, value)}
                     </dd>
                   </div>
                 ))}
               {detail.item.custom_data &&
               Object.keys(detail.item.custom_data as object).length ? (
-                <div className="col-span-full">
-                  <dt className="mb-2 text-sm font-semibold">
+                <div className="grid min-w-0 gap-2 py-3 first:pt-0 last:pb-0">
+                  <dt className="text-xs text-muted-foreground">
                     Дополнительные данные и пассажиры
                   </dt>
                   <dd>{fieldValue("custom_data", detail.item.custom_data)}</dd>
                 </div>
               ) : null}
               {detail.item.last_location ? (
-                <div className="col-span-full">
-                  <dt className="mb-2 text-sm font-semibold">
+                <div className="grid min-w-0 gap-2 py-3 first:pt-0 last:pb-0">
+                  <dt className="text-xs text-muted-foreground">
                     Последняя GPS-точка
                   </dt>
                   <dd>
@@ -322,27 +334,11 @@ export function EntityDetailPage({
             </dl>
           }
           related={
-            <div className="space-y-2">
-              {relations.length ? (
-                relations.map((ref, index) => (
-                  <Button
-                    key={`${ref.entity}:${ref.id}:${index}`}
-                    variant="outline"
-                    className="h-auto min-h-9 w-full justify-between text-left whitespace-normal"
-                    render={
-                      <Link href={entityDetailHref(ref.entity, ref.id)} />
-                    }
-                  >
-                    {ref.label}
-                    <ArrowUpRight className="size-4 shrink-0" />
-                  </Button>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Связанных записей пока нет.
-                </p>
-              )}
-            </div>
+            <EntityRelatedRecords
+              ownerEntity={entity}
+              records={relations}
+              timezone={detail.timezone}
+            />
           }
           activity={
             <EntityActivityTimeline

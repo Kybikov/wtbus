@@ -107,6 +107,9 @@ func TestEntityDetailsDatabasePrivacyAndRelations(t *testing.T) {
 			if entity == "customers" && (len(payload.Related) != 1 || payload.Related[0].ID != booking || len(payload.Activity) != 1) {
 				t.Fatal("related records/activity are missing or cross-tenant")
 			}
+			if entity == "customers" && (!strings.Contains(string(payload.Related[0].Meta), `"status":"cash_on_boarding"`) || !strings.Contains(string(payload.Related[0].Meta), `"starts_at"`)) {
+				t.Fatalf("related record metrics are missing: %s", payload.Related[0].Meta)
+			}
 			if entity == "fleet" && payload.Item["last_location"] == nil {
 				t.Fatal("GPS missing")
 			}
