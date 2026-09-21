@@ -2,7 +2,7 @@
 #
 # Usage (together with the private .env.production file):
 # docker compose --env-file .env.production \
-#   -f docker-compose.production.yml -f docker-compose.vps.yml \
+#   -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.vps.yml \
 #   --profile bot up -d --build --remove-orphans
 #
 # This keeps Vivat's database, Redis, API and web application private to its

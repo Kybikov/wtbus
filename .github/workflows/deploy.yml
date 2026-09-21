@@ -49,8 +49,8 @@ jobs:
       - name: Validate Docker Compose manifests
         run: |
           docker compose config --quiet
-          docker compose --env-file .env.production.example -f docker-compose.production.yml config --quiet
-          docker compose --env-file .env.production.example -f docker-compose.production.yml -f docker-compose.vps.yml config --quiet
+          docker compose --env-file .env.production.example -f docker-compose.yml -f docker-compose.production.yml config --quiet
+          docker compose --env-file .env.production.example -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.vps.yml config --quiet
 
       - name: Configure SSH
         env:
@@ -79,5 +79,5 @@ jobs:
             --exclude 'node_modules/' \
             --exclude '.next/' \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-          remote_command=$(printf 'cd %q && docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.vps.yml --profile bot up -d --build --remove-orphans' "$DEPLOY_PATH")
+          remote_command=$(printf 'cd %q && docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.vps.yml --profile bot up -d --build --remove-orphans' "$DEPLOY_PATH")
           printf '%s\n' "$remote_command" | ssh "$DEPLOY_USER@$DEPLOY_HOST" sh -s

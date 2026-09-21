@@ -4,13 +4,28 @@ services:
 
   redis:
     ports: !reset []
+    command:
+      [
+        "sh",
+        "-c",
+        'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"',
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}
+    healthcheck:
+      test:
+        ["CMD-SHELL", 'redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping']
 
   api:
     ports: !reset []
     environment:
-      DATABASE_URL: ${VIVAT_DATABASE_URL:?Set VIVAT_DATABASE_URL in the production environment}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}@redis:6379/0
       CORS_ORIGIN: https://${VIVAT_DOMAIN:-vivat.wtmelon.store}
       WS_ALLOWED_ORIGINS: https://${VIVAT_DOMAIN:-vivat.wtmelon.store}
+
+  bot:
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}@redis:6379/0
 
   web:
     build:

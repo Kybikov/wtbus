@@ -37,7 +37,7 @@ fi
 
 cd "$project_root"
 umask 077
-docker compose --env-file .env.production -f docker-compose.production.yml exec -T postgres \
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml exec -T postgres \
   sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > "$output_path"
 
 if [ ! -s "$output_path" ]; then
