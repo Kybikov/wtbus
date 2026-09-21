@@ -13,10 +13,23 @@ import (
 )
 
 type entityViewConfig struct {
-	Mode    string             `json:"mode"`
-	Columns []string           `json:"columns"`
-	Filters map[string]string  `json:"filters"`
-	Metrics []entityViewMetric `json:"metrics,omitempty"`
+	Mode          string                  `json:"mode"`
+	Columns       []string                `json:"columns"`
+	Filters       map[string]string       `json:"filters"`
+	Metrics       []entityViewMetric      `json:"metrics,omitempty"`
+	ColumnWidths  map[string]int          `json:"columnWidths,omitempty"`
+	PinnedColumns entityViewPinnedColumns `json:"pinnedColumns,omitempty"`
+	Sort          *entityViewSort         `json:"sort,omitempty"`
+}
+
+type entityViewPinnedColumns struct {
+	Left  []string `json:"left"`
+	Right []string `json:"right"`
+}
+
+type entityViewSort struct {
+	ColumnID  string `json:"columnId"`
+	Direction string `json:"direction"`
 }
 
 type entityViewMetric struct {
@@ -59,6 +72,23 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 			return false
 		}
 		seen[column] = true
+	}
+	for column, width := range input.Config.ColumnWidths {
+		if !seen[column] || width < 96 || width > 720 {
+			return false
+		}
+	}
+	pinned := map[string]bool{}
+	for _, columns := range [][]string{input.Config.PinnedColumns.Left, input.Config.PinnedColumns.Right} {
+		for _, column := range columns {
+			if !seen[column] || pinned[column] {
+				return false
+			}
+			pinned[column] = true
+		}
+	}
+	if input.Config.Sort != nil && (!seen[input.Config.Sort.ColumnID] || (input.Config.Sort.Direction != "asc" && input.Config.Sort.Direction != "desc")) {
+		return false
 	}
 	if len(input.Config.Metrics) > 12 {
 		return false

@@ -5,6 +5,13 @@ import { sessionFetch } from "@/lib/session-navigation"
 import { adminControlClassName } from "@/lib/admin-ui"
 import {
   ChevronDown,
+  CheckSquare2,
+  CalendarDays,
+  GalleryHorizontal,
+  KanbanSquare,
+  List,
+  Rows3,
+  Table2,
   Columns3,
   Filter,
   LayoutGrid,
@@ -51,6 +58,17 @@ import {
 } from "@/lib/entity-views"
 
 const control = adminControlClassName
+const modeIcons: Record<
+  EntityViewMode,
+  React.ComponentType<{ className?: string }>
+> = {
+  table: Table2,
+  list: List,
+  kanban: KanbanSquare,
+  calendar: CalendarDays,
+  gallery: GalleryHorizontal,
+  schedule: Rows3,
+}
 type Props<T> = {
   extras?: React.ReactNode
   collection: EntityCollection
@@ -61,6 +79,11 @@ type Props<T> = {
   columns: { id: string; label: string }[]
   filters: EntityFilter<T>[]
   ready: boolean
+  bulkActions?: React.ReactNode
+  selectedCount?: number
+  onClearSelection?: () => void
+  filterRequest?: string | null
+  onFilterRequestHandled?: () => void
 }
 
 export function EntityViewToolbar<T>({
@@ -73,6 +96,11 @@ export function EntityViewToolbar<T>({
   columns,
   filters,
   ready,
+  bulkActions,
+  selectedCount = 0,
+  onClearSelection,
+  filterRequest,
+  onFilterRequestHandled,
 }: Props<T>) {
   const [views, setViews] = React.useState<SavedEntityView[]>([])
   const [active, setActive] = React.useState<string>("")
@@ -85,6 +113,7 @@ export function EntityViewToolbar<T>({
   >(null)
   const [name, setName] = React.useState("")
   const [visibility, setVisibility] = React.useState("private")
+  const [filtersOpen, setFiltersOpen] = React.useState(false)
   const applyRef = React.useRef(onChange)
   React.useEffect(() => {
     applyRef.current = onChange
@@ -314,13 +343,47 @@ export function EntityViewToolbar<T>({
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {selectedCount ? (
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button variant="outline" size="sm" className={control} />
+                  }
+                >
+                  <CheckSquare2 />
+                  Выбрано · {selectedCount}
+                  <ChevronDown />
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="w-auto min-w-56 space-y-2 rounded-xl p-2"
+                >
+                  <p className="px-2 py-1 text-xs text-muted-foreground">
+                    Действия с выбранными
+                  </p>
+                  <div className="flex flex-col gap-1 [&_button]:w-full [&_button]:justify-start">
+                    {bulkActions}
+                    <Button
+                      onClick={onClearSelection}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <X />
+                      Снять выбор
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
                   <Button variant="outline" size="sm" className={control} />
                 }
               >
-                <LayoutGrid />
+                {React.createElement(modeIcons[config.mode], {
+                  className: "size-4",
+                })}
                 {entityModeLabels[config.mode]}
                 <ChevronDown />
               </DropdownMenuTrigger>
@@ -332,6 +395,9 @@ export function EntityViewToolbar<T>({
                       key={mode}
                       onClick={() => onChange({ ...config, mode })}
                     >
+                      {React.createElement(modeIcons[mode], {
+                        className: "size-4",
+                      })}
                       {entityModeLabels[mode]}
                       {mode === config.mode ? " ✓" : ""}
                     </DropdownMenuItem>
@@ -340,7 +406,13 @@ export function EntityViewToolbar<T>({
               </DropdownMenuContent>
             </DropdownMenu>
             {filters.length ? (
-              <Popover>
+              <Popover
+                open={filtersOpen || Boolean(filterRequest)}
+                onOpenChange={(open) => {
+                  setFiltersOpen(open)
+                  if (!open) onFilterRequestHandled?.()
+                }}
+              >
                 <PopoverTrigger
                   render={
                     <Button variant="outline" size="sm" className={control} />
@@ -372,7 +444,18 @@ export function EntityViewToolbar<T>({
                   </p>
                   <div className="space-y-3">
                     {filters.map((filter) => (
-                      <div key={filter.id} className="space-y-1.5">
+                      <div
+                        key={filter.id}
+                        className="space-y-1.5"
+                        ref={(node) => {
+                          if (!node || filterRequest !== filter.id) return
+                          queueMicrotask(() =>
+                            node
+                              .querySelector<HTMLElement>("button,input")
+                              ?.focus()
+                          )
+                        }}
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <label
                             className="text-xs font-medium text-muted-foreground"

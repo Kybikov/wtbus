@@ -8,6 +8,20 @@ import { createPortal } from "react-dom"
 import { serializeViewCsv } from "@/lib/admin-actions"
 import { EntityExportContext } from "@/components/entity-export-context"
 import { EntityFooterContext } from "@/components/entity-footer-context"
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  Eye,
+  Filter,
+  GripVertical,
+  PanelLeft,
+  PanelRight,
+  Pencil,
+  PinOff,
+  Settings2,
+  Trash2,
+  X,
+} from "lucide-react"
 
 import ReactBitsKanban, {
   type ReactBitsKanbanColumn,
@@ -23,17 +37,11 @@ import {
   ContextMenuItem,
   ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Table,
   TableBody,
@@ -57,6 +65,12 @@ import {
   type EntityViewMode,
 } from "@/lib/entity-views"
 import { cn } from "@/lib/utils"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export type { EntityViewMode } from "@/lib/entity-views"
 
@@ -68,6 +82,7 @@ export type EntityColumn<T> = {
   defaultVisible?: boolean
   className?: string
   metric?: Omit<MetricField<T>, "id" | "label">
+  sortValue?: (item: T) => string | number | Date | null | undefined
 }
 
 export type EntityAction<T> = {
@@ -75,6 +90,7 @@ export type EntityAction<T> = {
   onSelect: (item: T) => void
   destructive?: boolean
   disabled?: (item: T) => boolean
+  icon?: React.ComponentType<{ className?: string }>
 }
 
 type Props<T> = {
@@ -134,11 +150,65 @@ function EntityMenu<T>({
             onClick={() => action.onSelect(item)}
             variant={action.destructive ? "destructive" : "default"}
           >
+            {React.createElement(action.icon ?? actionIcon(action.label), {
+              className: "size-4",
+            })}
             {action.label}
           </ContextMenuItem>
         ))}
       </ContextMenuGroup>
     </ContextMenuContent>
+  )
+}
+
+function actionIcon(label: string) {
+  const value = label.toLocaleLowerCase("ru")
+  if (value.includes("удал") || value.includes("отмен")) return Trash2
+  if (value.includes("редакт") || value.includes("измен")) return Pencil
+  if (value.includes("откры") || value.includes("детал")) return Eye
+  return Settings2
+}
+
+function EntityActionButtons<T>({
+  item,
+  label,
+  actions,
+}: {
+  item: T
+  label: string
+  actions: EntityAction<T>[]
+}) {
+  return (
+    <TooltipProvider>
+      <div className="flex items-center justify-end gap-1">
+        {actions.map((action) => {
+          const Icon = action.icon ?? actionIcon(action.label)
+          return (
+            <Tooltip key={action.label}>
+              <TooltipTrigger
+                render={
+                  <Button
+                    aria-label={`${action.label}: ${label}`}
+                    className={cn(
+                      "size-8",
+                      action.destructive &&
+                        "text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    )}
+                    disabled={action.disabled?.(item)}
+                    onClick={() => action.onSelect(item)}
+                    size="icon"
+                    variant="ghost"
+                  />
+                }
+              >
+                <Icon className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent>{action.label}</TooltipContent>
+            </Tooltip>
+          )
+        })}
+      </div>
+    </TooltipProvider>
   )
 }
 
@@ -199,6 +269,19 @@ export function EntityDataView<T>({
           .map((column) => column.id)
       )
   )
+  const [columnOrder, setColumnOrder] = React.useState<string[]>(() =>
+    columns.map((column) => column.id)
+  )
+  const [columnWidths, setColumnWidths] = React.useState<
+    Record<string, number>
+  >({})
+  const [pinnedColumns, setPinnedColumns] = React.useState<{
+    left: string[]
+    right: string[]
+  }>({ left: [], right: [] })
+  const [sort, setSort] = React.useState<EntityViewConfig["sort"]>(null)
+  const [filterRequest, setFilterRequest] = React.useState<string | null>(null)
+  const dragColumn = React.useRef<string | null>(null)
   const [localFilters, setLocalFilters] = React.useState<
     Record<string, string>
   >({})
@@ -218,14 +301,52 @@ export function EntityDataView<T>({
           ]
         : []
   )
-  const items = sourceItems.filter((item) =>
-    filters.every(
-      (filter) =>
-        !values[filter.id] ||
-        !filter.matches ||
-        filter.matches(item, values[filter.id])
+  const items = sourceItems
+    .filter((item) =>
+      filters.every(
+        (filter) =>
+          !values[filter.id] ||
+          !filter.matches ||
+          filter.matches(item, values[filter.id])
+      )
     )
-  )
+    .sort((a, b) => {
+      if (!sort) return 0
+      const column = columns.find((candidate) => candidate.id === sort.columnId)
+      if (!column) return 0
+      const read = (item: T) =>
+        column.sortValue?.(item) ??
+        column.text?.(item) ??
+        column.metric?.getValue(item)
+      const left = read(a)
+      const right = read(b)
+      const normalize = (value: unknown) =>
+        value instanceof Date
+          ? value.getTime()
+          : typeof value === "number"
+            ? value
+            : value &&
+                typeof value === "object" &&
+                "amountMinor" in value &&
+                typeof value.amountMinor === "number"
+              ? value.amountMinor
+              : String(value ?? "")
+      const normalizedLeft = normalize(left)
+      const normalizedRight = normalize(right)
+      const result =
+        typeof normalizedLeft === "number" &&
+        typeof normalizedRight === "number"
+          ? normalizedLeft - normalizedRight
+          : String(normalizedLeft).localeCompare(
+              String(normalizedRight),
+              "ru",
+              {
+                numeric: true,
+                sensitivity: "base",
+              }
+            )
+      return sort.direction === "asc" ? result : -result
+    })
   const defaultColumns = columns
     .filter((column) => column.defaultVisible !== false)
     .map((column) => column.id)
@@ -234,14 +355,18 @@ export function EntityDataView<T>({
     columns: defaultColumns,
     filters: {},
     metrics: [],
+    columnWidths: {},
+    pinnedColumns: { left: [], right: [] },
+    sort: null,
   }
   const config: EntityViewConfig = {
     mode,
-    columns: columns
-      .filter((column) => visible.has(column.id))
-      .map((column) => column.id),
+    columns: columnOrder.filter((id) => visible.has(id)),
     filters: values,
     metrics,
+    columnWidths,
+    pinnedColumns,
+    sort,
   }
   function applyConfig(next: EntityViewConfig) {
     const safe = normalizeViewConfig(
@@ -253,12 +378,25 @@ export function EntityDataView<T>({
     )
     setMode(safe.mode)
     setVisible(new Set(safe.columns))
+    setColumnOrder([
+      ...safe.columns,
+      ...columns
+        .map((column) => column.id)
+        .filter((id) => !safe.columns.includes(id)),
+    ])
+    setColumnWidths(safe.columnWidths ?? {})
+    setPinnedColumns(safe.pinnedColumns ?? { left: [], right: [] })
+    setSort(safe.sort ?? null)
     setMetrics(normalizeMetrics(safe.metrics, metricFields))
     if (onFiltersChange) onFiltersChange(safe.filters)
     else setLocalFilters(safe.filters)
     onSelectedChange(new Set())
   }
-  const visibleColumns = columns.filter((column) => visible.has(column.id))
+  const visibleColumns = columnOrder
+    .map((id) => columns.find((column) => column.id === id))
+    .filter((column): column is EntityColumn<T> =>
+      Boolean(column && visible.has(column.id))
+    )
   const registerExport = React.useContext(EntityExportContext)
   const exportColumns = visibleColumns.filter(
     (column) => column.text || column.metric
@@ -311,6 +449,74 @@ export function EntityDataView<T>({
     if (checked) next.add(id)
     else next.delete(id)
     onSelectedChange(next)
+  }
+  const columnWidth = (id: string) => columnWidths[id] ?? 180
+  const pinColumn = (id: string, side: "left" | "right" | null) => {
+    setPinnedColumns((current) => ({
+      left:
+        side === "left"
+          ? [...current.left.filter((value) => value !== id), id]
+          : current.left.filter((value) => value !== id),
+      right:
+        side === "right"
+          ? [...current.right.filter((value) => value !== id), id]
+          : current.right.filter((value) => value !== id),
+    }))
+  }
+  const pinStyle = (id: string): React.CSSProperties => {
+    if (pinnedColumns.left.includes(id)) {
+      const index = pinnedColumns.left.indexOf(id)
+      return {
+        position: "sticky",
+        left:
+          48 +
+          pinnedColumns.left
+            .slice(0, index)
+            .reduce((sum, value) => sum + columnWidth(value), 0),
+        zIndex: 2,
+      }
+    }
+    if (pinnedColumns.right.includes(id)) {
+      const index = pinnedColumns.right.indexOf(id)
+      return {
+        position: "sticky",
+        right:
+          (actions.length ? 112 : 0) +
+          pinnedColumns.right
+            .slice(index + 1)
+            .reduce((sum, value) => sum + columnWidth(value), 0),
+        zIndex: 2,
+      }
+    }
+    return {}
+  }
+  const moveColumn = (from: string, to: string) => {
+    if (from === to) return
+    setColumnOrder((current) => {
+      const next = current.filter((id) => id !== from)
+      next.splice(next.indexOf(to), 0, from)
+      return next
+    })
+  }
+  const startResize = (event: React.PointerEvent, id: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startWidth = columnWidth(id)
+    const move = (pointer: PointerEvent) =>
+      setColumnWidths((current) => ({
+        ...current,
+        [id]: Math.max(
+          96,
+          Math.min(720, startWidth + pointer.clientX - startX)
+        ),
+      }))
+    const stop = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", stop)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", stop)
   }
   const cardContent = (item: T) =>
     renderCard?.(item) ?? (
@@ -365,21 +571,12 @@ export function EntityDataView<T>({
         columns={columns}
         filters={filters}
         extras={toolbarExtras}
+        bulkActions={bulkActions}
+        selectedCount={selected.size}
+        onClearSelection={() => onSelectedChange(new Set())}
+        filterRequest={filterRequest}
+        onFilterRequestHandled={() => setFilterRequest(null)}
       />
-      {selected.size ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <>
-            {bulkActions}
-            <Button
-              onClick={() => onSelectedChange(new Set())}
-              size="sm"
-              variant="ghost"
-            >
-              Снять выбор
-            </Button>
-          </>
-        </div>
-      ) : null}
 
       <FadeContent duration={240} initialOpacity={0.5} key={mode}>
         {loading && items.length === 0 ? (
@@ -441,39 +638,11 @@ export function EntityDataView<T>({
                       )}
                     </div>
                     {actions?.length ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              aria-label={`Действия: ${getLabel(item)}`}
-                              size="icon-lg"
-                              variant="ghost"
-                            />
-                          }
-                        >
-                          •••
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuGroup>
-                            <DropdownMenuLabel>
-                              {getLabel(item)}
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {actions.map((action) => (
-                              <DropdownMenuItem
-                                key={action.label}
-                                disabled={action.disabled?.(item)}
-                                variant={
-                                  action.destructive ? "destructive" : "default"
-                                }
-                                onClick={() => action.onSelect(item)}
-                              >
-                                {action.label}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <EntityActionButtons
+                        actions={actions}
+                        item={item}
+                        label={getLabel(item)}
+                      />
                     ) : null}
                   </CardHeader>
                   <CardContent className="px-3">
@@ -520,10 +689,21 @@ export function EntityDataView<T>({
               ))}
             </div>
             <div className="surface-card hidden overflow-hidden md:block">
-              <Table>
+              <Table
+                className="table-fixed"
+                style={{
+                  minWidth:
+                    48 +
+                    visibleColumns.reduce(
+                      (sum, column) => sum + columnWidth(column.id),
+                      0
+                    ) +
+                    (actions.length ? 112 : 0),
+                }}
+              >
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10 pl-4">
+                    <TableHead className="sticky left-0 z-[4] w-12 bg-card pl-4">
                       <Checkbox
                         aria-label="Выбрать все записи"
                         checked={allSelected}
@@ -531,13 +711,160 @@ export function EntityDataView<T>({
                         onCheckedChange={toggleAll}
                       />
                     </TableHead>
-                    {visibleColumns.map((column) => (
-                      <TableHead className={column.className} key={column.id}>
-                        {column.label}
-                      </TableHead>
-                    ))}
+                    {visibleColumns.map((column) => {
+                      const activeSort = sort?.columnId === column.id
+                      const matchingFilter = filters.find(
+                        (filter) => filter.id === column.id
+                      )
+                      return (
+                        <ContextMenu key={column.id}>
+                          <ContextMenuTrigger
+                            render={
+                              <TableHead
+                                aria-sort={
+                                  activeSort
+                                    ? sort.direction === "asc"
+                                      ? "ascending"
+                                      : "descending"
+                                    : "none"
+                                }
+                                className={cn(
+                                  "group/header relative bg-card p-0",
+                                  column.className,
+                                  (pinnedColumns.left.includes(column.id) ||
+                                    pinnedColumns.right.includes(column.id)) &&
+                                    "shadow-[inset_-1px_0_hsl(var(--border))]"
+                                )}
+                                style={{
+                                  width: columnWidth(column.id),
+                                  minWidth: columnWidth(column.id),
+                                  maxWidth: columnWidth(column.id),
+                                  ...pinStyle(column.id),
+                                }}
+                              />
+                            }
+                          >
+                            <button
+                              aria-label={`${column.label}: сортировать и перетащить`}
+                              className="flex h-10 w-full cursor-grab items-center gap-1.5 overflow-hidden px-2 text-left active:cursor-grabbing"
+                              draggable
+                              onClick={() =>
+                                setSort((current) => ({
+                                  columnId: column.id,
+                                  direction:
+                                    current?.columnId === column.id &&
+                                    current.direction === "asc"
+                                      ? "desc"
+                                      : "asc",
+                                }))
+                              }
+                              onDragStart={() =>
+                                (dragColumn.current = column.id)
+                              }
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => {
+                                if (dragColumn.current)
+                                  moveColumn(dragColumn.current, column.id)
+                                dragColumn.current = null
+                              }}
+                              type="button"
+                            >
+                              <GripVertical className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/header:opacity-100" />
+                              <span className="truncate">{column.label}</span>
+                              {activeSort ? (
+                                sort.direction === "asc" ? (
+                                  <ArrowDownAZ className="size-3.5 shrink-0 text-primary" />
+                                ) : (
+                                  <ArrowUpAZ className="size-3.5 shrink-0 text-primary" />
+                                )
+                              ) : null}
+                            </button>
+                            <button
+                              aria-label={`Изменить ширину колонки ${column.label}`}
+                              className="absolute inset-y-1 right-0 z-10 w-1 cursor-col-resize rounded-full bg-primary/0 hover:bg-primary/70 focus:bg-primary/70"
+                              onPointerDown={(event) =>
+                                startResize(event, column.id)
+                              }
+                              type="button"
+                            />
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-56">
+                            <ContextMenuLabel>{column.label}</ContextMenuLabel>
+                            <ContextMenuItem
+                              onClick={() =>
+                                setSort({
+                                  columnId: column.id,
+                                  direction: "asc",
+                                })
+                              }
+                            >
+                              <ArrowDownAZ /> По возрастанию
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onClick={() =>
+                                setSort({
+                                  columnId: column.id,
+                                  direction: "desc",
+                                })
+                              }
+                            >
+                              <ArrowUpAZ /> По убыванию
+                            </ContextMenuItem>
+                            {activeSort ? (
+                              <ContextMenuItem onClick={() => setSort(null)}>
+                                <X /> Сбросить сортировку
+                              </ContextMenuItem>
+                            ) : null}
+                            {matchingFilter ? (
+                              <ContextMenuItem
+                                onClick={() => setFilterRequest(column.id)}
+                              >
+                                <Filter /> Добавить фильтр
+                              </ContextMenuItem>
+                            ) : null}
+                            <ContextMenuSeparator />
+                            <ContextMenuSub>
+                              <ContextMenuSubTrigger>
+                                <PanelLeft className="mr-2" /> Закрепить
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent>
+                                <ContextMenuItem
+                                  onClick={() => pinColumn(column.id, "left")}
+                                >
+                                  <PanelLeft /> Слева
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() => pinColumn(column.id, "right")}
+                                >
+                                  <PanelRight /> Справа
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() => pinColumn(column.id, null)}
+                                >
+                                  <PinOff /> Открепить
+                                </ContextMenuItem>
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                            <ContextMenuItem
+                              disabled={visibleColumns.length === 1}
+                              onClick={() => {
+                                setVisible((current) => {
+                                  const next = new Set(current)
+                                  next.delete(column.id)
+                                  return next
+                                })
+                                pinColumn(column.id, null)
+                                if (sort?.columnId === column.id) setSort(null)
+                              }}
+                            >
+                              <Eye /> Скрыть колонку
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      )
+                    })}
                     {actions?.length ? (
-                      <TableHead className="w-24 text-right">
+                      <TableHead className="sticky right-0 z-[4] w-28 bg-card text-right">
                         Действия
                       </TableHead>
                     ) : null}
@@ -557,7 +884,7 @@ export function EntityDataView<T>({
                             />
                           }
                         >
-                          <TableCell className="pl-4">
+                          <TableCell className="sticky left-0 z-[3] w-12 bg-card pl-4">
                             <Checkbox
                               aria-label={`Выбрать ${getLabel(item)}`}
                               checked={selected.has(id)}
@@ -569,8 +896,17 @@ export function EntityDataView<T>({
                           </TableCell>
                           {visibleColumns.map((column) => (
                             <TableCell
-                              className={column.className}
+                              className={cn(
+                                "overflow-hidden bg-card",
+                                column.className
+                              )}
                               key={column.id}
+                              style={{
+                                width: columnWidth(column.id),
+                                minWidth: columnWidth(column.id),
+                                maxWidth: columnWidth(column.id),
+                                ...pinStyle(column.id),
+                              }}
                             >
                               {detailEnabled &&
                               column.id ===
@@ -592,42 +928,12 @@ export function EntityDataView<T>({
                             </TableCell>
                           ))}
                           {actions?.length ? (
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger
-                                  render={
-                                    <Button
-                                      aria-label={`Действия: ${getLabel(item)}`}
-                                      size="sm"
-                                      variant="ghost"
-                                    />
-                                  }
-                                >
-                                  •••
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuGroup>
-                                    <DropdownMenuLabel>
-                                      {getLabel(item)}
-                                    </DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    {actions.map((action) => (
-                                      <DropdownMenuItem
-                                        className={
-                                          action.destructive
-                                            ? "text-destructive focus:text-destructive"
-                                            : undefined
-                                        }
-                                        disabled={action.disabled?.(item)}
-                                        key={action.label}
-                                        onClick={() => action.onSelect(item)}
-                                      >
-                                        {action.label}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </DropdownMenuGroup>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                            <TableCell className="sticky right-0 z-[3] w-28 bg-card text-right">
+                              <EntityActionButtons
+                                actions={actions}
+                                item={item}
+                                label={getLabel(item)}
+                              />
                             </TableCell>
                           ) : null}
                         </ContextMenuTrigger>
@@ -658,35 +964,11 @@ export function EntityDataView<T>({
                   />
                   <div className="min-w-0 flex-1">{card(item)}</div>
                   {actions?.length ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Действия: ${getLabel(item)}`}
-                          />
-                        }
-                      >
-                        •••
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuGroup>
-                          {actions.map((action) => (
-                            <DropdownMenuItem
-                              key={action.label}
-                              disabled={action.disabled?.(item)}
-                              variant={
-                                action.destructive ? "destructive" : "default"
-                              }
-                              onClick={() => action.onSelect(item)}
-                            >
-                              {action.label}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <EntityActionButtons
+                      actions={actions}
+                      item={item}
+                      label={getLabel(item)}
+                    />
                   ) : null}
                 </ContextMenuTrigger>
                 <EntityMenu

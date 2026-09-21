@@ -18,6 +18,9 @@ export type EntityViewConfig = {
   columns: string[]
   filters: Record<string, string>
   metrics?: EntityMetric[]
+  columnWidths?: Record<string, number>
+  pinnedColumns?: { left: string[]; right: string[] }
+  sort?: { columnId: string; direction: "asc" | "desc" } | null
 }
 export type SavedEntityView = {
   id: string
@@ -50,7 +53,20 @@ export function normalizeViewConfig(
   defaults: string[],
   filterIds: string[]
 ): EntityViewConfig {
-  const columns = columnIds.filter((id) => config.columns.includes(id))
+  const columns = config.columns.filter((id) => columnIds.includes(id))
+  const visible = new Set(columns)
+  const widths = Object.fromEntries(
+    Object.entries(config.columnWidths ?? {}).filter(
+      ([id, width]) => columnIds.includes(id) && width >= 96 && width <= 720
+    )
+  )
+  const pins = config.pinnedColumns ?? { left: [], right: [] }
+  const cleanPins = (ids: string[]) =>
+    ids.filter((id, index) => visible.has(id) && ids.indexOf(id) === index)
+  const left = cleanPins(pins.left)
+  const right = cleanPins(pins.right).filter((id) => !left.includes(id))
+  const sort =
+    config.sort && visible.has(config.sort.columnId) ? config.sort : null
   return {
     mode: modes.includes(config.mode) ? config.mode : modes[0],
     columns: columns.length ? columns : defaults,
@@ -60,6 +76,9 @@ export function normalizeViewConfig(
       )
     ),
     metrics: config.metrics ?? [],
+    columnWidths: widths,
+    pinnedColumns: { left, right },
+    sort,
   }
 }
 
@@ -67,11 +86,16 @@ export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
   const canonical = (value: EntityViewConfig) =>
     JSON.stringify({
       mode: value.mode,
-      columns: [...value.columns].sort(),
+      columns: value.columns,
       filters: Object.entries(value.filters)
         .filter(([, v]) => v !== "")
         .sort(([a], [b]) => a.localeCompare(b)),
       metrics: value.metrics ?? [],
+      columnWidths: Object.entries(value.columnWidths ?? {}).sort(([a], [b]) =>
+        a.localeCompare(b)
+      ),
+      pinnedColumns: value.pinnedColumns ?? { left: [], right: [] },
+      sort: value.sort ?? null,
     })
   return canonical(a) === canonical(b)
 }
