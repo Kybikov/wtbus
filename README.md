@@ -33,20 +33,20 @@ Run the non-destructive local acceptance check after a rebuild. It verifies API 
 
 ## Production Docker Compose
 
-Use `docker-compose.production.yml` as an override of the base `docker-compose.yml` on the server. PostgreSQL, Redis, the Go API, and Next.js remain on the private Compose network.
+Use the separate `docker-compose.production.yml` on the server. PostgreSQL, Redis, the Go API, and Next.js remain on the private Compose network.
 
 1. Point the public DNS record for the chosen CRM domain to the server and open ports 80 and 443 in the firewall.
 2. Copy `.env.production.example` to a private `.env.production` on the server and replace every placeholder with unique secrets. Set `VIVAT_DOMAIN` to the actual domain. Use URL-safe `POSTGRES_PASSWORD` and `REDIS_PASSWORD` values (letters, digits, `-` and `_`) because the API and bot receive them inside connection URLs.
 3. Start the product from the repository root:
 
 ```powershell
-docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml up -d --build --remove-orphans
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build --remove-orphans
 ```
 
 4. When the Telegram token has been set, include the bot profile:
 
 ```powershell
-docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml --profile bot up -d --build --remove-orphans
+docker compose --env-file .env.production -f docker-compose.production.yml --profile bot up -d --build --remove-orphans
 ```
 
 Caddy issues and renews certificates automatically once DNS and public ports are correct. Do not expose database or Redis ports on the host; Redis also requires its private production password. Before every server update, take a PostgreSQL backup and verify it can be restored in a separate database:
@@ -55,7 +55,7 @@ If the VPS already uses Coolify's Traefik proxy on ports 80/443, do not run a se
 
 ```sh
 docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.vps.yml \
+  -f docker-compose.production.yml -f docker-compose.vps.yml \
   --profile bot up -d --build --remove-orphans
 ```
 
