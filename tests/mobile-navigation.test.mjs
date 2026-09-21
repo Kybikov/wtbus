@@ -37,8 +37,9 @@ test("scrollable dock exposes all permitted sections with no duplicate destinati
       mobileNavigation(role).map((item) => item.href)
     )
     assert.equal(new Set(pages).size, pages.length)
-    for (const href of ["/routes", "/fleet", "/customers", "/availability"])
+    for (const href of ["/routes", "/fleet", "/customers"])
       assert.ok(pages.includes(href))
+    assert.equal(pages.includes("/availability"), false)
   }
   assert.ok(mobileNavigation("owner").some((item) => item.href === "/settings"))
 })

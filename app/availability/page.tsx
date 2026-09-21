@@ -1,5 +1,5 @@
-import { AvailabilityManager } from "@/components/availability-manager"
+import { redirect } from "next/navigation"
 
 export default function AvailabilityPage() {
-  return <AvailabilityManager />
+  redirect("/routes#availability")
 }

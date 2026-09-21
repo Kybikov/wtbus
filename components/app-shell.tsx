@@ -154,12 +154,6 @@ const navigation: NavigationItem[] = [
     roles: operationsRoles,
   },
   {
-    href: "/availability",
-    icon: Calendar01Icon,
-    label: "Недоступность",
-    roles: operationsRoles,
-  },
-  {
     href: "/fleet",
     icon: Car01Icon,
     label: "Автопарк",
@@ -208,7 +202,6 @@ const pageDescriptions: Record<string, string> = {
   Обзор: "Оперативная картина на сегодня",
   Рейсы: "Планирование и контроль выездов",
   Маршруты: "Шаблоны регулярных направлений",
-  Недоступность: "Периоды недоступности ресурсов",
   Автопарк: "Транспорт и состояние машин",
   Клиенты: "Пассажиры и история обращений",
   Бронирования: "Заявки, оплаты и статусы",

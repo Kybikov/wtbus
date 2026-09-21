@@ -7,10 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Database, History, Link2 } from "lucide-react"
 export default function EntityDetailContent({
   overview,
+  overviewMeta,
   related,
   activity,
 }: {
   overview: ReactNode
+  overviewMeta?: ReactNode
   related: ReactNode
   activity: ReactNode
 }) {
@@ -20,16 +22,17 @@ export default function EntityDetailContent({
       initial={reduced ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
-      className="grid min-h-[calc(100dvh-5.5rem)] min-w-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]"
+      className="grid min-h-[calc(100dvh-5.5rem)] w-full min-w-0 items-stretch gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,0.72fr)]"
     >
       <Card className="workspace-panel min-w-0 shadow-none">
-        <CardHeader className="border-b border-border/70">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-border/70">
           <CardTitle>
             <h2 className="flex items-center gap-2">
               <Database aria-hidden className="size-4 text-muted-foreground" />
               Данные записи
             </h2>
           </CardTitle>
+          {overviewMeta}
         </CardHeader>
         <CardContent className="min-w-0">{overview}</CardContent>
       </Card>

@@ -177,23 +177,6 @@ function buildCustomData(
   return result
 }
 
-function formFromCustomer(customer: Customer): CustomerForm {
-  const customData: CustomerForm["customData"] = {}
-  for (const [key, value] of Object.entries(customer.customData ?? {})) {
-    if (typeof value === "boolean" || typeof value === "string")
-      customData[key] = value
-    else if (typeof value === "number") customData[key] = String(value)
-  }
-  return {
-    fullName: customer.fullName,
-    phone: customer.phone,
-    email: customer.email ?? "",
-    telegramId: customer.telegramId?.toString() ?? "",
-    notes: customer.notes ?? "",
-    customData,
-  }
-}
-
 export function CustomerDirectory() {
   const [query, setQuery] = usePageSearch()
   const [appliedQuery, setAppliedQuery] = React.useState("")
@@ -547,13 +530,6 @@ export function CustomerDirectory() {
     })),
   ]
 
-  const openEditor = (customer: Customer) => {
-    setForm(formFromCustomer(customer))
-    setEditingID(customer.id)
-    setFormError(null)
-    setOpen(true)
-  }
-
   return (
     <>
       <AppShell
@@ -645,7 +621,6 @@ export function CustomerDirectory() {
               },
             ]}
             actions={[
-              { label: "Редактировать", onSelect: openEditor },
               {
                 label: expandedHistoryID
                   ? "Скрыть историю"

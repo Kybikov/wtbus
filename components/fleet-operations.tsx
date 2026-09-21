@@ -206,19 +206,6 @@ export function FleetOperations() {
     setEditorOpen(true)
   }
 
-  function startEdit(vehicle: Vehicle) {
-    setError(null)
-    setEditingID(vehicle.id)
-    setForm({
-      name: vehicle.name,
-      registrationNumber: vehicle.registrationNumber,
-      vehicleClass: vehicle.vehicleClass,
-      capacity: vehicle.capacity,
-      isActive: vehicle.isActive,
-    })
-    setEditorOpen(true)
-  }
-
   function updateForm<Key extends keyof VehicleForm>(
     key: Key,
     value: VehicleForm[Key]
@@ -583,11 +570,6 @@ export function FleetOperations() {
           actions={
             canManage
               ? [
-                  {
-                    label: "Редактировать",
-                    onSelect: startEdit,
-                    disabled: () => saving || selection.pending,
-                  },
                   {
                     label: "Включить / выключить",
                     onSelect: (item) => void toggleVehicle(item),

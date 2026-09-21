@@ -13,12 +13,6 @@ export const mobileDestinations = [
   },
   { href: "/requests", label: "Заявки", icon: "inbox", roles: operations },
   { href: "/routes", label: "Маршруты", icon: "route", roles: operations },
-  {
-    href: "/availability",
-    label: "Недоступность",
-    icon: "calendar",
-    roles: operations,
-  },
   { href: "/fleet", label: "Автопарк", icon: "car", roles: operations },
   { href: "/customers", label: "Клиенты", icon: "users", roles: operations },
   { href: "/finance", label: "Финансы", icon: "wallet", roles: management },

@@ -9,6 +9,7 @@ import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EntityDataView } from "@/components/entity-data-view"
+import { AvailabilityManager } from "@/components/availability-manager"
 import {
   textColumn,
   moneyColumn,
@@ -64,18 +65,6 @@ function isRoutes(
     "currency" in value &&
     typeof value.currency === "string"
   )
-}
-
-function toForm(route: Route): RouteForm {
-  return {
-    name: route.name,
-    origin: route.origin,
-    destination: route.destination,
-    currency: route.currency,
-    price: (route.defaultPriceMinor / 100).toFixed(2),
-    defaultPricingMode: route.defaultPricingMode,
-    isActive: route.isActive,
-  }
 }
 
 function getError(payload: unknown, fallback: string) {
@@ -196,13 +185,6 @@ export function RouteCatalog() {
     setError(null)
     setEditingID(null)
     setForm({ ...emptyForm, currency })
-    setEditorOpen(true)
-  }
-
-  function startEdit(route: Route) {
-    setError(null)
-    setEditingID(route.id)
-    setForm(toForm(route))
     setEditorOpen(true)
   }
 
@@ -458,11 +440,6 @@ export function RouteCatalog() {
           filters={[activeFilter<Route>((item) => item.isActive)]}
           actions={[
             {
-              label: "Редактировать",
-              onSelect: startEdit,
-              disabled: () => saving || selection.pending,
-            },
-            {
               label: "Включить / выключить",
               onSelect: (item) => void toggle(item),
               disabled: () => saving || selection.pending,
@@ -490,6 +467,7 @@ export function RouteCatalog() {
           }
           emptyText="Маршрутов не найдено."
         />
+        <AvailabilityManager embedded />
       </section>
     </AppShell>
   )

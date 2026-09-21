@@ -1,7 +1,7 @@
 "use client"
 import * as React from "react"
 import Link from "next/link"
-import { Copy, ArrowUpRight, List } from "lucide-react"
+import { ArrowUpRight, Check, LoaderCircle } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import EntityDetailContent from "@/components/app-dialog-6"
 import EntityActivityTimeline from "@/components/billing-8"
@@ -12,6 +12,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input"
+import { FieldSelect } from "@/components/ui/field-select"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
 import { sessionFetch } from "@/lib/session-navigation"
 import {
   entityDetailHref,
@@ -28,6 +32,77 @@ type Detail = {
   timezone: string
   related: EntityRelatedRecord[]
   activity: { action: string; actor: string; kind: string; createdAt: string }[]
+}
+type EditableField = {
+  key: string
+  type?: "text" | "number" | "money" | "boolean" | "select"
+  options?: { value: string; label: string }[]
+}
+const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
+  routes: [
+    { key: "name" },
+    { key: "origin_name" },
+    { key: "destination_name" },
+    {
+      key: "currency",
+      type: "select",
+      options: [
+        { value: "EUR", label: "EUR" },
+        { value: "UAH", label: "UAH" },
+      ],
+    },
+    { key: "default_price_minor", type: "money" },
+    {
+      key: "default_pricing_mode",
+      type: "select",
+      options: [
+        { value: "per_passenger", label: "За пассажира" },
+        { value: "per_booking", label: "За бронь" },
+      ],
+    },
+    { key: "is_active", type: "boolean" },
+  ],
+  fleet: [
+    { key: "name" },
+    { key: "registration_number" },
+    { key: "vehicle_class" },
+    { key: "capacity", type: "number" },
+    { key: "is_active", type: "boolean" },
+  ],
+  customers: [
+    { key: "full_name" },
+    { key: "phone_e164" },
+    { key: "email" },
+    { key: "notes" },
+  ],
+  requests: [
+    {
+      key: "status",
+      type: "select",
+      options: [
+        { value: "new", label: "Новая" },
+        { value: "in_progress", label: "В работе" },
+        { value: "closed", label: "Закрыта" },
+        { value: "cancelled", label: "Отменена" },
+      ],
+    },
+    { key: "operator_note" },
+  ],
+  bookings: [
+    {
+      key: "status",
+      type: "select",
+      options: [
+        { value: "pending", label: "Ожидание" },
+        { value: "awaiting_payment", label: "Ожидает оплаты" },
+        { value: "cash_on_boarding", label: "Наличными при посадке" },
+        { value: "confirmed", label: "Подтверждено" },
+        { value: "cancelled", label: "Отменено" },
+        { value: "completed", label: "Завершено" },
+      ],
+    },
+  ],
+  trips: [{ key: "price_minor", type: "money" }, { key: "notes" }],
 }
 function isDetail(value: unknown): value is Detail {
   if (typeof value !== "object" || value === null) return false
@@ -58,6 +133,103 @@ function isDetail(value: unknown): value is Detail {
     )
   )
 }
+function localDateTime(value: unknown, timeZone: string) {
+  const date = new Date(String(value ?? ""))
+  if (!Number.isFinite(date.getTime())) return ""
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
+  )
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+function updateRequest(
+  entity: EntityCollection,
+  id: string,
+  item: Record<string, unknown>,
+  timezone: string
+) {
+  const path = (name: string) => `${name}?id=${encodeURIComponent(id)}`
+  if (entity === "routes")
+    return {
+      url: path("/api/routes"),
+      method: "PATCH",
+      body: {
+        name: item.name,
+        origin: item.origin_name,
+        destination: item.destination_name,
+        currency: item.currency,
+        defaultPriceMinor: Number(item.default_price_minor),
+        defaultPricingMode: item.default_pricing_mode,
+        isActive: Boolean(item.is_active),
+      },
+    }
+  if (entity === "fleet")
+    return {
+      url: path("/api/fleet"),
+      method: "PATCH",
+      body: {
+        name: item.name,
+        registrationNumber: item.registration_number,
+        vehicleClass: item.vehicle_class,
+        capacity: Number(item.capacity),
+        isActive: Boolean(item.is_active),
+      },
+    }
+  if (entity === "customers")
+    return {
+      url: path("/api/customers"),
+      method: "PATCH",
+      body: {
+        fullName: item.full_name ?? "",
+        phone: item.phone_e164,
+        email: item.email ?? "",
+        telegramId: item.telegram_id ?? null,
+        notes: item.notes ?? "",
+        customData: item.custom_data ?? {},
+      },
+    }
+  if (entity === "requests")
+    return {
+      url: path("/api/individual-transfer-requests"),
+      method: "PATCH",
+      body: { status: item.status, operatorNote: item.operator_note ?? "" },
+    }
+  if (entity === "bookings")
+    return {
+      url: path("/api/bookings"),
+      method: "PATCH",
+      body: { status: item.status },
+    }
+  if (entity === "trips")
+    return {
+      url: path("/api/trips"),
+      method: "PUT",
+      body: {
+        routeId: item.route_id ?? "",
+        vehicleId: item.vehicle_id,
+        driverId: item.driver_id,
+        kind: item.kind,
+        origin: item.origin_name,
+        destination: item.destination_name,
+        startsAt: localDateTime(item.starts_at, timezone),
+        endsAt: localDateTime(item.ends_at, timezone),
+        priceMinor: Number(item.price_minor),
+        pricingMode: item.pricing_mode,
+        notes: item.notes ?? "",
+        customData: item.custom_data ?? {},
+      },
+    }
+  return null
+}
 export function EntityDetailPage({
   entity,
   id,
@@ -69,40 +241,91 @@ export function EntityDetailPage({
   const [detail, setDetail] = React.useState<Detail | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
-  const [copied, setCopied] = React.useState(false)
-  const load = React.useCallback(async () => {
-    requestController.current?.abort()
-    const controller = new AbortController()
-    requestController.current = controller
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await sessionFetch(
-        `/api/entity-details/${entity}/${encodeURIComponent(id)}`,
-        { cache: "no-store", signal: controller.signal }
-      )
-      const payload = await response.json()
-      if (!response.ok || !isDetail(payload))
-        throw new Error(payload.error ?? "Не удалось загрузить запись.")
-      if (!controller.signal.aborted) setDetail(payload)
-    } catch (reason) {
-      if (controller.signal.aborted) return
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось загрузить запись."
-      )
-    } finally {
-      if (!controller.signal.aborted) setLoading(false)
-    }
-  }, [entity, id])
+  const [saveState, setSaveState] = React.useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle")
+  const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveController = React.useRef<AbortController | null>(null)
+  const load = React.useCallback(
+    async (silent = false) => {
+      requestController.current?.abort()
+      const controller = new AbortController()
+      requestController.current = controller
+      if (!silent) setLoading(true)
+      setError(null)
+      try {
+        const response = await sessionFetch(
+          `/api/entity-details/${entity}/${encodeURIComponent(id)}`,
+          { cache: "no-store", signal: controller.signal }
+        )
+        const payload = await response.json()
+        if (!response.ok || !isDetail(payload))
+          throw new Error(payload.error ?? "Не удалось загрузить запись.")
+        if (!controller.signal.aborted) setDetail(payload)
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось загрузить запись."
+        )
+      } finally {
+        if (!controller.signal.aborted && !silent) setLoading(false)
+      }
+    },
+    [entity, id]
+  )
   React.useEffect(() => {
     const timer = setTimeout(() => void load(), 0)
     return () => {
       clearTimeout(timer)
       requestController.current?.abort()
+      saveController.current?.abort()
+      if (saveTimer.current) clearTimeout(saveTimer.current)
     }
   }, [load])
+  const save = React.useCallback(
+    async (next: Record<string, unknown>) => {
+      if (!detail) return
+      const request = updateRequest(entity, id, next, detail.timezone)
+      if (!request) return
+      saveController.current?.abort()
+      const controller = new AbortController()
+      saveController.current = controller
+      setSaveState("saving")
+      setError(null)
+      try {
+        const response = await sessionFetch(request.url, {
+          method: request.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request.body),
+          signal: controller.signal,
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok)
+          throw new Error(payload?.error ?? "Не удалось сохранить изменения.")
+        if (controller.signal.aborted) return
+        setSaveState("saved")
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        setSaveState("error")
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось сохранить изменения."
+        )
+      }
+    },
+    [detail, entity, id]
+  )
+  const changeField = (key: string, value: unknown) => {
+    if (!detail) return
+    const next = { ...detail.item, [key]: value }
+    setDetail({ ...detail, item: next })
+    setSaveState("idle")
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => void save(next), 650)
+  }
   const item = detail?.item
   const title = item
     ? String(
@@ -116,6 +339,75 @@ export function EntityDetailPage({
             : entityNames[entity])
       )
     : entityNames[entity]
+  function fieldEditor(key: string, value: unknown) {
+    const field = editableFields[entity]?.find(
+      (candidate) => candidate.key === key
+    )
+    if (!field) return null
+    if (field.type === "boolean")
+      return (
+        <label className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm">
+          <Checkbox
+            checked={Boolean(value)}
+            onCheckedChange={(checked) => changeField(key, checked)}
+          />
+          {value ? "Да" : "Нет"}
+        </label>
+      )
+    if (field.type === "select")
+      return (
+        <FieldSelect
+          aria-label={entityFieldLabels[key] ?? key}
+          triggerClassName="h-9 w-full max-w-md bg-background"
+          options={field.options ?? []}
+          value={String(value ?? "")}
+          onValueChange={(next) => changeField(key, next)}
+        />
+      )
+    if (key === "notes" || key === "operator_note")
+      return (
+        <Textarea
+          aria-label={entityFieldLabels[key] ?? key}
+          className="min-h-20 max-w-2xl resize-y bg-background"
+          value={String(value ?? "")}
+          onChange={(event) => changeField(key, event.target.value)}
+        />
+      )
+    const displayValue =
+      field.type === "money" ? Number(value ?? 0) / 100 : (value ?? "")
+    return (
+      <Input
+        aria-label={entityFieldLabels[key] ?? key}
+        className="h-9 max-w-2xl bg-background"
+        inputMode={
+          field.type === "number" || field.type === "money"
+            ? "decimal"
+            : undefined
+        }
+        type={
+          field.type === "number" || field.type === "money" ? "number" : "text"
+        }
+        step={
+          field.type === "money"
+            ? "0.01"
+            : field.type === "number"
+              ? "1"
+              : undefined
+        }
+        value={String(displayValue)}
+        onChange={(event) =>
+          changeField(
+            key,
+            field.type === "money"
+              ? Math.round(Number(event.target.value) * 100)
+              : field.type === "number"
+                ? Number(event.target.value)
+                : event.target.value
+          )
+        }
+      />
+    )
+  }
   function fieldValue(key: string, value: unknown): React.ReactNode {
     if (value === null || value === undefined || value === "")
       return <span className="text-muted-foreground">—</span>
@@ -222,36 +514,6 @@ export function EntityDetailPage({
       pageDescription={`${entityNames[entity]} · данные, связанные записи и история`}
       onRefresh={load}
       refreshing={loading}
-      pageActions={
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="Открыть раздел"
-            render={<Link href={`/${entity}`} />}
-          >
-            <List className="size-4" />В раздел
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!item}
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(
-                  String(item?.reference ?? id)
-                )
-                setCopied(true)
-              } catch {
-                setError("Не удалось скопировать ID.")
-              }
-            }}
-          >
-            <Copy className="size-4" />
-            {copied ? "Скопировано" : "Копировать ID"}
-          </Button>
-        </>
-      }
     >
       {error ? (
         <div role="alert" className="workspace-panel mb-3 p-4 text-destructive">
@@ -277,6 +539,27 @@ export function EntityDetailPage({
         </div>
       ) : detail ? (
         <EntityDetailContent
+          overviewMeta={
+            updateRequest(entity, id, detail.item, detail.timezone) ? (
+              <span
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                aria-live="polite"
+              >
+                {saveState === "saving" ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : saveState === "saved" ? (
+                  <Check className="size-3.5 text-emerald-500" />
+                ) : null}
+                {saveState === "saving"
+                  ? "Сохраняем…"
+                  : saveState === "saved"
+                    ? "Сохранено"
+                    : saveState === "error"
+                      ? "Ошибка сохранения"
+                      : "Автосохранение"}
+              </span>
+            ) : null
+          }
           overview={
             <dl className="min-w-0 divide-y divide-border/70">
               {Object.entries(detail.item)
@@ -295,7 +578,7 @@ export function EntityDetailPage({
                           : key.replaceAll("_", " "))}
                     </dt>
                     <dd className="text-sm leading-5 font-medium [overflow-wrap:anywhere] break-words">
-                      {fieldValue(key, value)}
+                      {fieldEditor(key, value) ?? fieldValue(key, value)}
                     </dd>
                   </div>
                 ))}

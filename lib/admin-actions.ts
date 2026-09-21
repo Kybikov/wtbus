@@ -8,7 +8,11 @@ export const createTargets = [
   { href: "/trips", label: "Рейс", roles: operations },
   { href: "/routes", label: "Маршрут", roles: operations },
   { href: "/fleet", label: "Автомобиль", roles: managers },
-  { href: "/availability", label: "Блокировка дат", roles: operations },
+  {
+    href: "/routes?availability=create#availability",
+    label: "Блокировка дат",
+    roles: operations,
+  },
   { href: "/team", label: "Сотрудник", roles: managers },
 ]
 // Protect spreadsheet readers from formula execution, preserving numeric cells.

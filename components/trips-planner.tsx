@@ -14,6 +14,7 @@ import {
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
+import { AvailabilityManager } from "@/components/availability-manager"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import {
   CustomDataFields,
@@ -1189,6 +1190,7 @@ export function TripsPlanner() {
             )}
             emptyText="Рейсов на эту дату не найдено."
           />
+          <AvailabilityManager embedded />
         </div>
       </AppShell>
       {isCreateOpen ? (
@@ -1679,52 +1681,6 @@ export function TripsPlanner() {
               >
                 Закрыть
               </Button>
-              {["new", "assigned"].includes(selectedTrip.status) ? (
-                <Button
-                  className="order-1 sm:order-2"
-                  disabled={isStatusSubmitting}
-                  onClick={() => {
-                    setTripForm({
-                      kind: selectedTrip.kind,
-                      routeId: selectedTrip.routeId ?? "",
-                      origin: selectedTrip.origin,
-                      destination: selectedTrip.destination,
-                      startsAt: toLocalDateTimeInput(
-                        selectedTrip.startsAt,
-                        scheduleTimeZone
-                      ),
-                      endsAt: toLocalDateTimeInput(
-                        selectedTrip.endsAt,
-                        scheduleTimeZone
-                      ),
-                      vehicleId: selectedTrip.vehicleId ?? "",
-                      driverId: selectedTrip.driverId ?? "",
-                      notes: selectedTrip.notes ?? "",
-                      price: (selectedTrip.priceMinor / 100).toFixed(2),
-                      pricingMode: selectedTrip.pricingMode,
-                      repeatUntil: "",
-                      weekdays: [],
-                      customData: Object.fromEntries(
-                        Object.entries(selectedTrip.customData ?? {}).map(
-                          ([key, value]) => [
-                            key,
-                            typeof value === "number" ? String(value) : value,
-                          ]
-                        )
-                      ) as CustomDataValues,
-                    })
-                    setEditingTripID(selectedTrip.id)
-                    setSelectedTrip(null)
-                    setIsCancelConfirmation(false)
-                    setFormError(null)
-                    setIsCreateOpen(true)
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  Изменить
-                </Button>
-              ) : null}
               {selectedTrip.status === "new" ? (
                 <Button
                   className="order-1 sm:order-2"
