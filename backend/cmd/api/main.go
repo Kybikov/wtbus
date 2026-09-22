@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/big"
 	"net"
 	"net/http"
 	"net/mail"
@@ -3343,8 +3344,13 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
 				COALESCE((
-					SELECT SUM(price_minor) FROM bookings
-					WHERE tenant_id = $1 AND trip_id = $2 AND status = 'cash_on_boarding'
+					SELECT SUM(price_minor) FROM bookings booking
+					WHERE booking.tenant_id = $1 AND booking.trip_id = $2
+					  AND workflow_status_phase(booking.tenant_id,'bookings',booking.status) = 'confirmed'
+					  AND NOT EXISTS (
+						SELECT 1 FROM payments payment
+						WHERE payment.tenant_id=booking.tenant_id AND payment.booking_id=booking.id AND payment.payment_method='bank_transfer'
+					  )
 				), 0),
 				COALESCE((
 					SELECT SUM(amount_minor) FROM driver_cash_ledger
@@ -6007,6 +6013,29 @@ type driverCashBalance struct {
 	BalanceMinor int64  `json:"balanceMinor"`
 }
 
+func convertFinanceMinor(value int64, rate string) (int64, bool) {
+	parsedRate, ok := new(big.Rat).SetString(strings.TrimSpace(rate))
+	if !ok || parsedRate.Sign() <= 0 {
+		return 0, false
+	}
+	numerator := new(big.Int).Mul(big.NewInt(value), parsedRate.Num())
+	denominator := parsedRate.Denom()
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(numerator, denominator, remainder)
+	doubledRemainder := new(big.Int).Lsh(new(big.Int).Abs(remainder), 1)
+	if doubledRemainder.Cmp(denominator) >= 0 {
+		if numerator.Sign() >= 0 {
+			quotient.Add(quotient, big.NewInt(1))
+		} else {
+			quotient.Sub(quotient, big.NewInt(1))
+		}
+	}
+	if !quotient.IsInt64() {
+		return 0, false
+	}
+	return quotient.Int64(), true
+}
+
 func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 	slug := strings.ToLower(r.PathValue("slug"))
 	tenant, ok := app.loadTenant(w, r, slug)
@@ -6032,8 +6061,8 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 		ConversionComplete:   true,
 		MissingExchangeRates: make([]string, 0),
 	}
-	rates := map[string]float64{tenant.BaseCurrency: 1}
-	rateRows, err := app.db.Query(r.Context(), `SELECT currency,rate_to_base::float8 FROM tenant_exchange_rates WHERE tenant_id=$1`, tenant.ID)
+	rates := map[string]string{tenant.BaseCurrency: "1"}
+	rateRows, err := app.db.Query(r.Context(), `SELECT currency,rate_to_base::text FROM tenant_exchange_rates WHERE tenant_id=$1`, tenant.ID)
 	if err != nil {
 		app.log.Error("load exchange rates", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load finance summary"})
@@ -6041,7 +6070,7 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	for rateRows.Next() {
 		var currency string
-		var rate float64
+		var rate string
 		if err = rateRows.Scan(&currency, &rate); err != nil {
 			rateRows.Close()
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load finance summary"})
@@ -6059,26 +6088,50 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 		WITH currencies AS (
 			SELECT $4::text AS currency
 			UNION
-			SELECT currency FROM bookings WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3
+			SELECT currency FROM payments
+			WHERE tenant_id=$1 AND ((paid_at >= $2 AND paid_at < $3) OR (workflow_status_phase(tenant_id,'payments',status)='refunded' AND updated_at >= $2 AND updated_at < $3))
 			UNION
-			SELECT currency FROM driver_cash_ledger WHERE tenant_id = $1 AND occurred_at >= $2 AND occurred_at < $3
+			SELECT currency FROM bookings WHERE tenant_id=$1 AND created_at >= $2 AND created_at < $3
+			UNION
+			SELECT currency FROM driver_cash_ledger WHERE tenant_id = $1
 			UNION
 			SELECT currency FROM operational_expenses WHERE tenant_id = $1 AND occurred_at >= $2 AND occurred_at < $3
-		), booking_totals AS (
+		), payment_totals AS (
 			SELECT currency,
-				COALESCE(SUM(price_minor) FILTER (WHERE workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')), 0) AS confirmed_revenue_minor,
-				COALESCE(SUM(price_minor) FILTER (WHERE status = 'pending'), 0) AS pending_revenue_minor,
-				COUNT(*) FILTER (WHERE workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')) AS confirmed_bookings
-			FROM bookings
-			WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3
+				COALESCE(SUM(
+					CASE WHEN paid_at >= $2 AND paid_at < $3 AND workflow_status_phase(tenant_id,'payments',status) IN ('paid','refunded') THEN amount_minor ELSE 0 END
+					- CASE WHEN workflow_status_phase(tenant_id,'payments',status)='refunded' AND updated_at >= $2 AND updated_at < $3 THEN amount_minor ELSE 0 END
+				),0) AS bank_revenue_minor,
+				COUNT(DISTINCT booking_id) FILTER (WHERE paid_at >= $2 AND paid_at < $3 AND workflow_status_phase(tenant_id,'payments',status)='paid') AS paid_bookings
+			FROM payments WHERE tenant_id=$1
 			GROUP BY currency
-		), cash_totals AS (
+		), pending_totals AS (
+			SELECT booking.currency, COALESCE(SUM(booking.price_minor),0) AS pending_revenue_minor
+			FROM bookings booking
+			WHERE booking.tenant_id=$1 AND booking.created_at >= $2 AND booking.created_at < $3
+			  AND (workflow_status_phase(booking.tenant_id,'bookings',booking.status) IN ('pending','confirmed')
+			    OR (workflow_status_phase(booking.tenant_id,'bookings',booking.status)='awaiting_payment' AND booking.payment_hold_expires_at>now()))
+			  AND NOT EXISTS (SELECT 1 FROM payments payment WHERE payment.booking_id=booking.id AND workflow_status_phase(payment.tenant_id,'payments',payment.status) IN ('paid','refunded'))
+			  AND NOT EXISTS (SELECT 1 FROM driver_cash_ledger ledger WHERE ledger.tenant_id=booking.tenant_id AND ledger.trip_id=booking.trip_id AND ledger.kind='cash_collected')
+			GROUP BY booking.currency
+		), cash_booking_counts AS (
+			SELECT ledger.currency, COUNT(DISTINCT booking.id) AS paid_bookings
+			FROM driver_cash_ledger ledger
+			JOIN bookings booking ON booking.tenant_id=ledger.tenant_id AND booking.trip_id=ledger.trip_id
+			WHERE ledger.tenant_id=$1 AND ledger.kind='cash_collected' AND ledger.occurred_at >= $2 AND ledger.occurred_at < $3
+			  AND workflow_status_phase(booking.tenant_id,'bookings',booking.status) IN ('confirmed','completed')
+			  AND NOT EXISTS (SELECT 1 FROM payments payment WHERE payment.booking_id=booking.id AND payment.payment_method='bank_transfer')
+			GROUP BY ledger.currency
+		), cash_period AS (
 			SELECT currency,
 				COALESCE(SUM(amount_minor) FILTER (WHERE kind = 'cash_collected'), 0) AS cash_collected_minor,
 				COALESCE(SUM(amount_minor) FILTER (WHERE kind = 'collection'), 0) AS cash_handed_in_minor
 			FROM driver_cash_ledger
 			WHERE tenant_id = $1 AND occurred_at >= $2 AND occurred_at < $3
 			GROUP BY currency
+		), cash_balances AS (
+			SELECT currency, COALESCE(SUM(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END),0) AS balance_minor
+			FROM driver_cash_ledger WHERE tenant_id=$1 GROUP BY currency
 		), expense_totals AS (
 			SELECT currency, COALESCE(SUM(amount_minor), 0) AS operational_expenses_minor
 			FROM operational_expenses
@@ -6086,12 +6139,16 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			GROUP BY currency
 		)
 		SELECT c.currency,
-			COALESCE(b.confirmed_revenue_minor, 0), COALESCE(b.pending_revenue_minor, 0), COALESCE(b.confirmed_bookings, 0),
+			COALESCE(payment.bank_revenue_minor,0)+COALESCE(cash.cash_collected_minor,0), COALESCE(pending.pending_revenue_minor,0),
+			COALESCE(payment.paid_bookings,0)+COALESCE(cash_bookings.paid_bookings,0),
 			COALESCE(cash.cash_collected_minor, 0), COALESCE(cash.cash_handed_in_minor, 0),
-			COALESCE(exp.operational_expenses_minor, 0)
+			COALESCE(balance.balance_minor,0), COALESCE(exp.operational_expenses_minor, 0)
 		FROM currencies c
-		LEFT JOIN booking_totals b ON b.currency = c.currency
-		LEFT JOIN cash_totals cash ON cash.currency = c.currency
+		LEFT JOIN payment_totals payment ON payment.currency=c.currency
+		LEFT JOIN pending_totals pending ON pending.currency=c.currency
+		LEFT JOIN cash_booking_counts cash_bookings ON cash_bookings.currency=c.currency
+		LEFT JOIN cash_period cash ON cash.currency = c.currency
+		LEFT JOIN cash_balances balance ON balance.currency=c.currency
 		LEFT JOIN expense_totals exp ON exp.currency = c.currency
 		ORDER BY c.currency
 	`, tenant.ID, from, to, tenant.BaseCurrency)
@@ -6103,12 +6160,11 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		var item financeCurrencySummary
-		if err := rows.Scan(&item.Currency, &item.ConfirmedRevenueMinor, &item.PendingRevenueMinor, &item.ConfirmedBookings, &item.CashCollectedMinor, &item.CashHandedInMinor, &item.OperationalExpensesMinor); err != nil {
+		if err := rows.Scan(&item.Currency, &item.ConfirmedRevenueMinor, &item.PendingRevenueMinor, &item.ConfirmedBookings, &item.CashCollectedMinor, &item.CashHandedInMinor, &item.DriverCashBalanceMinor, &item.OperationalExpensesMinor); err != nil {
 			app.log.Error("scan finance summary", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load finance summary"})
 			return
 		}
-		item.DriverCashBalanceMinor = item.CashCollectedMinor - item.CashHandedInMinor
 		item.NetProfitMinor = item.ConfirmedRevenueMinor - item.OperationalExpensesMinor
 		response.Currencies = append(response.Currencies, item)
 		response.ConfirmedBookings += item.ConfirmedBookings
@@ -6118,14 +6174,27 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			response.MissingExchangeRates = append(response.MissingExchangeRates, item.Currency)
 			continue
 		}
-		convert := func(value int64) int64 { return int64(math.Round(float64(value) * rate)) }
-		response.ConfirmedRevenueMinor += convert(item.ConfirmedRevenueMinor)
-		response.PendingRevenueMinor += convert(item.PendingRevenueMinor)
-		response.CashCollectedMinor += convert(item.CashCollectedMinor)
-		response.CashHandedInMinor += convert(item.CashHandedInMinor)
-		response.DriverCashBalanceMinor += convert(item.DriverCashBalanceMinor)
-		response.OperationalExpensesMinor += convert(item.OperationalExpensesMinor)
-		response.NetProfitMinor += convert(item.NetProfitMinor)
+		converted := make([]int64, 7)
+		values := []int64{item.ConfirmedRevenueMinor, item.PendingRevenueMinor, item.CashCollectedMinor, item.CashHandedInMinor, item.DriverCashBalanceMinor, item.OperationalExpensesMinor, item.NetProfitMinor}
+		validRate := true
+		for index, value := range values {
+			converted[index], validRate = convertFinanceMinor(value, rate)
+			if !validRate {
+				break
+			}
+		}
+		if !validRate {
+			response.ConversionComplete = false
+			response.MissingExchangeRates = append(response.MissingExchangeRates, item.Currency)
+			continue
+		}
+		response.ConfirmedRevenueMinor += converted[0]
+		response.PendingRevenueMinor += converted[1]
+		response.CashCollectedMinor += converted[2]
+		response.CashHandedInMinor += converted[3]
+		response.DriverCashBalanceMinor += converted[4]
+		response.OperationalExpensesMinor += converted[5]
+		response.NetProfitMinor += converted[6]
 	}
 	if err := rows.Err(); err != nil {
 		app.log.Error("iterate finance summary", "error", err, "tenant", slug)
@@ -6211,14 +6280,20 @@ func (app *application) driverCashSummary(w http.ResponseWriter, r *http.Request
 		SELECT t.id::text, t.currency,
 			COALESCE((
 				SELECT SUM(price_minor) FROM bookings b
-				WHERE b.tenant_id = t.tenant_id AND b.trip_id = t.id AND b.status = 'cash_on_boarding'
+				WHERE b.tenant_id = t.tenant_id AND b.trip_id = t.id
+				  AND workflow_status_phase(b.tenant_id,'bookings',b.status) = 'confirmed'
+				  AND NOT EXISTS (
+					SELECT 1 FROM payments payment
+					WHERE payment.tenant_id=b.tenant_id AND payment.booking_id=b.id AND payment.payment_method='bank_transfer'
+				  )
 			), 0),
 			COALESCE((
 				SELECT SUM(amount_minor) FROM driver_cash_ledger ledger
 				WHERE ledger.tenant_id = t.tenant_id AND ledger.trip_id = t.id AND ledger.kind = 'cash_collected'
 			), 0)
 		FROM trips t
-		WHERE t.tenant_id = $1 AND t.driver_id = $2 AND t.status = 'in_progress'
+		WHERE t.tenant_id = $1 AND t.driver_id = $2
+		  AND workflow_status_phase(t.tenant_id,'trips',t.status) = 'in_progress'
 		ORDER BY t.starts_at DESC
 		LIMIT 1
 	`, tenant.ID, driverID).Scan(&item.TripID, &item.Currency, &item.AmountMinor, &item.CollectedMinor)
@@ -6270,11 +6345,18 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 		return
 	}
 	defer tx.Rollback(r.Context())
+	var lockedDriverID string
+	if err := tx.QueryRow(r.Context(), `SELECT id::text FROM drivers WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, driverID, tenant.ID).Scan(&lockedDriverID); err != nil {
+		app.log.Error("lock driver cash balance", "error", err, "tenant", slug, "driver", driverID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not confirm cash receipt"})
+		return
+	}
 
 	var currency string
 	if err := tx.QueryRow(r.Context(), `
 		SELECT currency FROM trips
-		WHERE id = $1 AND tenant_id = $2 AND driver_id = $3 AND status = 'in_progress'
+		WHERE id = $1 AND tenant_id = $2 AND driver_id = $3
+		  AND workflow_status_phase(tenant_id,'trips',status) = 'in_progress'
 		FOR UPDATE
 	`, input.TripID, tenant.ID, driverID).Scan(&currency); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -6288,8 +6370,13 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 	var amountMinor int64
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(SUM(price_minor), 0)
-		FROM bookings
-		WHERE tenant_id = $1 AND trip_id = $2 AND status = 'cash_on_boarding'
+		FROM bookings booking
+		WHERE booking.tenant_id = $1 AND booking.trip_id = $2
+		  AND workflow_status_phase(booking.tenant_id,'bookings',booking.status) = 'confirmed'
+		  AND NOT EXISTS (
+			SELECT 1 FROM payments payment
+			WHERE payment.tenant_id=booking.tenant_id AND payment.booking_id=booking.id AND payment.payment_method='bank_transfer'
+		  )
 	`, tenant.ID, input.TripID).Scan(&amountMinor); err != nil {
 		app.log.Error("sum trip cash due", "error", err, "tenant", slug, "trip", input.TripID)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not confirm cash receipt"})
@@ -6361,25 +6448,52 @@ func (app *application) recordDriverCash(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver, positive amount, cash operation and a supported currency are required"})
 		return
 	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.log.Error("start driver cash transaction", "error", err, "tenant", slug)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var driverExists bool
-	if err := app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM drivers WHERE id = $1 AND tenant_id = $2 AND is_active)`, input.DriverID, tenant.ID).Scan(&driverExists); err != nil || !driverExists {
+	if err := tx.QueryRow(r.Context(), `SELECT is_active FROM drivers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, input.DriverID, tenant.ID).Scan(&driverExists); err != nil || !driverExists {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver is unavailable"})
 		return
 	}
 	if input.TripID != "" {
 		var tripMatchesDriver bool
-		if err := app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id = $1 AND tenant_id = $2 AND driver_id = $3)`, input.TripID, tenant.ID, input.DriverID).Scan(&tripMatchesDriver); err != nil || !tripMatchesDriver {
+		if err := tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id = $1 AND tenant_id = $2 AND driver_id = $3)`, input.TripID, tenant.ID, input.DriverID).Scan(&tripMatchesDriver); err != nil || !tripMatchesDriver {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip is unavailable for this driver"})
 			return
 		}
 	}
+	if input.Kind == "collection" {
+		var availableMinor int64
+		if err := tx.QueryRow(r.Context(), `
+			SELECT COALESCE(SUM(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END),0)
+			FROM driver_cash_ledger WHERE tenant_id=$1 AND driver_id=$2 AND currency=$3
+		`, tenant.ID, input.DriverID, input.Currency).Scan(&availableMinor); err != nil {
+			app.log.Error("load driver cash balance", "error", err, "tenant", slug, "driver", input.DriverID)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
+			return
+		}
+		if input.AmountMinor > availableMinor {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "cash hand-in exceeds the driver's available balance"})
+			return
+		}
+	}
 	var id string
-	err := app.db.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		INSERT INTO driver_cash_ledger (tenant_id, driver_id, trip_id, amount_minor, currency, kind)
 		VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6) RETURNING id::text
 	`, tenant.ID, input.DriverID, input.TripID, input.AmountMinor, input.Currency, input.Kind).Scan(&id)
 	if err != nil {
 		app.log.Error("record driver cash", "error", err, "tenant", slug)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		app.log.Error("commit driver cash transaction", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
 		return
 	}

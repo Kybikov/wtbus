@@ -298,7 +298,7 @@ export function FinanceDashboard() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/30 p-5">
             <p className="text-sm font-semibold text-muted-foreground">
-              Подтверждённая выручка
+              Полученная выручка
             </p>
             <p className="mt-3 text-3xl font-bold tracking-[-.035em] tabular-nums">
               {loading
@@ -306,7 +306,7 @@ export function FinanceDashboard() {
                 : formatMoney(summary?.confirmedRevenueMinor ?? 0, currency)}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              {summary?.confirmedBookings ?? 0} подтверждённых бронирований
+              {summary?.confirmedBookings ?? 0} оплаченных бронирований
             </p>
           </section>
           <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/30 p-5">
@@ -333,8 +333,9 @@ export function FinanceDashboard() {
                 : formatMoney(summary?.driverCashBalanceMinor ?? 0, currency)}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              Собрано {formatMoney(summary?.cashCollectedMinor ?? 0, currency)}{" "}
-              · сдано {formatMoney(summary?.cashHandedInMinor ?? 0, currency)}
+              Текущий остаток за всю историю · за период собрано{" "}
+              {formatMoney(summary?.cashCollectedMinor ?? 0, currency)} · сдано{" "}
+              {formatMoney(summary?.cashHandedInMinor ?? 0, currency)}
             </p>
           </section>
           <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/30 p-5">
@@ -347,7 +348,7 @@ export function FinanceDashboard() {
                 : formatMoney(summary?.pendingRevenueMinor ?? 0, currency)}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              Онлайн-платежи появятся после подключения эквайринга
+              Активные брони без подтверждённой оплаты за выбранный период
             </p>
           </section>
         </div>
@@ -381,11 +382,11 @@ export function FinanceDashboard() {
               >
                 <span className="font-bold text-primary">{item.currency}</span>
                 <span className="font-semibold tabular-nums">
-                  Выручка{" "}
+                  Получено{" "}
                   {formatMoney(item.confirmedRevenueMinor, item.currency)}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {item.confirmedBookings} броней
+                  {item.confirmedBookings} оплаченных броней
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums">
                   У водителей{" "}
@@ -449,10 +450,10 @@ export function FinanceDashboard() {
                 {
                   id: "currency",
                   label: "Валюта",
-                  options: [
-                    { value: "EUR", label: "EUR" },
-                    { value: "UAH", label: "UAH" },
-                  ],
+                  options: availableCurrencies.map((currencyOption) => ({
+                    value: currencyOption,
+                    label: currencyOption,
+                  })),
                   matches: (item, value) => item.currency === value,
                 },
               ]}

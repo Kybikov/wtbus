@@ -1,10 +1,37 @@
 package main
 
 import (
+	"math"
 	"reflect"
 	"testing"
 	"time"
 )
+
+func TestConvertFinanceMinor(t *testing.T) {
+	tests := []struct {
+		name  string
+		value int64
+		rate  string
+		want  int64
+		ok    bool
+	}{
+		{name: "identity", value: 12500, rate: "1.00000000", want: 12500, ok: true},
+		{name: "rounds half away from zero", value: 1, rate: "0.5", want: 1, ok: true},
+		{name: "rounds negative half away from zero", value: -1, rate: "0.5", want: -1, ok: true},
+		{name: "keeps decimal precision", value: 10001, rate: "0.33333333", want: 3334, ok: true},
+		{name: "rejects zero", value: 100, rate: "0", ok: false},
+		{name: "rejects invalid", value: 100, rate: "not-a-rate", ok: false},
+		{name: "rejects overflow", value: math.MaxInt64, rate: "2", ok: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := convertFinanceMinor(test.value, test.rate)
+			if ok != test.ok || got != test.want {
+				t.Fatalf("convertFinanceMinor(%d, %q) = (%d, %t), want (%d, %t)", test.value, test.rate, got, ok, test.want, test.ok)
+			}
+		})
+	}
+}
 
 func TestValidateRouteInputStatus(t *testing.T) {
 	inactive := false
