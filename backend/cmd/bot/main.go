@@ -182,6 +182,13 @@ func main() {
 			logger.Error("connect telegram", "tenant", binding.TenantSlug, "error", err)
 			os.Exit(1)
 		}
+		// This service consumes updates with long polling. A token may still have
+		// a webhook registered by a previous deployment or external setup; Telegram
+		// rejects getUpdates until that webhook is removed. Keep queued updates.
+		if _, err := bot.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: false}); err != nil {
+			logger.Error("disable telegram webhook", "tenant", binding.TenantSlug, "error", err)
+			os.Exit(1)
+		}
 		application := &app{db: db, redis: redisClient, bot: bot, log: logger, tenantSlug: binding.TenantSlug, httpClient: &http.Client{Timeout: 12 * time.Second}}
 		if err := application.loadTenant(ctx); err != nil {
 			logger.Error("load tenant", "tenant", binding.TenantSlug, "error", err)
