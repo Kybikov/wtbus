@@ -181,6 +181,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes", operations(app.listRoutes))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes", operations(app.requireActiveSubscription(app.createRoute)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.requireActiveSubscription(app.updateRoute)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/route-statuses", operations(app.listRouteStatuses))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/route-statuses", managers(app.requireActiveSubscription(app.createRouteStatus)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/route-statuses/{statusKey}", managers(app.requireActiveSubscription(app.updateRouteStatus)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/availability-blocks", operations(app.listAvailabilityBlocks))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/availability-blocks", operations(app.requireActiveSubscription(app.createAvailabilityBlock)))
 	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/availability-blocks/{blockID}", operations(app.requireActiveSubscription(app.deleteAvailabilityBlock)))
@@ -1281,7 +1284,7 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		if owners <= 1 {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "the company must keep at least one active owner"})
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "В команде должен остаться хотя бы один активный владелец."})
 			return
 		}
 	}
@@ -1388,7 +1391,7 @@ func (app *application) deleteTeamMember(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		if activeOwners <= 1 {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "the company must keep at least one active owner"})
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "В команде должен остаться хотя бы один активный владелец."})
 			return
 		}
 	}
@@ -1719,6 +1722,15 @@ type routeResponse struct {
 	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
 	DefaultPricingMode string `json:"defaultPricingMode"`
 	IsActive           bool   `json:"isActive"`
+	Status             string `json:"status"`
+}
+
+type routeStatusResponse struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Tone        string `json:"tone"`
+	IsAvailable bool   `json:"isAvailable"`
+	IsSystem    bool   `json:"isSystem"`
 }
 
 func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
@@ -1728,7 +1740,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status
 		FROM routes WHERE tenant_id = $1 ORDER BY is_active DESC, name
 	`, tenant.ID)
 	if err != nil {
@@ -1740,7 +1752,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 	items := make([]routeResponse, 0)
 	for rows.Next() {
 		var item routeResponse
-		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive, &item.Status); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load routes"})
 			return
@@ -1762,7 +1774,8 @@ type routeInput struct {
 	Currency           string `json:"currency"`
 	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
 	DefaultPricingMode string `json:"defaultPricingMode"`
-	IsActive           bool   `json:"isActive"`
+	IsActive           *bool  `json:"isActive,omitempty"`
+	Status             string `json:"status"`
 }
 
 func validateRouteInput(input *routeInput, fallbackCurrency string) bool {
@@ -1771,10 +1784,29 @@ func validateRouteInput(input *routeInput, fallbackCurrency string) bool {
 	input.Destination = strings.TrimSpace(input.Destination)
 	input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
 	input.DefaultPricingMode = normalizePricingMode(input.DefaultPricingMode)
+	input.Status = strings.ToLower(strings.TrimSpace(input.Status))
+	if input.Status == "" {
+		if input.IsActive != nil && !*input.IsActive {
+			input.Status = "inactive"
+		} else {
+			input.Status = "active"
+		}
+	}
 	if input.Currency == "" {
 		input.Currency = fallbackCurrency
 	}
-	return input.Name != "" && input.Origin != "" && input.Destination != "" && len([]rune(input.Name)) <= 160 && len([]rune(input.Origin)) <= 120 && len([]rune(input.Destination)) <= 120 && validBookingCurrency(input.Currency) && input.DefaultPriceMinor >= 0 && input.DefaultPriceMinor <= 10_000_000_000 && isPricingMode(input.DefaultPricingMode)
+	return input.Name != "" && input.Origin != "" && input.Destination != "" && len([]rune(input.Name)) <= 160 && len([]rune(input.Origin)) <= 120 && len([]rune(input.Destination)) <= 120 && validBookingCurrency(input.Currency) && input.DefaultPriceMinor >= 0 && input.DefaultPriceMinor <= 10_000_000_000 && isPricingMode(input.DefaultPricingMode) && routeStatusKeyPattern.MatchString(input.Status)
+}
+
+var routeStatusKeyPattern = regexp.MustCompile(`^[a-z0-9_]{2,64}$`)
+
+func (app *application) routeStatusAvailability(r *http.Request, tenantID, status string) (bool, bool, error) {
+	var available bool
+	err := app.db.QueryRow(r.Context(), `SELECT is_available FROM route_statuses WHERE tenant_id=$1 AND key=$2`, tenantID, status).Scan(&available)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	return available, err == nil, err
 }
 
 func normalizePricingMode(value string) string {
@@ -1812,12 +1844,21 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route name, cities and a UAH or EUR currency are required"})
 		return
 	}
+	available, exists, statusErr := app.routeStatusAvailability(r, tenant.ID, input.Status)
+	if statusErr != nil {
+		app.publicFailure(w, statusErr)
+		return
+	}
+	if !exists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route status does not exist"})
+		return
+	}
 	var item routeResponse
 	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active
-	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.IsActive).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive)
+		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status
+	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, available, input.Status).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive, &item.Status)
 	if err != nil {
 		app.log.Error("create route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create route"})
@@ -1840,12 +1881,21 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route name, cities and 3-letter currency are required"})
 		return
 	}
+	available, exists, statusErr := app.routeStatusAvailability(r, tenant.ID, input.Status)
+	if statusErr != nil {
+		app.publicFailure(w, statusErr)
+		return
+	}
+	if !exists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route status does not exist"})
+		return
+	}
 	var item routeResponse
 	err := app.db.QueryRow(r.Context(), `
-		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, is_active = $7, updated_at = now()
-		WHERE id = $8 AND tenant_id = $9
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active
-	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.IsActive, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive)
+		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, is_active = $7, status = $8, updated_at = now()
+		WHERE id = $9 AND tenant_id = $10
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status
+	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, available, input.Status, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive, &item.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "route not found"})
 		return
@@ -1853,6 +1903,120 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.log.Error("update route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update route"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}
+
+func (app *application) listRouteStatuses(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(r.PathValue("slug")))
+	if !ok {
+		return
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT key,label,tone,is_available,is_system FROM route_statuses WHERE tenant_id=$1 ORDER BY position,created_at`, tenant.ID)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer rows.Close()
+	items := make([]routeStatusResponse, 0)
+	for rows.Next() {
+		var item routeStatusResponse
+		if err := rows.Scan(&item.Key, &item.Label, &item.Tone, &item.IsAvailable, &item.IsSystem); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+type routeStatusInput struct {
+	Label       string `json:"label"`
+	Tone        string `json:"tone"`
+	IsAvailable bool   `json:"isAvailable"`
+}
+
+func (app *application) createRouteStatus(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(r.PathValue("slug")))
+	if !ok {
+		return
+	}
+	var input routeStatusInput
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid route status"})
+		return
+	}
+	input.Label = strings.TrimSpace(input.Label)
+	input.Tone = strings.TrimSpace(input.Tone)
+	if input.Tone == "" {
+		input.Tone = "neutral"
+	}
+	if len([]rune(input.Label)) < 1 || len([]rune(input.Label)) > 80 || !map[string]bool{"success": true, "warning": true, "danger": true, "info": true, "neutral": true}[input.Tone] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status name and tone are invalid"})
+		return
+	}
+	var item routeStatusResponse
+	err := app.db.QueryRow(r.Context(), `INSERT INTO route_statuses(tenant_id,key,label,tone,is_available,position) VALUES($1,'custom_'||replace(gen_random_uuid()::text,'-',''),$2,$3,$4,1000) RETURNING key,label,tone,is_available,is_system`, tenant.ID, input.Label, input.Tone, input.IsAvailable).Scan(&item.Key, &item.Label, &item.Tone, &item.IsAvailable, &item.IsSystem)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"item": item})
+}
+
+func (app *application) updateRouteStatus(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(r.PathValue("slug")))
+	if !ok {
+		return
+	}
+	statusKey := strings.TrimSpace(r.PathValue("statusKey"))
+	var input routeStatusInput
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid route status"})
+		return
+	}
+	input.Label = strings.TrimSpace(input.Label)
+	input.Tone = strings.TrimSpace(input.Tone)
+	if len([]rune(input.Label)) < 1 || len([]rune(input.Label)) > 80 || !map[string]bool{"success": true, "warning": true, "danger": true, "info": true, "neutral": true}[input.Tone] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status name and tone are invalid"})
+		return
+	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	var item routeStatusResponse
+	err = tx.QueryRow(r.Context(), `
+		UPDATE route_statuses
+		SET label=$1,tone=$2,is_available=$3,updated_at=now()
+		WHERE tenant_id=$4 AND key=$5
+		RETURNING key,label,tone,is_available,is_system
+	`, input.Label, input.Tone, input.IsAvailable, tenant.ID, statusKey).Scan(&item.Key, &item.Label, &item.Tone, &item.IsAvailable, &item.IsSystem)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "route status not found"})
+		return
+	}
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `UPDATE routes SET is_active=$1,updated_at=now() WHERE tenant_id=$2 AND status=$3`, item.IsAvailable, tenant.ID, item.Key); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})

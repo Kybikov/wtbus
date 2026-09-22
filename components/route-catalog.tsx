@@ -1,6 +1,7 @@
 "use client"
 
 import { sessionFetch } from "@/lib/session-navigation"
+import { AdminNotice } from "@/components/admin-notice"
 
 import * as React from "react"
 
@@ -14,12 +15,15 @@ import {
   moneyColumn,
   statusColumn,
   activeOptions,
-  activeFilter,
 } from "@/lib/entity-columns"
 import { usePageSearch } from "@/hooks/use-page-search"
 import { useEntitySelection } from "@/hooks/use-entity-selection"
 
 import { FieldSelect } from "@/components/ui/field-select"
+import {
+  RouteStatusField,
+  useRouteStatuses,
+} from "@/components/route-status-field"
 
 type Route = {
   id: string
@@ -30,6 +34,7 @@ type Route = {
   defaultPriceMinor: number
   defaultPricingMode: "per_passenger" | "per_booking"
   isActive: boolean
+  status: string
 }
 
 type RouteForm = Omit<Route, "id" | "defaultPriceMinor"> & { price: string }
@@ -42,6 +47,7 @@ const emptyForm: RouteForm = {
   price: "79",
   defaultPricingMode: "per_passenger",
   isActive: true,
+  status: "active",
 }
 
 function parsePriceMinor(value: string) {
@@ -76,6 +82,7 @@ function getError(payload: unknown, fallback: string) {
 }
 
 export function RouteCatalog() {
+  const { statuses } = useRouteStatuses()
   const [routes, setRoutes] = React.useState<Route[]>([])
   const [currency, setCurrency] = React.useState("EUR")
   const [form, setForm] = React.useState<RouteForm>(emptyForm)
@@ -104,10 +111,16 @@ export function RouteCatalog() {
       (item) => item.currency
     ),
     statusColumn<Route>(
-      "active",
+      "status",
       "Статус",
-      (item) => (item.isActive ? "active" : "inactive"),
-      activeOptions
+      (item) => item.status,
+      statuses.length
+        ? statuses.map((status) => ({
+            value: status.key,
+            label: status.label,
+            tone: status.tone,
+          }))
+        : activeOptions
     ),
     textColumn<Route>("pricing", "Модель цены", (item) =>
       item.defaultPricingMode === "per_booking" ? "За бронь" : "За пассажира"
@@ -115,7 +128,7 @@ export function RouteCatalog() {
     textColumn<Route>("currency", "Валюта", (item) => item.currency, false),
     textColumn<Route>("id", "ID", (item) => item.id, false),
   ]
-  async function bulkActive(active: boolean) {
+  async function bulkStatus(status: "active" | "inactive") {
     await selection.run(
       routes,
       async (item) => {
@@ -131,7 +144,7 @@ export function RouteCatalog() {
               currency: item.currency,
               defaultPriceMinor: item.defaultPriceMinor,
               defaultPricingMode: item.defaultPricingMode,
-              isActive: active,
+              status,
             }),
           }
         )
@@ -223,7 +236,7 @@ export function RouteCatalog() {
           currency: form.currency,
           defaultPriceMinor,
           defaultPricingMode: form.defaultPricingMode,
-          isActive: form.isActive,
+          status: form.status,
         }),
       })
       const payload: unknown = await response.json()
@@ -258,7 +271,7 @@ export function RouteCatalog() {
             currency: route.currency,
             defaultPriceMinor: route.defaultPriceMinor,
             defaultPricingMode: route.defaultPricingMode,
-            isActive: !route.isActive,
+            status: route.status === "active" ? "inactive" : "active",
           }),
         }
       )
@@ -297,14 +310,11 @@ export function RouteCatalog() {
       utilities={<ThemeCustomizer />}
     >
       <section className="space-y-4">
-        {error ? (
-          <div
-            className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-            role="alert"
-          >
-            {error}
-          </div>
-        ) : null}
+        <AdminNotice
+          message={error}
+          variant="error"
+          title="Не удалось выполнить действие"
+        />
 
         {editorOpen ? (
           <form
@@ -359,6 +369,13 @@ export function RouteCatalog() {
                 value={form.defaultPricingMode}
               />
             </label>
+            <div className="grid gap-2 text-sm font-semibold">
+              <span>Статус</span>
+              <RouteStatusField
+                value={form.status}
+                onValueChange={(value) => updateForm("status", value)}
+              />
+            </div>
             <label className="grid gap-2 text-sm font-semibold">
               {form.defaultPricingMode === "per_booking"
                 ? "Цена за всю бронь"
@@ -421,11 +438,11 @@ export function RouteCatalog() {
           </form>
         ) : null}
 
-        {selection.error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {selection.error}
-          </p>
-        ) : null}
+        <AdminNotice
+          message={selection.error}
+          variant="error"
+          title="Не удалось обновить маршруты"
+        />
         <EntityDataView
           collection="routes"
           columns={columns}
@@ -436,7 +453,19 @@ export function RouteCatalog() {
           selected={selection.selected}
           onSelectedChange={selection.setSelected}
           modes={["table", "list", "gallery"]}
-          filters={[activeFilter<Route>((item) => item.isActive)]}
+          filters={[
+            {
+              id: "status",
+              label: "Статус",
+              options: statuses.length
+                ? statuses.map((status) => ({
+                    value: status.key,
+                    label: status.label,
+                  }))
+                : activeOptions,
+              matches: (item, value) => item.status === value,
+            },
+          ]}
           actions={[
             {
               label: "Включить / выключить",
@@ -450,7 +479,7 @@ export function RouteCatalog() {
                 variant="outline"
                 size="sm"
                 disabled={selection.pending || saving}
-                onClick={() => void bulkActive(true)}
+                onClick={() => void bulkStatus("active")}
               >
                 Включить
               </Button>
@@ -458,7 +487,7 @@ export function RouteCatalog() {
                 variant="outline"
                 size="sm"
                 disabled={selection.pending || saving}
-                onClick={() => void bulkActive(false)}
+                onClick={() => void bulkStatus("inactive")}
               >
                 Отключить
               </Button>

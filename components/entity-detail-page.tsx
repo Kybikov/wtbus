@@ -16,6 +16,13 @@ import { Input } from "@/components/ui/input"
 import { FieldSelect } from "@/components/ui/field-select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group"
+import { AdminNotice } from "@/components/admin-notice"
+import { RouteStatusField } from "@/components/route-status-field"
 import { sessionFetch } from "@/lib/session-navigation"
 import {
   entityDetailHref,
@@ -43,14 +50,7 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
     { key: "name" },
     { key: "origin_name" },
     { key: "destination_name" },
-    {
-      key: "currency",
-      type: "select",
-      options: [
-        { value: "EUR", label: "EUR" },
-        { value: "UAH", label: "UAH" },
-      ],
-    },
+    { key: "currency", type: "select" },
     { key: "default_price_minor", type: "money" },
     {
       key: "default_pricing_mode",
@@ -60,7 +60,7 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
         { value: "per_booking", label: "За бронь" },
       ],
     },
-    { key: "is_active", type: "boolean" },
+    { key: "status", type: "select" },
   ],
   fleet: [
     { key: "name" },
@@ -169,7 +169,7 @@ function updateRequest(
         currency: item.currency,
         defaultPriceMinor: Number(item.default_price_minor),
         defaultPricingMode: item.default_pricing_mode,
-        isActive: Boolean(item.is_active),
+        status: item.status,
       },
     }
   if (entity === "fleet")
@@ -344,6 +344,13 @@ export function EntityDetailPage({
       (candidate) => candidate.key === key
     )
     if (!field) return null
+    if (entity === "routes" && key === "status")
+      return (
+        <RouteStatusField
+          value={String(value ?? "active")}
+          onValueChange={(next) => changeField(key, next)}
+        />
+      )
     if (field.type === "boolean")
       return (
         <label className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm">
@@ -406,6 +413,44 @@ export function EntityDetailPage({
           )
         }
       />
+    )
+  }
+  function routePriceEditor() {
+    if (!detail || entity !== "routes") return null
+    const price = Number(detail.item.default_price_minor ?? 0) / 100
+    return (
+      <InputGroup className="h-9 max-w-md bg-background">
+        <InputGroupInput
+          aria-label="Базовая цена"
+          className="h-9 tabular-nums"
+          inputMode="decimal"
+          min="0"
+          onChange={(event) =>
+            changeField(
+              "default_price_minor",
+              Math.round(Number(event.target.value) * 100)
+            )
+          }
+          step="0.01"
+          type="number"
+          value={String(price)}
+        />
+        <InputGroupAddon
+          align="inline-end"
+          className="border-l border-border p-0"
+        >
+          <FieldSelect
+            aria-label="Валюта"
+            onValueChange={(next) => changeField("currency", next)}
+            options={[
+              { value: "EUR", label: "EUR" },
+              { value: "UAH", label: "UAH" },
+            ]}
+            triggerClassName="h-8 w-24 rounded-l-none border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+            value={String(detail.item.currency ?? "EUR")}
+          />
+        </InputGroupAddon>
+      </InputGroup>
     )
   }
   function fieldValue(key: string, value: unknown): React.ReactNode {
@@ -515,18 +560,11 @@ export function EntityDetailPage({
       onRefresh={load}
       refreshing={loading}
     >
-      {error ? (
-        <div role="alert" className="workspace-panel mb-3 p-4 text-destructive">
-          {error}
-          <Button
-            variant="outline"
-            className="ml-3"
-            onClick={() => void load()}
-          >
-            Повторить
-          </Button>
-        </div>
-      ) : null}
+      <AdminNotice
+        message={error}
+        variant="error"
+        title="Не удалось выполнить действие"
+      />
       {loading && !detail ? (
         <div
           className="grid gap-3 lg:grid-cols-2"
@@ -540,7 +578,8 @@ export function EntityDetailPage({
       ) : detail ? (
         <EntityDetailContent
           overviewMeta={
-            updateRequest(entity, id, detail.item, detail.timezone) ? (
+            updateRequest(entity, id, detail.item, detail.timezone) &&
+            saveState !== "idle" ? (
               <span
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
                 aria-live="polite"
@@ -556,7 +595,7 @@ export function EntityDetailPage({
                     ? "Сохранено"
                     : saveState === "error"
                       ? "Ошибка сохранения"
-                      : "Автосохранение"}
+                      : null}
               </span>
             ) : null
           }
@@ -564,7 +603,13 @@ export function EntityDetailPage({
             <dl className="min-w-0 divide-y divide-border/70">
               {Object.entries(detail.item)
                 .filter(
-                  ([key]) => key !== "custom_data" && key !== "last_location"
+                  ([key]) =>
+                    key !== "custom_data" &&
+                    key !== "last_location" &&
+                    !(
+                      entity === "routes" &&
+                      (key === "currency" || key === "is_active")
+                    )
                 )
                 .map(([key, value]) => (
                   <div
@@ -578,7 +623,9 @@ export function EntityDetailPage({
                           : key.replaceAll("_", " "))}
                     </dt>
                     <dd className="text-sm leading-5 font-medium [overflow-wrap:anywhere] break-words">
-                      {fieldEditor(key, value) ?? fieldValue(key, value)}
+                      {entity === "routes" && key === "default_price_minor"
+                        ? routePriceEditor()
+                        : (fieldEditor(key, value) ?? fieldValue(key, value))}
                     </dd>
                   </div>
                 ))}

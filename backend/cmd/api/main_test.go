@@ -6,6 +6,37 @@ import (
 	"time"
 )
 
+func TestValidateRouteInputStatus(t *testing.T) {
+	inactive := false
+	tests := []struct {
+		name       string
+		status     string
+		isActive   *bool
+		wantValid  bool
+		wantStatus string
+	}{
+		{name: "defaults to active", wantValid: true, wantStatus: "active"},
+		{name: "maps legacy inactive flag", isActive: &inactive, wantValid: true, wantStatus: "inactive"},
+		{name: "normalizes custom status", status: " Custom_Status ", wantValid: true, wantStatus: "custom_status"},
+		{name: "rejects punctuation", status: "not available!", wantValid: false, wantStatus: "not available!"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := routeInput{
+				Name: "Warsaw — Kyiv", Origin: "Warsaw", Destination: "Kyiv",
+				Currency: "EUR", DefaultPricingMode: "per_passenger",
+				Status: test.status, IsActive: test.isActive,
+			}
+			if got := validateRouteInput(&input, "EUR"); got != test.wantValid {
+				t.Fatalf("validateRouteInput() = %t, want %t", got, test.wantValid)
+			}
+			if input.Status != test.wantStatus {
+				t.Fatalf("status = %q, want %q", input.Status, test.wantStatus)
+			}
+		})
+	}
+}
+
 func TestCanDeleteTeamMember(t *testing.T) {
 	tests := []struct {
 		name         string

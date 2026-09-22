@@ -509,14 +509,11 @@ export function TeamManager() {
       utilities={<ThemeCustomizer />}
     >
       <div className="space-y-4">
-        {error ? (
-          <div
-            className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-            role="alert"
-          >
-            {error}
-          </div>
-        ) : null}
+        <AdminNotice
+          message={error}
+          variant="error"
+          title="Не удалось выполнить действие"
+        />
         <AdminNotice message={notice} />
         <EntityDataView
           collection="team"
