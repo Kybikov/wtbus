@@ -22,7 +22,11 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 import { AdminNotice } from "@/components/admin-notice"
-import { RouteStatusField } from "@/components/route-status-field"
+import {
+  RouteStatusField,
+  WorkflowStatusField,
+  type WorkflowEntity,
+} from "@/components/route-status-field"
 import { sessionFetch } from "@/lib/session-navigation"
 import {
   entityDetailHref,
@@ -52,6 +56,7 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
     { key: "destination_name" },
     { key: "currency", type: "select" },
     { key: "default_price_minor", type: "money" },
+    { key: "driver_pay_minor", type: "money" },
     {
       key: "default_pricing_mode",
       type: "select",
@@ -67,7 +72,7 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
     { key: "registration_number" },
     { key: "vehicle_class" },
     { key: "capacity", type: "number" },
-    { key: "is_active", type: "boolean" },
+    { key: "status", type: "select" },
   ],
   customers: [
     { key: "full_name" },
@@ -102,7 +107,11 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
       ],
     },
   ],
-  trips: [{ key: "price_minor", type: "money" }, { key: "notes" }],
+  trips: [
+    { key: "status", type: "select" },
+    { key: "price_minor", type: "money" },
+    { key: "notes" },
+  ],
 }
 function isDetail(value: unknown): value is Detail {
   if (typeof value !== "object" || value === null) return false
@@ -169,6 +178,7 @@ function updateRequest(
         currency: item.currency,
         defaultPriceMinor: Number(item.default_price_minor),
         defaultPricingMode: item.default_pricing_mode,
+        driverPayMinor: Number(item.driver_pay_minor ?? 0),
         status: item.status,
       },
     }
@@ -181,7 +191,7 @@ function updateRequest(
         registrationNumber: item.registration_number,
         vehicleClass: item.vehicle_class,
         capacity: Number(item.capacity),
-        isActive: Boolean(item.is_active),
+        status: item.status,
       },
     }
   if (entity === "customers")
@@ -323,6 +333,29 @@ export function EntityDetailPage({
     const next = { ...detail.item, [key]: value }
     setDetail({ ...detail, item: next })
     setSaveState("idle")
+    if (entity === "trips" && key === "status") {
+      setSaveState("saving")
+      void sessionFetch(`/api/trips?id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: value }),
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null)
+          if (!response.ok)
+            throw new Error(payload?.error ?? "Не удалось изменить статус.")
+          setSaveState("saved")
+        })
+        .catch((reason) => {
+          setSaveState("error")
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Не удалось изменить статус."
+          )
+        })
+      return
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => void save(next), 650)
   }
@@ -348,6 +381,22 @@ export function EntityDetailPage({
       return (
         <RouteStatusField
           value={String(value ?? "active")}
+          onValueChange={(next) => changeField(key, next)}
+        />
+      )
+    const workflowEntity = (
+      {
+        fleet: "vehicles",
+        trips: "trips",
+        requests: "requests",
+        bookings: "bookings",
+      } as Partial<Record<EntityCollection, WorkflowEntity>>
+    )[entity]
+    if (key === "status" && workflowEntity)
+      return (
+        <WorkflowStatusField
+          entity={workflowEntity}
+          value={String(value ?? "")}
           onValueChange={(next) => changeField(key, next)}
         />
       )

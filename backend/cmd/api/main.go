@@ -162,6 +162,7 @@ func (app *application) routes() http.Handler {
 	}
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
+	owners := app.requireRoles("owner")
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-views", operations(app.entityViews))
@@ -184,6 +185,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/route-statuses", operations(app.listRouteStatuses))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/route-statuses", managers(app.requireActiveSubscription(app.createRouteStatus)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/route-statuses/{statusKey}", managers(app.requireActiveSubscription(app.updateRouteStatus)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/workflow-statuses", operations(app.listWorkflowStatuses))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/workflow-statuses", managers(app.requireActiveSubscription(app.createWorkflowStatus)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/workflow-statuses/{statusKey}", managers(app.requireActiveSubscription(app.updateWorkflowStatus)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/availability-blocks", operations(app.listAvailabilityBlocks))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/availability-blocks", operations(app.requireActiveSubscription(app.createAvailabilityBlock)))
 	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/availability-blocks/{blockID}", operations(app.requireActiveSubscription(app.deleteAvailabilityBlock)))
@@ -216,6 +220,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/branding", managers(app.requireActiveSubscription(app.updateBranding)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/payment-config", managers(app.getPaymentConfig))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/payment-config", managers(app.requireActiveSubscription(app.updatePaymentConfig)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/integration-secrets", owners(app.getIntegrationSecrets))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.requireActiveSubscription(app.updateIntegrationSecrets)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.requireActiveSubscription(app.createTeamMember)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.updateTeamMember)))
@@ -980,6 +986,7 @@ type teamMemberResponse struct {
 	CreatedAt    time.Time  `json:"createdAt"`
 	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
 	DriverID     *string    `json:"driverId,omitempty"`
+	DriverStatus *string    `json:"driverStatus,omitempty"`
 	ActionCount  int64      `json:"actionCount"`
 	LastActionAt *time.Time `json:"lastActionAt,omitempty"`
 }
@@ -993,9 +1000,10 @@ type createTeamMemberRequest struct {
 }
 
 type updateTeamMemberRequest struct {
-	Role     *string `json:"role"`
-	IsActive *bool   `json:"isActive"`
-	Password *string `json:"password"`
+	Role         *string `json:"role"`
+	IsActive     *bool   `json:"isActive"`
+	Password     *string `json:"password"`
+	DriverStatus *string `json:"driverStatus"`
 }
 
 var teamRoles = map[string]struct{}{"developer": {}, "owner": {}, "admin": {}, "dispatcher": {}, "driver": {}}
@@ -1042,8 +1050,9 @@ func canDeleteTeamMember(actorRole, memberRole string, memberActive bool) bool {
 func (app *application) activeDriverID(ctx context.Context, tenantID, membershipID string) (string, error) {
 	var driverID string
 	err := app.db.QueryRow(ctx, `
-		SELECT id::text FROM drivers
-		WHERE tenant_id = $1 AND membership_id = $2 AND is_active
+		SELECT driver.id::text FROM drivers driver
+		JOIN memberships membership ON membership.id=driver.membership_id AND membership.tenant_id=driver.tenant_id
+		WHERE driver.tenant_id = $1 AND driver.membership_id = $2 AND membership.is_active
 	`, tenantID, membershipID).Scan(&driverID)
 	return driverID, err
 }
@@ -1058,6 +1067,7 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 		SELECT m.id::text, u.id::text, u.display_name, u.email, m.role::text, m.is_active, u.is_system, m.created_at,
 			(SELECT max(s.last_seen_at) FROM user_sessions s WHERE s.membership_id = m.id AND s.revoked_at IS NULL AND s.expires_at > now())
 			, (SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id),
+			(SELECT d.status FROM drivers d WHERE d.membership_id = m.id),
 			(SELECT count(*) FROM activity_events event WHERE event.actor_membership_id = m.id),
 			(SELECT max(event.created_at) FROM activity_events event WHERE event.actor_membership_id = m.id)
 		FROM memberships m
@@ -1074,7 +1084,7 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 	items := make([]teamMemberResponse, 0)
 	for rows.Next() {
 		var item teamMemberResponse
-		if err := rows.Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.LastSeenAt, &item.DriverID, &item.ActionCount, &item.LastActionAt); err != nil {
+		if err := rows.Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.LastSeenAt, &item.DriverID, &item.DriverStatus, &item.ActionCount, &item.LastActionAt); err != nil {
 			app.log.Error("scan team", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load team"})
 			return
@@ -1180,8 +1190,8 @@ func (app *application) createTeamMember(w http.ResponseWriter, r *http.Request)
 	if input.Role == "driver" {
 		var driverID string
 		if err := tx.QueryRow(r.Context(), `
-			INSERT INTO drivers (tenant_id, membership_id, full_name, phone_e164, is_active)
-			VALUES ($1, $2, $3, $4, true)
+			INSERT INTO drivers (tenant_id, membership_id, full_name, phone_e164, is_active, status)
+			VALUES ($1, $2, $3, $4, true, 'ready')
 			RETURNING id::text
 		`, tenant.ID, item.MembershipID, input.DisplayName, input.DriverPhone).Scan(&driverID); err != nil {
 			var pgError *pgconn.PgError
@@ -1212,7 +1222,7 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	var input updateTeamMemberRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil || (input.Role == nil && input.IsActive == nil && input.Password == nil) {
+	if err := decoder.Decode(&input); err != nil || (input.Role == nil && input.IsActive == nil && input.Password == nil && input.DriverStatus == nil) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provide a role, active status or password"})
 		return
 	}
@@ -1228,10 +1238,32 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must contain from 12 to 128 characters"})
 		return
 	}
+	if input.DriverStatus != nil {
+		status := strings.TrimSpace(*input.DriverStatus)
+		input.DriverStatus = &status
+		if !routeStatusKeyPattern.MatchString(status) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid driver status"})
+			return
+		}
+	}
 	slug := strings.ToLower(strings.TrimSpace(r.PathValue("slug")))
 	tenant, ok := app.loadTenant(w, r, slug)
 	if !ok {
 		return
+	}
+	var requestedDriverStatus workflowStatusMeta
+	if input.DriverStatus != nil {
+		var exists bool
+		var statusErr error
+		requestedDriverStatus, exists, statusErr = app.workflowStatus(r.Context(), tenant.ID, "drivers", *input.DriverStatus)
+		if statusErr != nil {
+			app.publicFailure(w, statusErr)
+			return
+		}
+		if !exists {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver status does not exist"})
+			return
+		}
 	}
 	membershipID := strings.TrimSpace(r.PathValue("membershipID"))
 	tx, err := app.db.Begin(r.Context())
@@ -1243,10 +1275,11 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	var current teamMemberResponse
 	err = tx.QueryRow(r.Context(), `
 		SELECT m.id::text, u.id::text, u.display_name, u.email, m.role::text, m.is_active, u.is_system, m.created_at,
-			(SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id)
+			(SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id),
+			(SELECT d.status FROM drivers d WHERE d.membership_id = m.id)
 		FROM memberships m JOIN users u ON u.id = m.user_id
 		WHERE m.id = $1 AND m.tenant_id = $2 FOR UPDATE
-	`, membershipID, tenant.ID).Scan(&current.MembershipID, &current.UserID, &current.DisplayName, &current.Email, &current.Role, &current.IsActive, &current.IsSystem, &current.CreatedAt, &current.DriverID)
+	`, membershipID, tenant.ID).Scan(&current.MembershipID, &current.UserID, &current.DisplayName, &current.Email, &current.Role, &current.IsActive, &current.IsSystem, &current.CreatedAt, &current.DriverID, &current.DriverStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "team member not found"})
 		return
@@ -1293,8 +1326,9 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		UPDATE memberships SET role = $3::membership_role, is_active = $4
 		WHERE id = $1 AND tenant_id = $2
 		RETURNING id::text, user_id::text, (SELECT display_name FROM users WHERE id = user_id), (SELECT email FROM users WHERE id = user_id), role::text, is_active, (SELECT is_system FROM users WHERE id = user_id), created_at,
-			(SELECT d.id::text FROM drivers d WHERE d.membership_id = memberships.id)
-	`, membershipID, tenant.ID, nextRole, nextActive).Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.DriverID)
+			(SELECT d.id::text FROM drivers d WHERE d.membership_id = memberships.id),
+			(SELECT d.status FROM drivers d WHERE d.membership_id = memberships.id)
+	`, membershipID, tenant.ID, nextRole, nextActive).Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.DriverID, &item.DriverStatus)
 	if err != nil {
 		app.log.Error("update team membership", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
@@ -1324,11 +1358,24 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if current.DriverID != nil {
-		if _, err := tx.Exec(r.Context(), `UPDATE drivers SET is_active = $2, updated_at = now() WHERE id = $1`, *current.DriverID, nextActive); err != nil {
+		driverStatus := "ready"
+		driverAvailable := nextActive
+		if current.DriverStatus != nil {
+			driverStatus = *current.DriverStatus
+		}
+		if !nextActive {
+			driverStatus = "inactive"
+			driverAvailable = false
+		} else if input.DriverStatus != nil {
+			driverStatus = *input.DriverStatus
+			driverAvailable = requestedDriverStatus.Available
+		}
+		if _, err := tx.Exec(r.Context(), `UPDATE drivers SET is_active = $2, status = $3, updated_at = now() WHERE id = $1`, *current.DriverID, driverAvailable, driverStatus); err != nil {
 			app.log.Error("sync driver profile", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
 			return
 		}
+		item.DriverStatus = &driverStatus
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		app.log.Error("commit team change", "error", err)
@@ -1516,9 +1563,9 @@ func (app *application) dashboardSummary(w http.ResponseWriter, r *http.Request)
 		)
 		SELECT
 			COUNT(DISTINCT tt.id)::bigint,
-			COALESCE(SUM(b.seats) FILTER (WHERE b.status IN ('pending', 'cash_on_boarding', 'confirmed', 'completed') OR (b.status = 'awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint,
-			COALESCE(SUM(b.price_minor) FILTER (WHERE b.status IN ('pending', 'cash_on_boarding', 'confirmed', 'completed') OR (b.status = 'awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint,
-			(SELECT COUNT(DISTINCT t.vehicle_id)::bigint FROM trips t WHERE t.tenant_id = $1 AND t.starts_at >= $2 AND t.starts_at < $3 AND t.status IN ('new', 'assigned', 'in_progress') AND t.vehicle_id IS NOT NULL),
+			COALESCE(SUM(b.seats) FILTER (WHERE workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint,
+			COALESCE(SUM(b.price_minor) FILTER (WHERE workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint,
+			(SELECT COUNT(DISTINCT t.vehicle_id)::bigint FROM trips t WHERE t.tenant_id = $1 AND t.starts_at >= $2 AND t.starts_at < $3 AND workflow_status_phase(t.tenant_id,'trips',t.status) IN ('planned','assigned','in_progress') AND t.vehicle_id IS NOT NULL),
 			(SELECT COUNT(*)::bigint FROM vehicles v WHERE v.tenant_id = $1 AND v.is_active)
 		FROM today_trips tt
 		LEFT JOIN bookings b ON b.trip_id = tt.id AND b.tenant_id = $1
@@ -1538,7 +1585,7 @@ func (app *application) dashboardSummary(w http.ResponseWriter, r *http.Request)
 	trips, err := app.db.Query(r.Context(), `
 		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at, t.status::text,
 			COALESCE(v.name, ''), COALESCE(d.full_name, ''), t.capacity,
-			COALESCE(SUM(b.seats) FILTER (WHERE b.status IN ('pending', 'cash_on_boarding', 'confirmed', 'completed') OR (b.status = 'awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint
+			COALESCE(SUM(b.seats) FILTER (WHERE workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint
 		FROM trips t
 		LEFT JOIN vehicles v ON v.id = t.vehicle_id
 		LEFT JOIN drivers d ON d.id = t.driver_id
@@ -1577,7 +1624,7 @@ func (app *application) dashboardSummary(w http.ResponseWriter, r *http.Request)
 		FROM vehicles v
 		LEFT JOIN LATERAL (
 			SELECT trip.origin_name, trip.destination_name, trip.status,
-				COALESCE(SUM(b.seats) FILTER (WHERE b.status IN ('pending', 'cash_on_boarding', 'confirmed', 'completed') OR (b.status = 'awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint AS booked_seats
+				COALESCE(SUM(b.seats) FILTER (WHERE workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint AS booked_seats
 			FROM trips trip
 			LEFT JOIN bookings b ON b.trip_id = trip.id AND b.tenant_id = trip.tenant_id
 			WHERE trip.vehicle_id = v.id AND trip.tenant_id = v.tenant_id
@@ -1711,6 +1758,7 @@ type routeResourceResponse struct {
 	Currency           string `json:"currency"`
 	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
 	DefaultPricingMode string `json:"defaultPricingMode"`
+	DriverPayMinor     int64  `json:"driverPayMinor"`
 }
 
 type routeResponse struct {
@@ -1721,16 +1769,38 @@ type routeResponse struct {
 	Currency           string `json:"currency"`
 	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
 	DefaultPricingMode string `json:"defaultPricingMode"`
+	DriverPayMinor     int64  `json:"driverPayMinor"`
 	IsActive           bool   `json:"isActive"`
 	Status             string `json:"status"`
 }
 
 type routeStatusResponse struct {
-	Key         string `json:"key"`
-	Label       string `json:"label"`
-	Tone        string `json:"tone"`
-	IsAvailable bool   `json:"isAvailable"`
-	IsSystem    bool   `json:"isSystem"`
+	Key           string `json:"key"`
+	Label         string `json:"label"`
+	Tone          string `json:"tone"`
+	SemanticPhase string `json:"semanticPhase"`
+	IsAvailable   bool   `json:"isAvailable"`
+	IsTerminal    bool   `json:"isTerminal"`
+	IsSystem      bool   `json:"isSystem"`
+}
+
+type workflowStatusMeta struct {
+	Phase     string
+	Available bool
+	Terminal  bool
+}
+
+func (app *application) workflowStatus(ctx context.Context, tenantID, entity, key string) (workflowStatusMeta, bool, error) {
+	var status workflowStatusMeta
+	err := app.db.QueryRow(ctx, `
+		SELECT semantic_phase, is_available, is_terminal
+		FROM workflow_statuses
+		WHERE tenant_id=$1 AND entity_type=$2 AND key=$3
+	`, tenantID, entity, strings.TrimSpace(key)).Scan(&status.Phase, &status.Available, &status.Terminal)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return workflowStatusMeta{}, false, nil
+	}
+	return status, err == nil, err
 }
 
 func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
@@ -1740,7 +1810,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status
 		FROM routes WHERE tenant_id = $1 ORDER BY is_active DESC, name
 	`, tenant.ID)
 	if err != nil {
@@ -1752,7 +1822,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 	items := make([]routeResponse, 0)
 	for rows.Next() {
 		var item routeResponse
-		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive, &item.Status); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load routes"})
 			return
@@ -1774,6 +1844,7 @@ type routeInput struct {
 	Currency           string `json:"currency"`
 	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
 	DefaultPricingMode string `json:"defaultPricingMode"`
+	DriverPayMinor     int64  `json:"driverPayMinor"`
 	IsActive           *bool  `json:"isActive,omitempty"`
 	Status             string `json:"status"`
 }
@@ -1795,18 +1866,14 @@ func validateRouteInput(input *routeInput, fallbackCurrency string) bool {
 	if input.Currency == "" {
 		input.Currency = fallbackCurrency
 	}
-	return input.Name != "" && input.Origin != "" && input.Destination != "" && len([]rune(input.Name)) <= 160 && len([]rune(input.Origin)) <= 120 && len([]rune(input.Destination)) <= 120 && validBookingCurrency(input.Currency) && input.DefaultPriceMinor >= 0 && input.DefaultPriceMinor <= 10_000_000_000 && isPricingMode(input.DefaultPricingMode) && routeStatusKeyPattern.MatchString(input.Status)
+	return input.Name != "" && input.Origin != "" && input.Destination != "" && len([]rune(input.Name)) <= 160 && len([]rune(input.Origin)) <= 120 && len([]rune(input.Destination)) <= 120 && validBookingCurrency(input.Currency) && input.DefaultPriceMinor >= 0 && input.DefaultPriceMinor <= 10_000_000_000 && input.DriverPayMinor >= 0 && input.DriverPayMinor <= 10_000_000_000 && isPricingMode(input.DefaultPricingMode) && routeStatusKeyPattern.MatchString(input.Status)
 }
 
 var routeStatusKeyPattern = regexp.MustCompile(`^[a-z0-9_]{2,64}$`)
 
 func (app *application) routeStatusAvailability(r *http.Request, tenantID, status string) (bool, bool, error) {
-	var available bool
-	err := app.db.QueryRow(r.Context(), `SELECT is_available FROM route_statuses WHERE tenant_id=$1 AND key=$2`, tenantID, status).Scan(&available)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, false, nil
-	}
-	return available, err == nil, err
+	meta, exists, err := app.workflowStatus(r.Context(), tenantID, "routes", status)
+	return meta.Available, exists, err
 }
 
 func normalizePricingMode(value string) string {
@@ -1855,10 +1922,10 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var item routeResponse
 	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status
-	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, available, input.Status).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive, &item.Status)
+		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status
+	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status)
 	if err != nil {
 		app.log.Error("create route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create route"})
@@ -1892,10 +1959,10 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var item routeResponse
 	err := app.db.QueryRow(r.Context(), `
-		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, is_active = $7, status = $8, updated_at = now()
-		WHERE id = $9 AND tenant_id = $10
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, is_active, status
-	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, available, input.Status, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.IsActive, &item.Status)
+		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, driver_pay_minor=$7, is_active = $8, status = $9, updated_at = now()
+		WHERE id = $10 AND tenant_id = $11
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status
+	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "route not found"})
 		return
@@ -1909,11 +1976,26 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) listRouteStatuses(w http.ResponseWriter, r *http.Request) {
+	app.listStatusesForEntity(w, r, "routes")
+}
+
+var workflowEntities = map[string]bool{"routes": true, "vehicles": true, "drivers": true, "trips": true, "requests": true, "bookings": true, "payments": true}
+
+func (app *application) listWorkflowStatuses(w http.ResponseWriter, r *http.Request) {
+	entity := strings.TrimSpace(r.URL.Query().Get("entity"))
+	if !workflowEntities[entity] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "workflow entity is invalid"})
+		return
+	}
+	app.listStatusesForEntity(w, r, entity)
+}
+
+func (app *application) listStatusesForEntity(w http.ResponseWriter, r *http.Request, entity string) {
 	tenant, ok := app.loadTenant(w, r, strings.ToLower(r.PathValue("slug")))
 	if !ok {
 		return
 	}
-	rows, err := app.db.Query(r.Context(), `SELECT key,label,tone,is_available,is_system FROM route_statuses WHERE tenant_id=$1 ORDER BY position,created_at`, tenant.ID)
+	rows, err := app.db.Query(r.Context(), `SELECT key,label,tone,semantic_phase,is_available,is_terminal,is_system FROM workflow_statuses WHERE tenant_id=$1 AND entity_type=$2 ORDER BY position,created_at`, tenant.ID, entity)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
@@ -1922,7 +2004,7 @@ func (app *application) listRouteStatuses(w http.ResponseWriter, r *http.Request
 	items := make([]routeStatusResponse, 0)
 	for rows.Next() {
 		var item routeStatusResponse
-		if err := rows.Scan(&item.Key, &item.Label, &item.Tone, &item.IsAvailable, &item.IsSystem); err != nil {
+		if err := rows.Scan(&item.Key, &item.Label, &item.Tone, &item.SemanticPhase, &item.IsAvailable, &item.IsTerminal, &item.IsSystem); err != nil {
 			app.publicFailure(w, err)
 			return
 		}
@@ -1936,12 +2018,23 @@ func (app *application) listRouteStatuses(w http.ResponseWriter, r *http.Request
 }
 
 type routeStatusInput struct {
-	Label       string `json:"label"`
-	Tone        string `json:"tone"`
-	IsAvailable bool   `json:"isAvailable"`
+	Entity        string `json:"entity"`
+	Label         string `json:"label"`
+	Tone          string `json:"tone"`
+	SemanticPhase string `json:"semanticPhase"`
+	IsAvailable   bool   `json:"isAvailable"`
+	IsTerminal    bool   `json:"isTerminal"`
 }
 
 func (app *application) createRouteStatus(w http.ResponseWriter, r *http.Request) {
+	app.createStatusForEntity(w, r, "routes")
+}
+
+func (app *application) createWorkflowStatus(w http.ResponseWriter, r *http.Request) {
+	app.createStatusForEntity(w, r, "")
+}
+
+func (app *application) createStatusForEntity(w http.ResponseWriter, r *http.Request, fallbackEntity string) {
 	tenant, ok := app.loadTenant(w, r, strings.ToLower(r.PathValue("slug")))
 	if !ok {
 		return
@@ -1955,15 +2048,23 @@ func (app *application) createRouteStatus(w http.ResponseWriter, r *http.Request
 	}
 	input.Label = strings.TrimSpace(input.Label)
 	input.Tone = strings.TrimSpace(input.Tone)
+	input.Entity = strings.TrimSpace(input.Entity)
+	if input.Entity == "" {
+		input.Entity = fallbackEntity
+	}
+	input.SemanticPhase = strings.TrimSpace(input.SemanticPhase)
+	if input.SemanticPhase == "" {
+		input.SemanticPhase = "active"
+	}
 	if input.Tone == "" {
 		input.Tone = "neutral"
 	}
-	if len([]rune(input.Label)) < 1 || len([]rune(input.Label)) > 80 || !map[string]bool{"success": true, "warning": true, "danger": true, "info": true, "neutral": true}[input.Tone] {
+	if !workflowEntities[input.Entity] || len([]rune(input.Label)) < 1 || len([]rune(input.Label)) > 80 || !routeStatusKeyPattern.MatchString(input.SemanticPhase) || !map[string]bool{"success": true, "warning": true, "danger": true, "info": true, "neutral": true, "violet": true}[input.Tone] {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status name and tone are invalid"})
 		return
 	}
 	var item routeStatusResponse
-	err := app.db.QueryRow(r.Context(), `INSERT INTO route_statuses(tenant_id,key,label,tone,is_available,position) VALUES($1,'custom_'||replace(gen_random_uuid()::text,'-',''),$2,$3,$4,1000) RETURNING key,label,tone,is_available,is_system`, tenant.ID, input.Label, input.Tone, input.IsAvailable).Scan(&item.Key, &item.Label, &item.Tone, &item.IsAvailable, &item.IsSystem)
+	err := app.db.QueryRow(r.Context(), `INSERT INTO workflow_statuses(tenant_id,entity_type,key,label,tone,semantic_phase,is_available,is_terminal,position) VALUES($1,$2,'custom_'||replace(gen_random_uuid()::text,'-',''),$3,$4,$5,$6,$7,1000) RETURNING key,label,tone,semantic_phase,is_available,is_terminal,is_system`, tenant.ID, input.Entity, input.Label, input.Tone, input.SemanticPhase, input.IsAvailable, input.IsTerminal).Scan(&item.Key, &item.Label, &item.Tone, &item.SemanticPhase, &item.IsAvailable, &item.IsTerminal, &item.IsSystem)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
@@ -1972,6 +2073,14 @@ func (app *application) createRouteStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (app *application) updateRouteStatus(w http.ResponseWriter, r *http.Request) {
+	app.updateStatusForEntity(w, r, "routes")
+}
+
+func (app *application) updateWorkflowStatus(w http.ResponseWriter, r *http.Request) {
+	app.updateStatusForEntity(w, r, "")
+}
+
+func (app *application) updateStatusForEntity(w http.ResponseWriter, r *http.Request, fallbackEntity string) {
 	tenant, ok := app.loadTenant(w, r, strings.ToLower(r.PathValue("slug")))
 	if !ok {
 		return
@@ -1986,7 +2095,11 @@ func (app *application) updateRouteStatus(w http.ResponseWriter, r *http.Request
 	}
 	input.Label = strings.TrimSpace(input.Label)
 	input.Tone = strings.TrimSpace(input.Tone)
-	if len([]rune(input.Label)) < 1 || len([]rune(input.Label)) > 80 || !map[string]bool{"success": true, "warning": true, "danger": true, "info": true, "neutral": true}[input.Tone] {
+	input.Entity = strings.TrimSpace(input.Entity)
+	if input.Entity == "" {
+		input.Entity = fallbackEntity
+	}
+	if !workflowEntities[input.Entity] || len([]rune(input.Label)) < 1 || len([]rune(input.Label)) > 80 || !map[string]bool{"success": true, "warning": true, "danger": true, "info": true, "neutral": true, "violet": true}[input.Tone] {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status name and tone are invalid"})
 		return
 	}
@@ -1998,11 +2111,11 @@ func (app *application) updateRouteStatus(w http.ResponseWriter, r *http.Request
 	defer tx.Rollback(r.Context())
 	var item routeStatusResponse
 	err = tx.QueryRow(r.Context(), `
-		UPDATE route_statuses
+		UPDATE workflow_statuses
 		SET label=$1,tone=$2,is_available=$3,updated_at=now()
-		WHERE tenant_id=$4 AND key=$5
-		RETURNING key,label,tone,is_available,is_system
-	`, input.Label, input.Tone, input.IsAvailable, tenant.ID, statusKey).Scan(&item.Key, &item.Label, &item.Tone, &item.IsAvailable, &item.IsSystem)
+		WHERE tenant_id=$4 AND entity_type=$5 AND key=$6
+		RETURNING key,label,tone,semantic_phase,is_available,is_terminal,is_system
+	`, input.Label, input.Tone, input.IsAvailable, tenant.ID, input.Entity, statusKey).Scan(&item.Key, &item.Label, &item.Tone, &item.SemanticPhase, &item.IsAvailable, &item.IsTerminal, &item.IsSystem)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "route status not found"})
 		return
@@ -2011,9 +2124,13 @@ func (app *application) updateRouteStatus(w http.ResponseWriter, r *http.Request
 		app.publicFailure(w, err)
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `UPDATE routes SET is_active=$1,updated_at=now() WHERE tenant_id=$2 AND status=$3`, item.IsAvailable, tenant.ID, item.Key); err != nil {
-		app.publicFailure(w, err)
-		return
+	table := map[string]string{"routes": "routes", "vehicles": "vehicles", "drivers": "drivers"}[input.Entity]
+	if table != "" {
+		query := `UPDATE ` + table + ` SET is_active=$1,updated_at=now() WHERE tenant_id=$2 AND status=$3`
+		if _, err := tx.Exec(r.Context(), query, item.IsAvailable, tenant.ID, item.Key); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		app.publicFailure(w, err)
@@ -2207,6 +2324,7 @@ type fleetVehicleResponse struct {
 	VehicleClass       string                 `json:"vehicleClass"`
 	Capacity           int16                  `json:"capacity"`
 	IsActive           bool                   `json:"isActive"`
+	Status             string                 `json:"status"`
 	Driver             string                 `json:"driver,omitempty"`
 	ActiveTrip         *fleetTripResponse     `json:"activeTrip,omitempty"`
 	LastLocation       *fleetLocationResponse `json:"lastLocation,omitempty"`
@@ -2237,7 +2355,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := app.db.Query(r.Context(), `
 		SELECT
-			v.id::text, v.name, v.registration_number, v.vehicle_class, v.capacity, v.is_active,
+			v.id::text, v.name, v.registration_number, v.vehicle_class, v.capacity, v.is_active, v.status,
 			COALESCE(active_driver.full_name, ''),
 			active_trip.id::text, active_trip.status::text, active_trip.origin_name,
 			active_trip.destination_name, active_trip.starts_at, active_trip.ends_at,
@@ -2247,7 +2365,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			SELECT t.id, t.status, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.driver_id
 			FROM trips t
 			WHERE t.tenant_id = $1 AND t.vehicle_id = v.id
-			  AND t.status IN ('assigned', 'in_progress')
+			  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=t.tenant_id AND ws.entity_type='trips' AND ws.key=t.status AND ws.semantic_phase IN ('assigned','in_progress'))
 			  AND ($2 = '' OR t.driver_id = NULLIF($2, '')::uuid)
 			ORDER BY CASE WHEN t.status = 'in_progress' THEN 0 ELSE 1 END, t.starts_at ASC
 			LIMIT 1
@@ -2265,7 +2383,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			SELECT 1 FROM trips own_trip
 			WHERE own_trip.tenant_id = v.tenant_id AND own_trip.vehicle_id = v.id
 			  AND own_trip.driver_id = NULLIF($2, '')::uuid
-			  AND own_trip.status IN ('assigned', 'in_progress')
+			  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=own_trip.tenant_id AND ws.entity_type='trips' AND ws.key=own_trip.status AND ws.semantic_phase IN ('assigned','in_progress'))
 		  ))
 		ORDER BY v.name
 	`, tenant.ID, driverID, includeInactive)
@@ -2285,7 +2403,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 		var accuracy *float64
 		var recordedAt *time.Time
 		if err := rows.Scan(
-			&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive,
+			&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive, &item.Status,
 			&item.Driver, &tripID, &tripStatus, &tripOrigin, &tripDestination, &tripStartsAt, &tripEndsAt,
 			&latitude, &longitude, &accuracy, &recordedAt,
 		); err != nil {
@@ -2321,6 +2439,7 @@ type vehicleInput struct {
 	VehicleClass       string `json:"vehicleClass"`
 	Capacity           int16  `json:"capacity"`
 	IsActive           bool   `json:"isActive"`
+	Status             string `json:"status"`
 }
 
 type vehicleResponse struct {
@@ -2330,12 +2449,21 @@ type vehicleResponse struct {
 	VehicleClass       string `json:"vehicleClass"`
 	Capacity           int16  `json:"capacity"`
 	IsActive           bool   `json:"isActive"`
+	Status             string `json:"status"`
 }
 
 func validateVehicleInput(input *vehicleInput) bool {
 	input.Name = strings.TrimSpace(input.Name)
 	input.RegistrationNumber = strings.ToUpper(strings.TrimSpace(input.RegistrationNumber))
 	input.VehicleClass = strings.TrimSpace(input.VehicleClass)
+	input.Status = strings.TrimSpace(input.Status)
+	if input.Status == "" {
+		if input.IsActive {
+			input.Status = "ready"
+		} else {
+			input.Status = "archived"
+		}
+	}
 	return input.Name != "" && input.RegistrationNumber != "" && input.VehicleClass != "" &&
 		len([]rune(input.Name)) <= 160 && len([]rune(input.RegistrationNumber)) <= 64 &&
 		len([]rune(input.VehicleClass)) <= 80 && input.Capacity > 0 && input.Capacity <= 150
@@ -2361,13 +2489,23 @@ func (app *application) createVehicle(w http.ResponseWriter, r *http.Request) {
 	if !decodeVehicleInput(w, r, &input) {
 		return
 	}
+	status, exists, err := app.workflowStatus(r.Context(), tenant.ID, "vehicles", input.Status)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if !exists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle status does not exist"})
+		return
+	}
+	input.IsActive = status.Available
 	var item vehicleResponse
-	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO vehicles (tenant_id, name, registration_number, vehicle_class, capacity, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id::text, name, registration_number, vehicle_class, capacity, is_active
-	`, tenant.ID, input.Name, input.RegistrationNumber, input.VehicleClass, input.Capacity, input.IsActive).Scan(
-		&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive,
+	err = app.db.QueryRow(r.Context(), `
+		INSERT INTO vehicles (tenant_id, name, registration_number, vehicle_class, capacity, is_active, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id::text, name, registration_number, vehicle_class, capacity, is_active, status
+	`, tenant.ID, input.Name, input.RegistrationNumber, input.VehicleClass, input.Capacity, input.IsActive, input.Status).Scan(
+		&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive, &item.Status,
 	)
 	if err != nil {
 		var pgError *pgconn.PgError
@@ -2393,12 +2531,23 @@ func (app *application) updateVehicle(w http.ResponseWriter, r *http.Request) {
 	if !decodeVehicleInput(w, r, &input) {
 		return
 	}
-	if !input.IsActive {
+	status, exists, err := app.workflowStatus(r.Context(), tenant.ID, "vehicles", input.Status)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if !exists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle status does not exist"})
+		return
+	}
+	input.IsActive = status.Available
+	if !input.IsActive && status.Phase != "on_route" {
 		var hasActiveTrip bool
 		err := app.db.QueryRow(r.Context(), `
 			SELECT EXISTS(
-				SELECT 1 FROM trips
-				WHERE tenant_id = $1 AND vehicle_id = $2 AND status IN ('assigned', 'in_progress')
+				SELECT 1 FROM trips t
+				WHERE t.tenant_id = $1 AND t.vehicle_id = $2
+				  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=t.tenant_id AND ws.entity_type='trips' AND ws.key=t.status AND ws.semantic_phase IN ('assigned','in_progress'))
 			)
 		`, tenant.ID, vehicleID).Scan(&hasActiveTrip)
 		if err != nil {
@@ -2412,13 +2561,13 @@ func (app *application) updateVehicle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var item vehicleResponse
-	err := app.db.QueryRow(r.Context(), `
+	err = app.db.QueryRow(r.Context(), `
 		UPDATE vehicles
-		SET name = $1, registration_number = $2, vehicle_class = $3, capacity = $4, is_active = $5, updated_at = now()
-		WHERE id = $6 AND tenant_id = $7
-		RETURNING id::text, name, registration_number, vehicle_class, capacity, is_active
-	`, input.Name, input.RegistrationNumber, input.VehicleClass, input.Capacity, input.IsActive, vehicleID, tenant.ID).Scan(
-		&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive,
+		SET name = $1, registration_number = $2, vehicle_class = $3, capacity = $4, is_active = $5, status = $6, updated_at = now()
+		WHERE id = $7 AND tenant_id = $8
+		RETURNING id::text, name, registration_number, vehicle_class, capacity, is_active, status
+	`, input.Name, input.RegistrationNumber, input.VehicleClass, input.Capacity, input.IsActive, input.Status, vehicleID, tenant.ID).Scan(
+		&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive, &item.Status,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "vehicle not found"})
@@ -2507,7 +2656,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	}
 
 	routes, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor
 		FROM routes WHERE tenant_id = $1 AND is_active ORDER BY name
 	`, tenant.ID)
 	if err != nil {
@@ -2519,7 +2668,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	routeItems := make([]routeResourceResponse, 0)
 	for routes.Next() {
 		var item routeResourceResponse
-		if err := routes.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode); err != nil {
+		if err := routes.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trip resources"})
 			return
@@ -3025,8 +3174,8 @@ type changeTripStatusRequest struct {
 }
 
 var allowedTripTransitions = map[string]map[string]bool{
-	"draft":       {"new": true, "cancelled": true},
-	"new":         {"assigned": true, "cancelled": true},
+	"draft":       {"planned": true, "cancelled": true},
+	"planned":     {"assigned": true, "cancelled": true},
 	"assigned":    {"in_progress": true, "cancelled": true},
 	"in_progress": {"completed": true, "cancelled": true},
 }
@@ -3068,10 +3217,6 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not change trip status"})
 			return
 		}
-		if input.Status != "in_progress" && input.Status != "completed" {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "a driver can only start or complete an assigned trip"})
-			return
-		}
 	}
 
 	tx, err := app.db.Begin(r.Context())
@@ -3103,11 +3248,33 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not change trip status"})
 		return
 	}
-	if !allowedTripTransitions[currentStatus][input.Status] {
+	currentMeta, currentExists, err := app.workflowStatus(r.Context(), tenant.ID, "trips", currentStatus)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	nextMeta, nextExists, err := app.workflowStatus(r.Context(), tenant.ID, "trips", input.Status)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if !currentExists || !nextExists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip status does not exist"})
+		return
+	}
+	if driverID != "" && nextMeta.Phase != "in_progress" && nextMeta.Phase != "completed" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "a driver can only start or complete an assigned trip"})
+		return
+	}
+	if currentMeta.Terminal && currentStatus != input.Status {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a completed trip status cannot be changed"})
+		return
+	}
+	if currentMeta.Phase != nextMeta.Phase && !allowedTripTransitions[currentMeta.Phase][nextMeta.Phase] {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this status transition is not allowed"})
 		return
 	}
-	if input.Status == "completed" {
+	if nextMeta.Phase == "completed" {
 		var cashDue, cashCollected int64
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
@@ -3135,8 +3302,8 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 	err = tx.QueryRow(r.Context(), `
 		WITH updated AS (
 			UPDATE trips
-			SET status = $1::trip_status, updated_at = now()
-			WHERE id = $2 AND tenant_id = $3 AND status = $4::trip_status
+			SET status = $1, updated_at = now()
+			WHERE id = $2 AND tenant_id = $3 AND status = $4
 			  AND (NULLIF($5, '')::uuid IS NULL OR driver_id = NULLIF($5, '')::uuid)
 			RETURNING id, kind::text, status::text, origin_name, destination_name,
 				starts_at, ends_at, capacity, price_minor, currency, vehicle_id, driver_id
@@ -4019,7 +4186,7 @@ func (app *application) listCustomers(w http.ResponseWriter, r *http.Request) {
 			FROM (
 				SELECT currency, SUM(price_minor)::bigint AS amount_minor
 				FROM bookings
-				WHERE tenant_id = c.tenant_id AND customer_id = c.id AND status IN ('confirmed', 'completed')
+				WHERE tenant_id = c.tenant_id AND customer_id = c.id AND workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')
 				GROUP BY currency
 			) totals
 		) ltv ON true
@@ -4116,7 +4283,7 @@ func (app *application) getCustomer(w http.ResponseWriter, r *http.Request) {
 		FROM (
 			SELECT currency, SUM(price_minor)::bigint AS amount_minor
 			FROM bookings
-			WHERE tenant_id = $1 AND customer_id = $2 AND status IN ('confirmed', 'completed')
+			WHERE tenant_id = $1 AND customer_id = $2 AND workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')
 			GROUP BY currency
 		) totals
 	`, tenant.ID, customerID).Scan(&lifetimeValue); err != nil {
@@ -4671,9 +4838,16 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 		return
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	if status != "" && !validIndividualTransferRequestStatus(status) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "transfer request status is invalid"})
-		return
+	if status != "" {
+		_, exists, err := app.workflowStatus(r.Context(), tenant.ID, "requests", status)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if !exists {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "transfer request status is invalid"})
+			return
+		}
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len([]rune(query)) > 120 {
@@ -4690,14 +4864,15 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 		limit = parsed
 	}
 	rows, err := app.db.Query(r.Context(), `
-		SELECT id::text, customer_id::text, telegram_id, status, origin_name, destination_name,
-			requested_departure_at, passenger_name, passenger_phone_e164, passenger_birth_date,
-			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at, booking_id::text, count(*) OVER()
-		FROM individual_transfer_requests
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR status = $2)
+		SELECT request.id::text, request.customer_id::text, request.telegram_id, request.status, request.origin_name, request.destination_name,
+			request.requested_departure_at, request.passenger_name, request.passenger_phone_e164, request.passenger_birth_date,
+			request.seats, COALESCE(request.comment, ''), COALESCE(request.operator_note, ''), request.created_at, request.updated_at, request.booking_id::text, count(*) OVER()
+		FROM individual_transfer_requests request
+		LEFT JOIN workflow_statuses workflow ON workflow.tenant_id=request.tenant_id AND workflow.entity_type='requests' AND workflow.key=request.status
+		WHERE request.tenant_id = $1
+		  AND ($2 = '' OR request.status = $2)
 		  AND ($3 = '' OR origin_name ILIKE '%' || $3 || '%' OR destination_name ILIKE '%' || $3 || '%' OR passenger_name ILIKE '%' || $3 || '%' OR passenger_phone_e164 ILIKE '%' || $3 || '%')
-		ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'awaiting_trip' THEN 2 WHEN 'booking_created' THEN 3 ELSE 4 END, requested_departure_at ASC, created_at DESC
+		ORDER BY COALESCE(workflow.position,1000), requested_departure_at ASC, request.created_at DESC
 		LIMIT $4
 	`, tenant.ID, status, query, limit)
 	if err != nil {
@@ -4745,7 +4920,7 @@ func (app *application) updateIndividualTransferRequest(w http.ResponseWriter, r
 	}
 	input.Status = strings.TrimSpace(input.Status)
 	input.OperatorNote = strings.TrimSpace(input.OperatorNote)
-	if !validIndividualTransferRequestStatus(input.Status) || len([]rune(input.OperatorNote)) > 2000 {
+	if !routeStatusKeyPattern.MatchString(input.Status) || len([]rune(input.OperatorNote)) > 2000 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "transfer request update is invalid"})
 		return
 	}
@@ -4764,7 +4939,25 @@ func (app *application) updateIndividualTransferRequest(w http.ResponseWriter, r
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "transfer request id is invalid"})
 		return
 	}
-	if !canTransitionIndividualTransferRequest(currentStatus, input.Status) {
+	currentMeta, currentExists, err := app.workflowStatus(r.Context(), tenant.ID, "requests", currentStatus)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	nextMeta, nextExists, err := app.workflowStatus(r.Context(), tenant.ID, "requests", input.Status)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if !currentExists || !nextExists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "transfer request status does not exist"})
+		return
+	}
+	if currentMeta.Terminal && currentStatus != input.Status {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a completed transfer request cannot be reopened"})
+		return
+	}
+	if currentMeta.Phase != nextMeta.Phase && !canTransitionIndividualTransferRequest(currentMeta.Phase, nextMeta.Phase) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "transfer request status cannot be changed this way"})
 		return
 	}
@@ -4773,13 +4966,13 @@ func (app *application) updateIndividualTransferRequest(w http.ResponseWriter, r
 	err = tx.QueryRow(r.Context(), `
 		UPDATE individual_transfer_requests
 		SET status = $1, operator_note = NULLIF($2, ''),
-			processed_at = CASE WHEN $1 IN ('booking_created', 'closed', 'cancelled') THEN now() ELSE processed_at END,
+			processed_at = CASE WHEN $5 THEN now() ELSE processed_at END,
 			updated_at = now()
 		WHERE id = $3 AND tenant_id = $4
 		RETURNING id::text, customer_id::text, telegram_id, status, origin_name, destination_name,
 			requested_departure_at, passenger_name, passenger_phone_e164, passenger_birth_date,
 			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at, booking_id::text
-	`, input.Status, input.OperatorNote, requestID, tenant.ID).Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt, &item.BookingID)
+	`, input.Status, input.OperatorNote, requestID, tenant.ID, nextMeta.Terminal).Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt, &item.BookingID)
 	if err != nil {
 		app.log.Error("update individual transfer request", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update transfer request"})
@@ -4870,7 +5063,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		SELECT b.id::text, b.status::text, b.seats, b.price_minor, b.currency, b.source, b.created_at, b.custom_data,
 			COALESCE(c.full_name, ''), c.phone_e164,
 			t.id::text, t.status::text, t.origin_name, t.destination_name, t.starts_at, t.capacity,
-			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (occupied.status IN ('pending', 'cash_on_boarding', 'confirmed') OR (occupied.status = 'awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
+			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status) IN ('pending','confirmed') OR (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status)='awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
 			COALESCE(payment.id::text, ''), COALESCE(payment.status::text, ''), COALESCE(payment.payment_method, ''), b.payment_hold_expires_at,
 			COALESCE(request.id::text, ''), count(*) OVER()
 		FROM bookings b
@@ -4981,7 +5174,12 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if !canCreateBookingForTripStatus(status) {
+	tripMeta, tripStatusExists, statusErr := app.workflowStatus(r.Context(), tenant.ID, "trips", status)
+	if statusErr != nil {
+		app.publicFailure(w, statusErr)
+		return
+	}
+	if !tripStatusExists || !canCreateBookingForTripStatus(tripMeta.Phase) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "booking is unavailable for this trip"})
 		return
 	}
@@ -5020,8 +5218,24 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var duplicateBooking bool
+	if err := tx.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM bookings
+			WHERE tenant_id=$1 AND trip_id=$2 AND customer_id=$3
+			  AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed')
+			    OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at>now()))
+		)
+	`, tenant.ID, input.TripID, input.CustomerID).Scan(&duplicateBooking); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create booking"})
+		return
+	}
+	if duplicateBooking {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "customer already has an active booking for this trip"})
+		return
+	}
 	var occupied int
-	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats),0) FROM bookings WHERE trip_id=$1 AND (status IN ('pending','cash_on_boarding','confirmed') OR (status = 'awaiting_payment' AND payment_hold_expires_at > now()))`, input.TripID).Scan(&occupied); err != nil {
+	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats),0) FROM bookings WHERE trip_id=$1 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at > now()))`, input.TripID).Scan(&occupied); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create booking"})
 		return
 	}
@@ -5072,7 +5286,7 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 }
 
 func canCreateBookingForTripStatus(status string) bool {
-	return status == "new" || status == "assigned"
+	return status == "new" || status == "planned" || status == "assigned"
 }
 
 func (app *application) updateBooking(w http.ResponseWriter, r *http.Request) {
@@ -5089,10 +5303,11 @@ func (app *application) updateBooking(w http.ResponseWriter, r *http.Request) {
 	var input updateBookingRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil || strings.TrimSpace(input.Status) != "cancelled" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only cancellation is supported for a booking"})
+	if err := decoder.Decode(&input); err != nil || !routeStatusKeyPattern.MatchString(strings.TrimSpace(input.Status)) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "booking status is invalid"})
 		return
 	}
+	input.Status = strings.TrimSpace(input.Status)
 	tx, err := app.db.Begin(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update booking"})
@@ -5121,11 +5336,56 @@ func (app *application) updateBooking(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if currentStatus == "cancelled" {
+	currentMeta, currentExists, err := app.workflowStatus(r.Context(), tenant.ID, "bookings", currentStatus)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	nextMeta, nextExists, err := app.workflowStatus(r.Context(), tenant.ID, "bookings", input.Status)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if !currentExists || !nextExists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "booking status does not exist"})
+		return
+	}
+	if currentMeta.Terminal && currentStatus != input.Status {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a completed booking status cannot be changed"})
+		return
+	}
+	if currentStatus == input.Status {
+		writeJSON(w, http.StatusOK, map[string]any{"item": bookingResponse{ID: bookingID, Status: currentStatus}})
+		return
+	}
+	if nextMeta.Phase != "cancelled" {
+		var booking bookingResponse
+		err = tx.QueryRow(r.Context(), `
+			UPDATE bookings SET status=$1, updated_at=now()
+			WHERE id=$2 AND tenant_id=$3
+			RETURNING id::text,trip_id::text,customer_id::text,seats,status::text,price_minor,currency
+		`, input.Status, bookingID, tenant.ID).Scan(&booking.ID, &booking.TripID, &booking.CustomerID, &booking.Seats, &booking.Status, &booking.PriceMinor, &booking.Currency)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"item": booking})
+		return
+	}
+	if currentMeta.Phase == "cancelled" {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "booking is already cancelled"})
 		return
 	}
-	if currentStatus == "completed" || tripStatus == "in_progress" || tripStatus == "completed" {
+	tripMeta, tripExists, err := app.workflowStatus(r.Context(), tenant.ID, "trips", tripStatus)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if currentMeta.Phase == "completed" || (tripExists && (tripMeta.Phase == "in_progress" || tripMeta.Phase == "completed")) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "booking cannot be cancelled after the trip has started"})
 		return
 	}
@@ -5139,17 +5399,17 @@ func (app *application) updateBooking(w http.ResponseWriter, r *http.Request) {
 	}
 	var booking bookingResponse
 	err = tx.QueryRow(r.Context(), `
-		UPDATE bookings SET status = 'cancelled', payment_hold_expires_at = NULL, updated_at = now()
+		UPDATE bookings SET status = $3, payment_hold_expires_at = NULL, updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
 		RETURNING id::text, trip_id::text, customer_id::text, seats, status::text, price_minor, currency
-	`, bookingID, tenant.ID).Scan(&booking.ID, &booking.TripID, &booking.CustomerID, &booking.Seats, &booking.Status, &booking.PriceMinor, &booking.Currency)
+	`, bookingID, tenant.ID, input.Status).Scan(&booking.ID, &booking.TripID, &booking.CustomerID, &booking.Seats, &booking.Status, &booking.PriceMinor, &booking.Currency)
 	if err != nil {
 		app.log.Error("cancel booking", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update booking"})
 		return
 	}
 	var occupied int
-	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats), 0) FROM bookings WHERE trip_id = $1 AND (status IN ('pending', 'cash_on_boarding', 'confirmed') OR (status = 'awaiting_payment' AND payment_hold_expires_at > now()))`, tripID).Scan(&occupied); err != nil {
+	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats), 0) FROM bookings WHERE trip_id = $1 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at > now()))`, tripID).Scan(&occupied); err != nil {
 		app.log.Error("count booking seats", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update booking"})
 		return
@@ -5298,7 +5558,7 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 			SELECT EXISTS(
 				SELECT 1 FROM trips
 				WHERE id=$1 AND tenant_id=$2 AND vehicle_id=$3
-				  AND (NULLIF($4, '')::uuid IS NULL OR (driver_id = NULLIF($4, '')::uuid AND status IN ('assigned', 'in_progress')))
+				  AND (NULLIF($4, '')::uuid IS NULL OR (driver_id = NULLIF($4, '')::uuid AND workflow_status_phase(tenant_id,'trips',status) IN ('assigned','in_progress')))
 			)
 		`, input.TripID, tenant.ID, input.VehicleID, driverID).Scan(&tripExists); err != nil {
 			app.log.Error("check GPS trip", "error", err)
@@ -5537,6 +5797,85 @@ func (app *application) updatePaymentConfig(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, response)
 }
 
+type integrationSecretsResponse struct {
+	MonobankConfigured    bool `json:"monobankConfigured"`
+	TelegramBotConfigured bool `json:"telegramBotConfigured"`
+}
+
+type updateIntegrationSecretsRequest struct {
+	MonobankToken    *string `json:"monobankToken"`
+	TelegramBotToken *string `json:"telegramBotToken"`
+	ClearMonobank    bool    `json:"clearMonobank"`
+	ClearTelegramBot bool    `json:"clearTelegramBot"`
+}
+
+func (app *application) getIntegrationSecrets(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	var response integrationSecretsResponse
+	err := app.db.QueryRow(r.Context(), `
+		SELECT COALESCE(monobank_token,'')<>'', COALESCE(telegram_bot_token,'')<>''
+		FROM tenant_integration_secrets WHERE tenant_id=$1
+	`, tenant.ID).Scan(&response.MonobankConfigured, &response.TelegramBotConfigured)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (app *application) updateIntegrationSecrets(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	var input updateIntegrationSecretsRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid integration settings payload"})
+		return
+	}
+	trimSecret := func(value *string) *string {
+		if value == nil {
+			return nil
+		}
+		trimmed := strings.TrimSpace(*value)
+		return &trimmed
+	}
+	input.MonobankToken = trimSecret(input.MonobankToken)
+	input.TelegramBotToken = trimSecret(input.TelegramBotToken)
+	if input.MonobankToken != nil && (*input.MonobankToken == "" || len(*input.MonobankToken) > 1000) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "monobank token is invalid"})
+		return
+	}
+	if input.TelegramBotToken != nil && (*input.TelegramBotToken == "" || len(*input.TelegramBotToken) > 1000 || !regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]+$`).MatchString(*input.TelegramBotToken)) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Telegram bot token is invalid"})
+		return
+	}
+	var response integrationSecretsResponse
+	err := app.db.QueryRow(r.Context(), `
+		INSERT INTO tenant_integration_secrets(tenant_id,monobank_token,telegram_bot_token)
+		VALUES($1,CASE WHEN $4 THEN NULL ELSE $2 END,CASE WHEN $5 THEN NULL ELSE $3 END)
+		ON CONFLICT(tenant_id) DO UPDATE SET
+			monobank_token=CASE WHEN $4 THEN NULL WHEN $2 IS NOT NULL THEN $2 ELSE tenant_integration_secrets.monobank_token END,
+			telegram_bot_token=CASE WHEN $5 THEN NULL WHEN $3 IS NOT NULL THEN $3 ELSE tenant_integration_secrets.telegram_bot_token END,
+			updated_at=now()
+		RETURNING COALESCE(monobank_token,'')<>'', COALESCE(telegram_bot_token,'')<>''
+	`, tenant.ID, input.MonobankToken, input.TelegramBotToken, input.ClearMonobank, input.ClearTelegramBot).Scan(&response.MonobankConfigured, &response.TelegramBotConfigured)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 type financeSummaryResponse struct {
 	From                     string                   `json:"from"`
 	To                       string                   `json:"to"`
@@ -5607,9 +5946,9 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			SELECT currency FROM operational_expenses WHERE tenant_id = $1 AND occurred_at >= $2 AND occurred_at < $3
 		), booking_totals AS (
 			SELECT currency,
-				COALESCE(SUM(price_minor) FILTER (WHERE status IN ('confirmed', 'completed')), 0) AS confirmed_revenue_minor,
+				COALESCE(SUM(price_minor) FILTER (WHERE workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')), 0) AS confirmed_revenue_minor,
 				COALESCE(SUM(price_minor) FILTER (WHERE status = 'pending'), 0) AS pending_revenue_minor,
-				COUNT(*) FILTER (WHERE status IN ('confirmed', 'completed')) AS confirmed_bookings
+				COUNT(*) FILTER (WHERE workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')) AS confirmed_bookings
 			FROM bookings
 			WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3
 			GROUP BY currency

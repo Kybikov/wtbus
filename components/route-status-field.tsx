@@ -18,13 +18,26 @@ import { FieldSelect } from "@/components/ui/field-select"
 import { Input } from "@/components/ui/input"
 import { sessionFetch } from "@/lib/session-navigation"
 
-export type RouteStatus = {
+export type WorkflowEntity =
+  | "routes"
+  | "vehicles"
+  | "drivers"
+  | "trips"
+  | "requests"
+  | "bookings"
+  | "payments"
+
+export type WorkflowStatus = {
   key: string
   label: string
-  tone: "success" | "warning" | "danger" | "info" | "neutral"
+  tone: "success" | "warning" | "danger" | "info" | "neutral" | "violet"
+  semanticPhase: string
   isAvailable: boolean
+  isTerminal: boolean
   isSystem: boolean
 }
+
+export type RouteStatus = WorkflowStatus
 
 const toneOptions = [
   { value: "success", label: "Зелёный" },
@@ -32,9 +45,76 @@ const toneOptions = [
   { value: "danger", label: "Красный" },
   { value: "info", label: "Синий" },
   { value: "neutral", label: "Нейтральный" },
+  { value: "violet", label: "Фиолетовый" },
 ]
 
-function isStatuses(value: unknown): value is { items: RouteStatus[] } {
+const entityLabels: Record<WorkflowEntity, string> = {
+  routes: "маршрутов",
+  vehicles: "автомобилей",
+  drivers: "водителей",
+  trips: "рейсов",
+  requests: "заявок",
+  bookings: "бронирований",
+  payments: "оплат",
+}
+
+const phaseOptions: Record<WorkflowEntity, { value: string; label: string }[]> =
+  {
+    routes: ["active", "unavailable", "inactive", "archived"].map((value) => ({
+      value,
+      label: value,
+    })),
+    vehicles: [
+      "ready",
+      "on_route",
+      "reserved",
+      "maintenance",
+      "repair",
+      "unavailable",
+      "archived",
+    ].map((value) => ({ value, label: value })),
+    drivers: [
+      "ready",
+      "assigned",
+      "on_route",
+      "rest",
+      "unavailable",
+      "inactive",
+    ].map((value) => ({ value, label: value })),
+    trips: [
+      "draft",
+      "planned",
+      "assigned",
+      "in_progress",
+      "completed",
+      "cancelled",
+    ].map((value) => ({ value, label: value })),
+    requests: [
+      "new",
+      "in_progress",
+      "awaiting_trip",
+      "booking_created",
+      "closed",
+      "cancelled",
+    ].map((value) => ({ value, label: value })),
+    bookings: [
+      "pending",
+      "awaiting_payment",
+      "confirmed",
+      "completed",
+      "cancelled",
+    ].map((value) => ({ value, label: value })),
+    payments: [
+      "pending",
+      "authorized",
+      "paid",
+      "failed",
+      "cancelled",
+      "refunded",
+    ].map((value) => ({ value, label: value })),
+  }
+
+function isStatuses(value: unknown): value is { items: WorkflowStatus[] } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -52,23 +132,26 @@ function messageFrom(value: unknown, fallback: string) {
     : fallback
 }
 
-export function useRouteStatuses() {
-  const [statuses, setStatuses] = React.useState<RouteStatus[]>([])
+export function useWorkflowStatuses(entity: WorkflowEntity) {
+  const [statuses, setStatuses] = React.useState<WorkflowStatus[]>([])
 
   const load = React.useCallback(async () => {
-    const response = await sessionFetch("/api/route-statuses", {
-      cache: "no-store",
-    })
+    const response = await sessionFetch(
+      `/api/workflow-statuses?entity=${entity}`,
+      {
+        cache: "no-store",
+      }
+    )
     const payload: unknown = await response.json().catch(() => null)
     if (!response.ok || !isStatuses(payload))
       throw new Error(messageFrom(payload, "Не удалось загрузить статусы."))
     setStatuses(payload.items)
     return payload.items
-  }, [])
+  }, [entity])
 
   React.useEffect(() => {
     const controller = new AbortController()
-    void sessionFetch("/api/route-statuses", {
+    void sessionFetch(`/api/workflow-statuses?entity=${entity}`, {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -79,7 +162,7 @@ export function useRouteStatuses() {
       })
       .catch(() => undefined)
     const syncStatus = (event: Event) => {
-      const item = (event as CustomEvent<RouteStatus>).detail
+      const item = (event as CustomEvent<WorkflowStatus>).detail
       if (!item) return
       setStatuses((current) => {
         const exists = current.some((status) => status.key === item.key)
@@ -88,30 +171,41 @@ export function useRouteStatuses() {
           : [...current, item]
       })
     }
-    window.addEventListener("route-statuses-changed", syncStatus)
+    const eventName = `workflow-statuses-changed:${entity}`
+    window.addEventListener(eventName, syncStatus)
     return () => {
       controller.abort()
-      window.removeEventListener("route-statuses-changed", syncStatus)
+      window.removeEventListener(eventName, syncStatus)
     }
-  }, [])
+  }, [entity])
 
   return { statuses, setStatuses, load }
 }
 
-export function RouteStatusField({
+export function useRouteStatuses() {
+  return useWorkflowStatuses("routes")
+}
+
+export function WorkflowStatusField({
+  entity,
   value,
   onValueChange,
 }: {
+  entity: WorkflowEntity
   value: string
   onValueChange: (value: string) => void
 }) {
-  const { statuses, setStatuses } = useRouteStatuses()
+  const { statuses, setStatuses } = useWorkflowStatuses(entity)
   const [open, setOpen] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [selectedKey, setSelectedKey] = React.useState<string | undefined>()
   const [label, setLabel] = React.useState("")
-  const [tone, setTone] = React.useState<RouteStatus["tone"]>("neutral")
+  const [tone, setTone] = React.useState<WorkflowStatus["tone"]>("neutral")
   const [isAvailable, setIsAvailable] = React.useState(false)
+  const [isTerminal, setIsTerminal] = React.useState(false)
+  const [semanticPhase, setSemanticPhase] = React.useState(
+    phaseOptions[entity][0].value
+  )
 
   function openSettings() {
     const selected =
@@ -121,6 +215,8 @@ export function RouteStatusField({
       setLabel(selected.label)
       setTone(selected.tone)
       setIsAvailable(selected.isAvailable)
+      setIsTerminal(selected.isTerminal)
+      setSemanticPhase(selected.semanticPhase)
     } else {
       beginCreate()
     }
@@ -134,6 +230,8 @@ export function RouteStatusField({
     setLabel(selected.label)
     setTone(selected.tone)
     setIsAvailable(selected.isAvailable)
+    setIsTerminal(selected.isTerminal)
+    setSemanticPhase(selected.semanticPhase)
   }
 
   function beginCreate() {
@@ -141,6 +239,8 @@ export function RouteStatusField({
     setLabel("")
     setTone("neutral")
     setIsAvailable(false)
+    setIsTerminal(false)
+    setSemanticPhase(phaseOptions[entity][0].value)
   }
 
   async function saveStatus(event: React.FormEvent<HTMLFormElement>) {
@@ -151,12 +251,19 @@ export function RouteStatusField({
       const editing = Boolean(selectedKey)
       const response = await sessionFetch(
         editing
-          ? `/api/route-statuses/${encodeURIComponent(selectedKey ?? "")}`
-          : "/api/route-statuses",
+          ? `/api/workflow-statuses/${encodeURIComponent(selectedKey ?? "")}`
+          : "/api/workflow-statuses",
         {
           method: editing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ label, tone, isAvailable }),
+          body: JSON.stringify({
+            entity,
+            label,
+            tone,
+            semanticPhase,
+            isAvailable,
+            isTerminal,
+          }),
         }
       )
       const payload: unknown = await response.json().catch(() => null)
@@ -167,14 +274,14 @@ export function RouteStatusField({
         !("item" in payload)
       )
         throw new Error(messageFrom(payload, "Не удалось добавить статус."))
-      const item = payload.item as RouteStatus
+      const item = payload.item as WorkflowStatus
       setStatuses((current) =>
         editing
           ? current.map((status) => (status.key === item.key ? item : status))
           : [...current, item]
       )
       window.dispatchEvent(
-        new CustomEvent("route-statuses-changed", { detail: item })
+        new CustomEvent(`workflow-statuses-changed:${entity}`, { detail: item })
       )
       onValueChange(item.key)
       setOpen(false)
@@ -228,10 +335,10 @@ export function RouteStatusField({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Статусы маршрутов</DialogTitle>
+            <DialogTitle>Статусы {entityLabels[entity]}</DialogTitle>
             <DialogDescription>
               Измените существующий статус или добавьте новый. Изменения сразу
-              применятся к маршрутам и фильтрам.
+              применятся к записям, фильтрам и канбану.
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2">
@@ -277,8 +384,22 @@ export function RouteStatusField({
               <FieldSelect
                 options={toneOptions}
                 value={tone}
-                onValueChange={(next) => setTone(next as RouteStatus["tone"])}
+                onValueChange={(next) =>
+                  setTone(next as WorkflowStatus["tone"])
+                }
               />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Системная фаза
+              <FieldSelect
+                disabled={Boolean(selectedKey)}
+                options={phaseOptions[entity]}
+                value={semanticPhase}
+                onValueChange={setSemanticPhase}
+              />
+              <span className="text-xs font-normal text-muted-foreground">
+                Определяет бизнес-логику. После создания не изменяется.
+              </span>
             </label>
             <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm">
               <Checkbox
@@ -286,9 +407,24 @@ export function RouteStatusField({
                 onCheckedChange={(checked) => setIsAvailable(Boolean(checked))}
               />
               <span>
-                <span className="block font-medium">Доступен для продаж</span>
+                <span className="block font-medium">
+                  Доступен для планирования
+                </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   Маршруты с этим статусом можно использовать в новых рейсах.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm">
+              <Checkbox
+                checked={isTerminal}
+                disabled={Boolean(selectedKey)}
+                onCheckedChange={(checked) => setIsTerminal(Boolean(checked))}
+              />
+              <span>
+                <span className="block font-medium">Фінальний статус</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Запис вважається завершеним і не рухається далі автоматично.
                 </span>
               </span>
             </label>
@@ -313,4 +449,11 @@ export function RouteStatusField({
       </Dialog>
     </>
   )
+}
+
+export function RouteStatusField(props: {
+  value: string
+  onValueChange: (value: string) => void
+}) {
+  return <WorkflowStatusField entity="routes" {...props} />
 }

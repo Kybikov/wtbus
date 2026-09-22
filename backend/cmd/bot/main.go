@@ -138,9 +138,28 @@ func main() {
 		logger.Error("ping redis", "error", err)
 		os.Exit(1)
 	}
-	bindings, err := parseBotBindings(optionalEnv("TELEGRAM_BOTS_JSON", ""), botBinding{
-		Token:      optionalEnv("TELEGRAM_BOT_TOKEN", ""),
-		TenantSlug: optionalEnv("TENANT_SLUG", "vivat-bus"),
+	tenantSlug := optionalEnv("TENANT_SLUG", "vivat-bus")
+	fallbackToken := optionalEnv("TELEGRAM_BOT_TOKEN", "")
+	bindingsJSON := optionalEnv("TELEGRAM_BOTS_JSON", "")
+	if strings.TrimSpace(bindingsJSON) == "" {
+		var configuredToken string
+		err := db.QueryRow(ctx, `
+			SELECT COALESCE(secret.telegram_bot_token,'')
+			FROM tenants tenant
+			LEFT JOIN tenant_integration_secrets secret ON secret.tenant_id=tenant.id
+			WHERE tenant.slug=$1
+		`, tenantSlug).Scan(&configuredToken)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			logger.Error("load configured Telegram token", "tenant", tenantSlug, "error", err)
+			os.Exit(1)
+		}
+		if configuredToken != "" {
+			fallbackToken = configuredToken
+		}
+	}
+	bindings, err := parseBotBindings(bindingsJSON, botBinding{
+		Token:      fallbackToken,
+		TenantSlug: tenantSlug,
 	})
 	if err != nil {
 		logger.Error("load bot bindings", "error", err)

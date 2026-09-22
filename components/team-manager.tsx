@@ -23,6 +23,10 @@ import {
 import { FieldSelect } from "@/components/ui/field-select"
 import { Input } from "@/components/ui/input"
 import { sessionFetch } from "@/lib/session-navigation"
+import {
+  WorkflowStatusField,
+  useWorkflowStatuses,
+} from "@/components/route-status-field"
 
 type Role = "developer" | "owner" | "admin" | "dispatcher" | "driver"
 
@@ -37,6 +41,7 @@ type TeamMember = {
   createdAt: string
   lastSeenAt?: string
   driverId?: string
+  driverStatus?: string
   actionCount: number
   lastActionAt?: string
 }
@@ -128,6 +133,7 @@ const emptyForm = {
 }
 
 export function TeamManager() {
+  const { statuses: driverStatuses } = useWorkflowStatuses("drivers")
   const [members, setMembers] = React.useState<TeamMember[]>([])
   const [me, setMe] = React.useState<Me | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -237,7 +243,7 @@ export function TeamManager() {
 
   async function updateMember(
     member: TeamMember,
-    change: { role?: Role; isActive?: boolean },
+    change: { role?: Role; isActive?: boolean; driverStatus?: string },
     quiet = false
   ) {
     setChangingId(member.membershipId)
@@ -422,6 +428,33 @@ export function TeamManager() {
           member.isSystem ? "Вход запрещён" : humanDate(member.lastSeenAt),
       },
       {
+        id: "driverStatus",
+        metric: {
+          kind: "enum",
+          getValue: (member) => member.driverStatus ?? "",
+          options: driverStatuses.map((status) => ({
+            value: status.key,
+            label: status.label,
+            tone: status.tone,
+          })),
+        },
+        label: "Статус водителя",
+        value: (member) =>
+          member.role === "driver" && member.driverStatus ? (
+            <WorkflowStatusField
+              entity="drivers"
+              value={member.driverStatus}
+              onValueChange={(driverStatus) =>
+                void updateMember(member, { driverStatus }).then((ok) => {
+                  if (ok) void load()
+                })
+              }
+            />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
         id: "actionCount",
         metric: { kind: "number", getValue: (member) => member.actionCount },
         label: "Действий",
@@ -466,7 +499,7 @@ export function TeamManager() {
         defaultVisible: false,
       },
     ],
-    [canManage, changingId, load, me?.membershipId, roles]
+    [canManage, changingId, driverStatuses, load, me?.membershipId, roles]
   )
 
   const actions = React.useMemo<EntityAction<TeamMember>[]>(

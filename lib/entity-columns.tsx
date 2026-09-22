@@ -101,6 +101,7 @@ export function statusToneClass(tone: StatusOption["tone"]) {
     warning: "bg-amber-500/15 text-amber-500",
     danger: "bg-red-500/15 text-red-500",
     info: "bg-sky-500/15 text-sky-500",
+    violet: "bg-violet-500/15 text-violet-500",
     neutral: "bg-muted text-muted-foreground",
   }[tone ?? "neutral"]
 }

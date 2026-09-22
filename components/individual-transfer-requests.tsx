@@ -20,14 +20,9 @@ import {
 } from "@/lib/entity-columns"
 import { usePageSearch } from "@/hooks/use-page-search"
 import { useEntitySelection } from "@/hooks/use-entity-selection"
+import { useWorkflowStatuses } from "@/components/route-status-field"
 
-type RequestStatus =
-  | "new"
-  | "in_progress"
-  | "awaiting_trip"
-  | "booking_created"
-  | "closed"
-  | "cancelled"
+type RequestStatus = string
 
 type TransferRequest = {
   id: string
@@ -54,7 +49,7 @@ type RequestCollection = {
   total: number
 }
 
-const statusLabels: Record<RequestStatus, string> = {
+const statusLabels: Record<string, string> = {
   new: "Новая",
   in_progress: "В работе",
   awaiting_trip: "Подбор рейса",
@@ -64,7 +59,7 @@ const statusLabels: Record<RequestStatus, string> = {
 }
 
 const requestTones: Record<
-  RequestStatus,
+  string,
   "neutral" | "info" | "warning" | "success" | "danger" | "violet"
 > = {
   new: "info",
@@ -75,7 +70,7 @@ const requestTones: Record<
   cancelled: "danger",
 }
 
-const requestDescriptions: Record<RequestStatus, string> = {
+const requestDescriptions: Record<string, string> = {
   new: "Новые обращения, которые ещё не взял диспетчер",
   in_progress: "Диспетчер уточняет детали поездки",
   awaiting_trip: "Нужно подобрать подходящий рейс",
@@ -84,7 +79,7 @@ const requestDescriptions: Record<RequestStatus, string> = {
   cancelled: "Клиент отказался или заявка отклонена",
 }
 
-const requestBadgeClasses: Record<RequestStatus, string> = {
+const requestBadgeClasses: Record<string, string> = {
   new: "status-sky",
   in_progress: "status-gold",
   awaiting_trip: "status-violet",
@@ -93,7 +88,7 @@ const requestBadgeClasses: Record<RequestStatus, string> = {
   cancelled: "bg-destructive/15 text-destructive",
 }
 
-function canMoveRequest(current: RequestStatus, next: RequestStatus) {
+function canMoveRequest(current: string, next: string) {
   if (current === next) return true
   if (current === "new") return next === "in_progress" || next === "cancelled"
   if (current === "in_progress")
@@ -141,6 +136,7 @@ function formatDate(
 }
 
 export function IndividualTransferRequests() {
+  const { statuses } = useWorkflowStatuses("requests")
   const router = useRouter()
   const [items, setItems] = React.useState<TransferRequest[]>([])
   const [total, setTotal] = React.useState(0)
@@ -239,9 +235,11 @@ export function IndividualTransferRequests() {
           )
         )
       }
-      setNotice(
-        `Статус заявки изменён: ${statusLabels[nextStatus].toLowerCase()}.`
-      )
+      const label =
+        statuses.find((status) => status.key === nextStatus)?.label ??
+        statusLabels[nextStatus] ??
+        nextStatus
+      setNotice(`Статус заявки изменён: ${label.toLowerCase()}.`)
       return true
     } catch (reason) {
       setError(
@@ -253,13 +251,25 @@ export function IndividualTransferRequests() {
     return false
   }
 
-  const requestOptions = (Object.keys(statusLabels) as RequestStatus[]).map(
-    (value) => ({
-      value,
-      label: statusLabels[value],
-      tone: requestTones[value] === "violet" ? "info" : requestTones[value],
-    })
-  )
+  const requestOptions = (
+    statuses.length
+      ? statuses
+      : Object.keys(statusLabels).map((key) => ({
+          key,
+          label: statusLabels[key],
+          tone: requestTones[key],
+          semanticPhase: key,
+          isTerminal: ["booking_created", "closed", "cancelled"].includes(key),
+        }))
+  ).map((status) => ({
+    value: status.key,
+    label: status.label,
+    tone: status.tone === "violet" ? "info" : status.tone,
+    semanticPhase: status.semanticPhase,
+    isTerminal: status.isTerminal,
+  }))
+  const phaseOf = (key: string) =>
+    requestOptions.find((option) => option.value === key)?.semanticPhase ?? key
   const columns = [
     textColumn<TransferRequest>(
       "name",
@@ -445,17 +455,23 @@ export function IndividualTransferRequests() {
           kanbanGroups={requestOptions.map((option) => ({
             id: option.value,
             label: option.label,
-            tone: requestTones[option.value],
-            description: requestDescriptions[option.value],
+            tone:
+              statuses.find((status) => status.key === option.value)?.tone ??
+              requestTones[option.value] ??
+              "neutral",
+            description:
+              requestDescriptions[phaseOf(option.value)] ??
+              "Пользовательский этап обработки",
           }))}
           onKanbanGroupChange={(item, next) =>
             updateRequest(item, next as RequestStatus)
           }
           canMoveInKanban={(item) =>
-            !["booking_created", "closed", "cancelled"].includes(item.status)
+            !requestOptions.find((option) => option.value === item.status)
+              ?.isTerminal
           }
           canMoveToKanbanGroup={(item, next) =>
-            canMoveRequest(item.status, next as RequestStatus)
+            canMoveRequest(phaseOf(item.status), phaseOf(next))
           }
           filterValues={{ status }}
           onFiltersChange={(values) =>
@@ -524,9 +540,10 @@ export function IndividualTransferRequests() {
               <div className="flex items-start justify-between gap-2">
                 <p className="font-semibold">{item.passengerName}</p>
                 <span
-                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${requestBadgeClasses[item.status]}`}
+                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${requestBadgeClasses[phaseOf(item.status)] ?? "status-slate"}`}
                 >
-                  {statusLabels[item.status]}
+                  {requestOptions.find((option) => option.value === item.status)
+                    ?.label ?? item.status}
                 </span>
               </div>
               <div className="space-y-1.5 text-xs text-muted-foreground">

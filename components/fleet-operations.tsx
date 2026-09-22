@@ -16,10 +16,13 @@ import {
   dateColumn,
   statusColumn,
   activeOptions,
-  activeFilter,
 } from "@/lib/entity-columns"
 import { usePageSearch } from "@/hooks/use-page-search"
 import { useEntitySelection } from "@/hooks/use-entity-selection"
+import {
+  WorkflowStatusField,
+  useWorkflowStatuses,
+} from "@/components/route-status-field"
 
 type FleetTrip = {
   id: string
@@ -44,6 +47,7 @@ type Vehicle = {
   vehicleClass: string
   capacity: number
   isActive: boolean
+  status: string
   driver?: string
   activeTrip?: FleetTrip
   lastLocation?: FleetLocation
@@ -53,7 +57,7 @@ type FleetResponse = { items: Vehicle[]; timezone: string }
 
 type VehicleForm = Pick<
   Vehicle,
-  "name" | "registrationNumber" | "vehicleClass" | "capacity" | "isActive"
+  "name" | "registrationNumber" | "vehicleClass" | "capacity" | "status"
 >
 
 type Me = { role: "developer" | "owner" | "admin" | "dispatcher" | "driver" }
@@ -63,7 +67,7 @@ const emptyVehicleForm: VehicleForm = {
   registrationNumber: "",
   vehicleClass: "Микроавтобус",
   capacity: 18,
-  isActive: true,
+  status: "ready",
 }
 
 function isFleetResponse(value: unknown): value is FleetResponse {
@@ -109,6 +113,7 @@ function relativeTime(value: string, now: number) {
 }
 
 export function FleetOperations() {
+  const { statuses } = useWorkflowStatuses("vehicles")
   const [query, setQuery] = usePageSearch()
   const selection = useEntitySelection<Vehicle>((item) => item.id)
   const requestInFlight = React.useRef(false)
@@ -255,7 +260,7 @@ export function FleetOperations() {
             registrationNumber: vehicle.registrationNumber,
             vehicleClass: vehicle.vehicleClass,
             capacity: vehicle.capacity,
-            isActive: !vehicle.isActive,
+            status: vehicle.isActive ? "archived" : "ready",
           }),
         }
       )
@@ -317,8 +322,14 @@ export function FleetOperations() {
     statusColumn<Vehicle>(
       "active",
       "Статус",
-      (item) => (item.isActive ? "active" : "inactive"),
-      activeOptions
+      (item) => item.status,
+      statuses.length
+        ? statuses.map((status) => ({
+            value: status.key,
+            label: status.label,
+            tone: status.tone,
+          }))
+        : activeOptions
     ),
     textColumn<Vehicle>("trip", "Текущий рейс", (item) =>
       item.activeTrip
@@ -372,7 +383,7 @@ export function FleetOperations() {
               registrationNumber: item.registrationNumber,
               vehicleClass: item.vehicleClass,
               capacity: item.capacity,
-              isActive: active,
+              status: active ? "ready" : "archived",
             }),
           }
         )
@@ -513,18 +524,14 @@ export function FleetOperations() {
                 value={form.capacity}
               />
             </label>
-            <label className="flex items-center gap-3 text-sm font-semibold sm:col-span-2">
-              <Input
-                checked={form.isActive}
-                className="size-4 accent-primary"
-                disabled={saving}
-                onChange={(event) =>
-                  updateForm("isActive", event.target.checked)
-                }
-                type="checkbox"
+            <div className="grid gap-2 text-sm font-semibold sm:col-span-2">
+              <span>Статус автомобиля</span>
+              <WorkflowStatusField
+                entity="vehicles"
+                value={form.status}
+                onValueChange={(value) => updateForm("status", value)}
               />
-              Автомобиль активен и доступен для планирования
-            </label>
+            </div>
             <div className="flex justify-end gap-2 sm:col-span-2">
               <Button
                 disabled={saving}
@@ -560,13 +567,22 @@ export function FleetOperations() {
           selected={selection.selected}
           onSelectedChange={selection.setSelected}
           modes={["table", "list", "kanban", "gallery"]}
-          filters={[activeFilter<Vehicle>((item) => item.isActive)]}
-          groupBy={(item) => item.activeTrip?.status || "idle"}
-          kanbanGroups={[
-            { id: "idle", label: "Свободны" },
-            { id: "assigned", label: "Назначены" },
-            { id: "in_progress", label: "В пути" },
+          filters={[
+            {
+              id: "status",
+              label: "Статус",
+              options: statuses.map((status) => ({
+                value: status.key,
+                label: status.label,
+              })),
+              matches: (item, value) => item.status === value,
+            },
           ]}
+          groupBy={(item) => item.status}
+          kanbanGroups={statuses.map((status) => ({
+            id: status.key,
+            label: status.label,
+          }))}
           actions={
             canManage
               ? [

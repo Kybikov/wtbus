@@ -32,15 +32,9 @@ import {
 } from "@/components/ui/dialog"
 import { FieldSelect } from "@/components/ui/field-select"
 import { Input } from "@/components/ui/input"
+import { useWorkflowStatuses } from "@/components/route-status-field"
 
-type BookingStatus =
-  | "pending"
-  | "awaiting_payment"
-  | "cash_on_boarding"
-  | "confirmed"
-  | "cancelled"
-  | "completed"
-  | "expired"
+type BookingStatus = string
 
 type Booking = {
   id: string
@@ -107,7 +101,7 @@ type BookingForm = {
   customData: CustomDataValues
 }
 
-const statusLabels: Record<BookingStatus, string> = {
+const statusLabels: Record<string, string> = {
   pending: "Ожидает",
   awaiting_payment: "Ожидает оплату",
   cash_on_boarding: "Наличными при посадке",
@@ -220,7 +214,7 @@ function formatMoney(amount: number, currency: string) {
   }).format(amount / 100)
 }
 
-function statusClass(status: BookingStatus) {
+function statusClass(status: string) {
   return {
     pending: "status-gold",
     awaiting_payment: "status-gold",
@@ -233,6 +227,22 @@ function statusClass(status: BookingStatus) {
 }
 
 export function BookingRegistry() {
+  const { statuses: bookingStatuses } = useWorkflowStatuses("bookings")
+  const { statuses: tripStatuses } = useWorkflowStatuses("trips")
+  const bookingStatusOptions = bookingStatuses.length
+    ? bookingStatuses.map((status) => ({
+        value: status.key,
+        label: status.label,
+        tone: status.tone,
+      }))
+    : Object.keys(statusLabels).map((value) => ({
+        value,
+        label: statusLabels[value],
+        tone: "neutral" as const,
+      }))
+  const bookingStatusLabel = (value: string) =>
+    bookingStatusOptions.find((option) => option.value === value)?.label ??
+    value
   const [items, setItems] = React.useState<Booking[]>([])
   const [total, setTotal] = React.useState(0)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
@@ -704,16 +714,14 @@ export function BookingRegistry() {
       metric: {
         kind: "enum",
         getValue: (booking) => booking.status,
-        options: (Object.keys(statusLabels) as BookingStatus[]).map(
-          (value) => ({ value, label: statusLabels[value] })
-        ),
+        options: bookingStatusOptions,
       },
       label: "Статус",
       value: (booking) => (
         <span
           className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass(booking.status)}`}
         >
-          {statusLabels[booking.status]}
+          {bookingStatusLabel(booking.status)}
         </span>
       ),
     },
@@ -892,22 +900,7 @@ export function BookingRegistry() {
               {
                 id: "status",
                 label: "Статус",
-                options: (Object.keys(statusLabels) as BookingStatus[]).map(
-                  (value) => ({
-                    value,
-                    label: statusLabels[value],
-                    tone:
-                      value === "expired"
-                        ? "danger"
-                        : value === "confirmed" || value === "completed"
-                          ? "success"
-                          : value === "cash_on_boarding"
-                            ? "info"
-                            : value === "cancelled"
-                              ? "neutral"
-                              : "warning",
-                  })
-                ),
+                options: bookingStatusOptions,
               },
               { id: "date", label: "Дата рейса", type: "date" },
               {
@@ -921,14 +914,10 @@ export function BookingRegistry() {
               {
                 id: "tripStatus",
                 label: "Статус рейса",
-                options: [
-                  { value: "draft", label: "Черновик" },
-                  { value: "new", label: "Новый" },
-                  { value: "assigned", label: "Назначен" },
-                  { value: "in_progress", label: "В пути" },
-                  { value: "completed", label: "Завершён" },
-                  { value: "cancelled", label: "Отменён" },
-                ],
+                options: tripStatuses.map((status) => ({
+                  value: status.key,
+                  label: status.label,
+                })),
               },
               {
                 id: "paymentMethod",
@@ -962,21 +951,11 @@ export function BookingRegistry() {
             }
             groupBy={(booking) => booking.status}
             items={items}
-            kanbanGroups={(Object.keys(statusLabels) as BookingStatus[]).map(
-              (bookingStatus) => ({
-                id: bookingStatus,
-                label: statusLabels[bookingStatus],
-                tone:
-                  bookingStatus === "confirmed" || bookingStatus === "completed"
-                    ? "success"
-                    : bookingStatus === "cancelled" ||
-                        bookingStatus === "expired"
-                      ? "neutral"
-                      : bookingStatus === "cash_on_boarding"
-                        ? "info"
-                        : "warning",
-              })
-            )}
+            kanbanGroups={bookingStatusOptions.map((status) => ({
+              id: status.value,
+              label: status.label,
+              tone: status.tone,
+            }))}
             loading={loading}
             loadingText="Загружаем бронирования…"
             modes={["table", "list", "kanban", "calendar", "gallery"]}
@@ -997,7 +976,7 @@ export function BookingRegistry() {
                   <span
                     className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(booking.status)}`}
                   >
-                    {statusLabels[booking.status]}
+                    {bookingStatusLabel(booking.status)}
                   </span>
                 </div>
                 <div className="flex items-end justify-between text-sm">

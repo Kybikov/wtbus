@@ -19,14 +19,14 @@ import (
 // This predicate is shared by discovery and checkout. No private transfers,
 // drafts, disabled routes/vehicles, departed trips or blocked departures are sold.
 const publicSalePredicate = `t.kind = 'regular' AND t.pricing_mode = 'per_passenger'
- AND t.status IN ('new','assigned') AND t.starts_at > now()
+ AND workflow_status_phase(t.tenant_id,'trips',t.status) IN ('planned','assigned') AND t.starts_at > now()
  AND (t.route_id IS NULL OR EXISTS (SELECT 1 FROM routes r WHERE r.id=t.route_id AND r.tenant_id=t.tenant_id AND r.is_active))
  AND (t.vehicle_id IS NULL OR EXISTS (SELECT 1 FROM vehicles v WHERE v.id=t.vehicle_id AND v.tenant_id=t.tenant_id AND v.is_active))
  AND NOT EXISTS (SELECT 1 FROM availability_blocks a WHERE a.tenant_id=t.tenant_id
    AND (a.route_id IS NULL OR a.route_id=t.route_id) AND a.starts_at<t.ends_at AND a.ends_at>t.starts_at)`
 
 const publicOccupiedSQL = `(SELECT COALESCE(sum(b.seats),0) FROM bookings b WHERE b.trip_id=t.id
- AND (b.status IN ('pending','cash_on_boarding','confirmed') OR (b.status='awaiting_payment' AND b.payment_hold_expires_at>now())))`
+ AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())))`
 
 var publicUUID = regexp.MustCompile(`(?i)^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
@@ -369,7 +369,7 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var duplicate bool
-	if err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings WHERE trip_id=$1 AND customer_id=$2 AND (status IN ('pending','cash_on_boarding','confirmed') OR (status='awaiting_payment' AND payment_hold_expires_at>now())))`, input.TripID, customerID).Scan(&duplicate); err != nil {
+	if err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings WHERE trip_id=$1 AND customer_id=$2 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at>now())))`, input.TripID, customerID).Scan(&duplicate); err != nil {
 		app.publicFailure(w, err)
 		return
 	}

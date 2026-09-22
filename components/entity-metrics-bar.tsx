@@ -48,6 +48,7 @@ const tones = {
   warning: "text-amber-500",
   danger: "text-red-500",
   info: "text-sky-500",
+  violet: "text-violet-500",
   neutral: "text-muted-foreground",
 }
 export function EntityMetricsBar<T>({

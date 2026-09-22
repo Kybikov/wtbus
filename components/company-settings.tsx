@@ -8,6 +8,7 @@ import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { CustomFieldManager } from "@/components/custom-field-manager"
 import { PaymentSettings } from "@/components/payment-settings"
+import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 
@@ -71,6 +72,7 @@ export function CompanySettings() {
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
+  const [canManageSecrets, setCanManageSecrets] = React.useState(false)
   const isSubscriptionLocked =
     branding.subscriptionStatus === "past_due" ||
     branding.subscriptionStatus === "suspended"
@@ -107,6 +109,25 @@ export function CompanySettings() {
       window.clearTimeout(timer)
     }
   }, [refreshVersion])
+
+  React.useEffect(() => {
+    const controller = new AbortController()
+    void sessionFetch("/api/auth/me", { signal: controller.signal })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        if (
+          typeof payload !== "object" ||
+          payload === null ||
+          !("role" in payload)
+        )
+          return
+        setCanManageSecrets(
+          payload.role === "owner" || payload.role === "developer"
+        )
+      })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [])
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -286,6 +307,12 @@ export function CompanySettings() {
           key={`payment-${refreshVersion}`}
           disabled={loading || isSubscriptionLocked}
         />
+        {canManageSecrets ? (
+          <IntegrationSecretsSettings
+            key={`integrations-${refreshVersion}`}
+            disabled={loading || isSubscriptionLocked}
+          />
+        ) : null}
         <CustomFieldManager
           key={`fields-${refreshVersion}`}
           disabled={loading || isSubscriptionLocked}

@@ -16,7 +16,7 @@ export type MetricField<T> = {
   options?: {
     value: string
     label: string
-    tone?: "success" | "warning" | "danger" | "info" | "neutral"
+    tone?: "success" | "warning" | "danger" | "info" | "neutral" | "violet"
   }[]
 }
 export const metricLabels: Record<MetricOperation, string> = {

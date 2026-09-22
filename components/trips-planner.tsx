@@ -35,6 +35,7 @@ import {
 } from "@/lib/entity-columns"
 import { usePageSearch } from "@/hooks/use-page-search"
 import { useEntitySelection } from "@/hooks/use-entity-selection"
+import { useWorkflowStatuses } from "@/components/route-status-field"
 
 type APITrip = {
   id: string
@@ -354,6 +355,7 @@ const tripStatusLabels: Record<string, string> = {
 }
 
 export function TripsPlanner() {
+  const { statuses: workflowStatuses } = useWorkflowStatuses("trips")
   const [weekStart, setWeekStart] = React.useState(() =>
     startOfWeek(new Date())
   )
@@ -537,18 +539,22 @@ export function TripsPlanner() {
       .toLowerCase()
       .includes(query.trim().toLowerCase())
   )
-  const tripOptions = Object.entries(tripStatusLabels).map(
-    ([value, label]) => ({
-      value,
-      label,
-      tone:
-        value === "completed"
-          ? ("success" as const)
-          : value === "cancelled"
-            ? ("danger" as const)
-            : ("info" as const),
-    })
-  )
+  const tripOptions = workflowStatuses.length
+    ? workflowStatuses.map((status) => ({
+        value: status.key,
+        label: status.label,
+        tone: status.tone,
+      }))
+    : Object.entries(tripStatusLabels).map(([value, label]) => ({
+        value,
+        label,
+        tone:
+          value === "completed"
+            ? ("success" as const)
+            : value === "cancelled"
+              ? ("danger" as const)
+              : ("info" as const),
+      }))
   const columns = [
     textColumn<CalendarTrip>("name", "Рейс", (item) => item.title),
     statusColumn<CalendarTrip>(
@@ -1602,7 +1608,9 @@ export function TripsPlanner() {
                 </h2>
               </div>
               <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">
-                {tripStatusLabels[selectedTrip.status] ?? selectedTrip.status}
+                {tripOptions.find(
+                  (option) => option.value === selectedTrip.status
+                )?.label ?? selectedTrip.status}
               </span>
             </div>
             <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5 border-y border-border py-5 text-sm">

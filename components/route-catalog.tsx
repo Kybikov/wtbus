@@ -32,12 +32,16 @@ type Route = {
   destination: string
   currency: string
   defaultPriceMinor: number
+  driverPayMinor: number
   defaultPricingMode: "per_passenger" | "per_booking"
   isActive: boolean
   status: string
 }
 
-type RouteForm = Omit<Route, "id" | "defaultPriceMinor"> & { price: string }
+type RouteForm = Omit<Route, "id" | "defaultPriceMinor" | "driverPayMinor"> & {
+  price: string
+  driverPay: string
+}
 
 const emptyForm: RouteForm = {
   name: "",
@@ -45,6 +49,7 @@ const emptyForm: RouteForm = {
   destination: "",
   currency: "EUR",
   price: "79",
+  driverPay: "0",
   defaultPricingMode: "per_passenger",
   isActive: true,
   status: "active",
@@ -110,6 +115,12 @@ export function RouteCatalog() {
       (item) => item.defaultPriceMinor,
       (item) => item.currency
     ),
+    moneyColumn<Route>(
+      "driverPay",
+      "Зарплата водителя",
+      (item) => item.driverPayMinor,
+      (item) => item.currency
+    ),
     statusColumn<Route>(
       "status",
       "Статус",
@@ -144,6 +155,7 @@ export function RouteCatalog() {
               currency: item.currency,
               defaultPriceMinor: item.defaultPriceMinor,
               defaultPricingMode: item.defaultPricingMode,
+              driverPayMinor: item.driverPayMinor,
               status,
             }),
           }
@@ -211,8 +223,9 @@ export function RouteCatalog() {
     event.preventDefault()
     setError(null)
     const defaultPriceMinor = parsePriceMinor(form.price)
-    if (defaultPriceMinor === null) {
-      setError("Укажите базовую цену числом с точностью до двух знаков.")
+    const driverPayMinor = parsePriceMinor(form.driverPay)
+    if (defaultPriceMinor === null || driverPayMinor === null) {
+      setError("Укажите цену и зарплату числом с точностью до двух знаков.")
       return
     }
     setSaving(true)
@@ -236,6 +249,7 @@ export function RouteCatalog() {
           currency: form.currency,
           defaultPriceMinor,
           defaultPricingMode: form.defaultPricingMode,
+          driverPayMinor,
           status: form.status,
         }),
       })
@@ -271,6 +285,7 @@ export function RouteCatalog() {
             currency: route.currency,
             defaultPriceMinor: route.defaultPriceMinor,
             defaultPricingMode: route.defaultPricingMode,
+            driverPayMinor: route.driverPayMinor,
             status: route.status === "active" ? "inactive" : "active",
           }),
         }
@@ -340,6 +355,23 @@ export function RouteCatalog() {
                 required
                 value={form.name}
               />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Зарплата водителя за маршрут
+              <Input
+                className="h-11 rounded-xl border border-border bg-background px-3 font-normal tabular-nums"
+                inputMode="decimal"
+                min="0"
+                onChange={(event) =>
+                  updateForm("driverPay", event.target.value)
+                }
+                step="0.01"
+                type="number"
+                value={form.driverPay}
+              />
+              <span className="text-xs font-normal text-muted-foreground">
+                Сумма за один выполненный рейс в валюте маршрута.
+              </span>
             </label>
             <label className="grid gap-2 text-sm font-semibold">
               Валюта

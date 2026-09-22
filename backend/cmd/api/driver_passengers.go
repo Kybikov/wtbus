@@ -43,7 +43,7 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var assigned bool
-	if err = app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND tenant_id=$2 AND driver_id=$3 AND status IN ('assigned','in_progress'))`, tripID, company.ID, driverID).Scan(&assigned); err != nil {
+	if err = app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND tenant_id=$2 AND driver_id=$3 AND workflow_status_phase(tenant_id,'trips',status) IN ('assigned','in_progress'))`, tripID, company.ID, driverID).Scan(&assigned); err != nil {
 		app.publicFailure(w, err)
 		return
 	}
@@ -51,7 +51,7 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 403, map[string]string{"error": "trip is not assigned to this driver"})
 		return
 	}
-	rows, err := app.db.Query(r.Context(), `SELECT b.id::text,COALESCE(b.custom_data->>'passenger_name',c.full_name,''),COALESCE(b.custom_data->>'passenger_phone',c.phone_e164),b.seats,COALESCE(b.custom_data->'passengers','[]'::jsonb) FROM bookings b JOIN customers c ON c.id=b.customer_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (b.status IN ('pending','confirmed','cash_on_boarding') OR (b.status='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY b.created_at`, company.ID, tripID)
+	rows, err := app.db.Query(r.Context(), `SELECT b.id::text,COALESCE(b.custom_data->>'passenger_name',c.full_name,''),COALESCE(b.custom_data->>'passenger_phone',c.phone_e164),b.seats,COALESCE(b.custom_data->'passengers','[]'::jsonb) FROM bookings b JOIN customers c ON c.id=b.customer_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY b.created_at`, company.ID, tripID)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
