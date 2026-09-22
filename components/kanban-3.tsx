@@ -5,9 +5,18 @@ import { GripVertical } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 
 import { cn } from "@/lib/utils"
+import SpotlightCard from "@/components/react-bits/SpotlightCard/SpotlightCard"
 
 // Adapted from React Bits Pro App UI / Kanban 3 for Vivat's domain data.
-export type ReactBitsKanbanColumn = { id: string; label: string }
+export type ReactBitsKanbanTone =
+  "neutral" | "info" | "warning" | "success" | "danger" | "violet"
+
+export type ReactBitsKanbanColumn = {
+  id: string
+  label: string
+  description?: string
+  tone?: ReactBitsKanbanTone
+}
 
 type Props<T> = {
   items: T[]
@@ -24,6 +33,53 @@ type Props<T> = {
 }
 
 const spring = { type: "spring" as const, bounce: 0, duration: 0.34 }
+
+const toneStyles: Record<
+  ReactBitsKanbanTone,
+  {
+    column: string
+    dot: string
+    count: string
+    spotlight: `rgba(${number}, ${number}, ${number}, ${number})`
+  }
+> = {
+  neutral: {
+    column: "border-border bg-muted/30",
+    dot: "bg-muted-foreground",
+    count: "bg-muted text-muted-foreground",
+    spotlight: "rgba(148, 163, 184, 0.12)",
+  },
+  info: {
+    column: "border-sky-500/20 bg-sky-500/[0.045]",
+    dot: "bg-sky-400",
+    count: "bg-sky-500/12 text-sky-300",
+    spotlight: "rgba(56, 189, 248, 0.14)",
+  },
+  warning: {
+    column: "border-amber-500/20 bg-amber-500/[0.045]",
+    dot: "bg-amber-400",
+    count: "bg-amber-500/12 text-amber-300",
+    spotlight: "rgba(251, 191, 36, 0.14)",
+  },
+  success: {
+    column: "border-emerald-500/20 bg-emerald-500/[0.045]",
+    dot: "bg-emerald-400",
+    count: "bg-emerald-500/12 text-emerald-300",
+    spotlight: "rgba(52, 211, 153, 0.14)",
+  },
+  danger: {
+    column: "border-red-500/20 bg-red-500/[0.04]",
+    dot: "bg-red-400",
+    count: "bg-red-500/12 text-red-300",
+    spotlight: "rgba(248, 113, 113, 0.14)",
+  },
+  violet: {
+    column: "border-violet-500/20 bg-violet-500/[0.045]",
+    dot: "bg-violet-400",
+    count: "bg-violet-500/12 text-violet-300",
+    spotlight: "rgba(167, 139, 250, 0.14)",
+  },
+}
 
 export default function ReactBitsKanban<T>({
   items,
@@ -172,6 +228,12 @@ export default function ReactBitsKanban<T>({
     event: React.PointerEvent<HTMLElement>,
     id: string
   ) => {
+    if (
+      (event.target as HTMLElement).closest(
+        "button,input,textarea,select,a,[data-no-drag]"
+      )
+    )
+      return
     const item = itemById.get(id)
     if (!onMove || !item || !canMove(item) || event.button !== 0) return
     const card = event.currentTarget.closest<HTMLElement>("[data-kanban-card]")
@@ -236,7 +298,9 @@ export default function ReactBitsKanban<T>({
     const group = currentGroup(id)
     const cardIds = cardsByColumn.get(group) ?? []
     const cardIndex = cardIds.indexOf(id)
-    const columnIndex = visibleColumns.findIndex((column) => column.id === group)
+    const columnIndex = visibleColumns.findIndex(
+      (column) => column.id === group
+    )
 
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault()
@@ -295,19 +359,32 @@ export default function ReactBitsKanban<T>({
       <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-2">
         {visibleColumns.map((column) => {
           const ids = cardsByColumn.get(column.id) ?? []
+          const tone = toneStyles[column.tone ?? "neutral"]
           return (
             <section
               aria-label={column.label}
-              className="flex min-h-[26rem] w-[19rem] shrink-0 flex-col rounded-[var(--rb-r-2xl)] border border-border bg-muted/35 p-1.5"
+              className={cn(
+                "flex min-h-[26rem] w-[min(20rem,calc(100vw-3rem))] shrink-0 snap-start flex-col rounded-[var(--rb-r-2xl)] border p-1.5",
+                tone.column
+              )}
               key={column.id}
             >
-              <div className="flex h-10 shrink-0 items-center gap-2 px-2">
+              <div className="flex min-h-12 shrink-0 items-center gap-2 px-2 py-1.5">
+                <span className={cn("h-2 w-2 rounded-full", tone.dot)} />
                 <span className="truncate text-sm font-semibold">
                   {column.label}
                 </span>
-                <span className="ml-auto rounded-full bg-background px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                <span
+                  className={cn(
+                    "ml-auto rounded-full px-2 py-0.5 text-xs tabular-nums",
+                    tone.count
+                  )}
+                >
                   {ids.length}
                 </span>
+                {column.description ? (
+                  <span className="sr-only">{column.description}</span>
+                ) : null}
               </div>
               <div
                 className="min-h-0 flex-1 space-y-2 overflow-y-auto p-1 pt-0"
@@ -326,20 +403,21 @@ export default function ReactBitsKanban<T>({
                     <motion.div
                       className={cn(
                         "rounded-[var(--rb-r-lg)]",
-                        dragging && "border border-dashed border-border bg-muted"
+                        dragging &&
+                          "border border-dashed border-border bg-muted"
                       )}
                       data-kanban-card={id}
                       key={id}
                       layoutId={reduceMotion ? undefined : `${uid}-${id}`}
                       transition={reduceMotion ? { duration: 0 } : spring}
                     >
-                      <div
+                      <SpotlightCard
                         aria-label={`${getLabel(item)}. ${column.label}.`}
                         aria-roledescription={
                           movable ? "Перемещаемая карточка" : undefined
                         }
                         className={cn(
-                          "group relative rounded-[var(--rb-r-lg)] border border-border bg-card p-3 text-left shadow-sm transition-[border-color,box-shadow,opacity] duration-150",
+                          "group relative rounded-[var(--rb-r-lg)] border border-border/80 bg-card p-3 text-left shadow-sm transition-[border-color,box-shadow,opacity,transform] duration-150",
                           movable &&
                             "cursor-grab hover:border-primary/35 hover:shadow-md focus-visible:outline-2 focus-visible:outline-primary",
                           grabbed && "border-primary ring-2 ring-primary/20",
@@ -352,6 +430,7 @@ export default function ReactBitsKanban<T>({
                           }
                         }}
                         role={movable ? "button" : undefined}
+                        spotlightColor={tone.spotlight}
                         tabIndex={movable ? 0 : undefined}
                       >
                         {movable ? (
@@ -363,7 +442,7 @@ export default function ReactBitsKanban<T>({
                         <div className={cn(movable && "pr-5")}>
                           {renderCard(item)}
                         </div>
-                      </div>
+                      </SpotlightCard>
                     </motion.div>
                   )
                 })}

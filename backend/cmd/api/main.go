@@ -4552,6 +4552,7 @@ type createBookingRequest struct {
 	PassengerPhone     string         `json:"passengerPhone"`
 	PassengerBirthDate string         `json:"passengerBirthDate"`
 	CustomData         map[string]any `json:"customData"`
+	RequestID          string         `json:"requestId"`
 }
 
 type bookingPassengerDetails struct {
@@ -4594,6 +4595,7 @@ type bookingResponse struct {
 	Currency             string         `json:"currency"`
 	PaymentHoldExpiresAt *time.Time     `json:"paymentHoldExpiresAt,omitempty"`
 	CustomData           map[string]any `json:"customData,omitempty"`
+	RequestID            string         `json:"requestId,omitempty"`
 }
 
 type bookingListItem struct {
@@ -4618,6 +4620,7 @@ type bookingListItem struct {
 	PaymentMethod        string         `json:"paymentMethod,omitempty"`
 	PaymentHoldExpiresAt *time.Time     `json:"paymentHoldExpiresAt,omitempty"`
 	CustomData           map[string]any `json:"customData,omitempty"`
+	RequestID            string         `json:"requestId,omitempty"`
 }
 
 type updateBookingRequest struct {
@@ -4640,6 +4643,7 @@ type individualTransferRequestListItem struct {
 	OperatorNote         string    `json:"operatorNote,omitempty"`
 	CreatedAt            time.Time `json:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"`
+	BookingID            *string   `json:"bookingId,omitempty"`
 }
 
 type updateIndividualTransferRequestRequest struct {
@@ -4648,7 +4652,7 @@ type updateIndividualTransferRequestRequest struct {
 }
 
 func validIndividualTransferRequestStatus(status string) bool {
-	return status == "new" || status == "in_progress" || status == "closed" || status == "cancelled"
+	return status == "new" || status == "in_progress" || status == "awaiting_trip" || status == "booking_created" || status == "closed" || status == "cancelled"
 }
 
 func canTransitionIndividualTransferRequest(current, next string) bool {
@@ -4656,7 +4660,8 @@ func canTransitionIndividualTransferRequest(current, next string) bool {
 		return true
 	}
 	return (current == "new" && (next == "in_progress" || next == "cancelled")) ||
-		(current == "in_progress" && (next == "closed" || next == "cancelled"))
+		(current == "in_progress" && (next == "awaiting_trip" || next == "closed" || next == "cancelled")) ||
+		(current == "awaiting_trip" && (next == "in_progress" || next == "closed" || next == "cancelled"))
 }
 
 func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r *http.Request) {
@@ -4687,12 +4692,12 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 	rows, err := app.db.Query(r.Context(), `
 		SELECT id::text, customer_id::text, telegram_id, status, origin_name, destination_name,
 			requested_departure_at, passenger_name, passenger_phone_e164, passenger_birth_date,
-			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at, count(*) OVER()
+			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at, booking_id::text, count(*) OVER()
 		FROM individual_transfer_requests
 		WHERE tenant_id = $1
 		  AND ($2 = '' OR status = $2)
 		  AND ($3 = '' OR origin_name ILIKE '%' || $3 || '%' OR destination_name ILIKE '%' || $3 || '%' OR passenger_name ILIKE '%' || $3 || '%' OR passenger_phone_e164 ILIKE '%' || $3 || '%')
-		ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, requested_departure_at ASC, created_at DESC
+		ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'awaiting_trip' THEN 2 WHEN 'booking_created' THEN 3 ELSE 4 END, requested_departure_at ASC, created_at DESC
 		LIMIT $4
 	`, tenant.ID, status, query, limit)
 	if err != nil {
@@ -4705,7 +4710,7 @@ func (app *application) listIndividualTransferRequests(w http.ResponseWriter, r 
 	total := 0
 	for rows.Next() {
 		var item individualTransferRequestListItem
-		if err := rows.Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt, &total); err != nil {
+		if err := rows.Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt, &item.BookingID, &total); err != nil {
 			app.log.Error("scan individual transfer request", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load individual transfer requests"})
 			return
@@ -4768,13 +4773,13 @@ func (app *application) updateIndividualTransferRequest(w http.ResponseWriter, r
 	err = tx.QueryRow(r.Context(), `
 		UPDATE individual_transfer_requests
 		SET status = $1, operator_note = NULLIF($2, ''),
-			processed_at = CASE WHEN $1 IN ('closed', 'cancelled') THEN now() ELSE processed_at END,
+			processed_at = CASE WHEN $1 IN ('booking_created', 'closed', 'cancelled') THEN now() ELSE processed_at END,
 			updated_at = now()
 		WHERE id = $3 AND tenant_id = $4
 		RETURNING id::text, customer_id::text, telegram_id, status, origin_name, destination_name,
 			requested_departure_at, passenger_name, passenger_phone_e164, passenger_birth_date,
-			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at
-	`, input.Status, input.OperatorNote, requestID, tenant.ID).Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt)
+			seats, COALESCE(comment, ''), COALESCE(operator_note, ''), created_at, updated_at, booking_id::text
+	`, input.Status, input.OperatorNote, requestID, tenant.ID).Scan(&item.ID, &item.CustomerID, &item.TelegramID, &item.Status, &item.Origin, &item.Destination, &item.RequestedDepartureAt, &item.PassengerName, &item.PassengerPhone, &item.PassengerBirthDate, &item.Seats, &item.Comment, &item.OperatorNote, &item.CreatedAt, &item.UpdatedAt, &item.BookingID)
 	if err != nil {
 		app.log.Error("update individual transfer request", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update transfer request"})
@@ -4866,10 +4871,12 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 			COALESCE(c.full_name, ''), c.phone_e164,
 			t.id::text, t.status::text, t.origin_name, t.destination_name, t.starts_at, t.capacity,
 			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (occupied.status IN ('pending', 'cash_on_boarding', 'confirmed') OR (occupied.status = 'awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
-			COALESCE(payment.id::text, ''), COALESCE(payment.status::text, ''), COALESCE(payment.payment_method, ''), b.payment_hold_expires_at, count(*) OVER()
+			COALESCE(payment.id::text, ''), COALESCE(payment.status::text, ''), COALESCE(payment.payment_method, ''), b.payment_hold_expires_at,
+			COALESCE(request.id::text, ''), count(*) OVER()
 		FROM bookings b
 		JOIN customers c ON c.id = b.customer_id
 		JOIN trips t ON t.id = b.trip_id
+		LEFT JOIN individual_transfer_requests request ON request.booking_id = b.id AND request.tenant_id = b.tenant_id
 		LEFT JOIN LATERAL (
 			SELECT id, status, payment_method FROM payments
 			WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
@@ -4900,7 +4907,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var item bookingListItem
 		var customData []byte
-		if err := rows.Scan(&item.ID, &item.Status, &item.Seats, &item.PriceMinor, &item.Currency, &item.Source, &item.CreatedAt, &customData, &item.CustomerName, &item.CustomerPhone, &item.TripID, &item.TripStatus, &item.Origin, &item.Destination, &item.StartsAt, &item.Capacity, &item.AvailableSeats, &item.PaymentID, &item.PaymentStatus, &item.PaymentMethod, &item.PaymentHoldExpiresAt, &total); err != nil {
+		if err := rows.Scan(&item.ID, &item.Status, &item.Seats, &item.PriceMinor, &item.Currency, &item.Source, &item.CreatedAt, &customData, &item.CustomerName, &item.CustomerPhone, &item.TripID, &item.TripStatus, &item.Origin, &item.Destination, &item.StartsAt, &item.Capacity, &item.AvailableSeats, &item.PaymentID, &item.PaymentStatus, &item.PaymentMethod, &item.PaymentHoldExpiresAt, &item.RequestID, &total); err != nil {
 			app.log.Error("scan booking", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load bookings"})
 			return
@@ -4959,6 +4966,7 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	input.RequestID = strings.TrimSpace(input.RequestID)
 	var capacity int16
 	var status string
 	var priceMinor int64
@@ -4981,6 +4989,36 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM customers WHERE id=$1 AND tenant_id=$2)`, input.CustomerID, tenant.ID).Scan(&customerExists); err != nil || !customerExists {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "customer is unavailable"})
 		return
+	}
+	if input.RequestID != "" {
+		var requestCustomerID, requestStatus string
+		var existingBookingID *string
+		err := tx.QueryRow(r.Context(), `
+			SELECT customer_id::text, status, booking_id::text
+			FROM individual_transfer_requests
+			WHERE id=$1 AND tenant_id=$2
+			FOR UPDATE
+		`, input.RequestID, tenant.ID).Scan(&requestCustomerID, &requestStatus, &existingBookingID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "transfer request not found"})
+			return
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "transfer request id is invalid"})
+			return
+		}
+		if requestCustomerID != input.CustomerID {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "booking customer must match transfer request customer"})
+			return
+		}
+		if existingBookingID != nil || requestStatus == "booking_created" {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "transfer request already has a booking"})
+			return
+		}
+		if requestStatus != "new" && requestStatus != "in_progress" && requestStatus != "awaiting_trip" {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "transfer request cannot be converted to a booking"})
+			return
+		}
 	}
 	var occupied int
 	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats),0) FROM bookings WHERE trip_id=$1 AND (status IN ('pending','cash_on_boarding','confirmed') OR (status = 'awaiting_payment' AND payment_hold_expires_at > now()))`, input.TripID).Scan(&occupied); err != nil {
@@ -5007,6 +5045,18 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create booking"})
 		return
+	}
+	if input.RequestID != "" {
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE individual_transfer_requests
+			SET booking_id=$1, status='booking_created', processed_at=now(), updated_at=now()
+			WHERE id=$2 AND tenant_id=$3
+		`, booking.ID, input.RequestID, tenant.ID); err != nil {
+			app.log.Error("link booking to transfer request", "error", err, "tenant", slug)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not link booking to transfer request"})
+			return
+		}
+		booking.RequestID = input.RequestID
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create booking"})

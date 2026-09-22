@@ -146,7 +146,7 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 		case "routes", "fleet":
 			valid = key == "active" && (value == "active" || value == "inactive")
 		case "requests":
-			valid = key == "status" && (value == "new" || value == "in_progress" || value == "closed" || value == "cancelled")
+			valid = key == "status" && (value == "new" || value == "in_progress" || value == "awaiting_trip" || value == "booking_created" || value == "closed" || value == "cancelled")
 		case "availability":
 			valid = key == "scope" && (value == "all" || value == "route")
 		case "trips":

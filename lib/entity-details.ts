@@ -59,6 +59,7 @@ export const entityFieldLabels: Record<string, string> = {
   reason: "Причина",
   comment: "Комментарий клиента",
   operator_note: "Комментарий диспетчера",
+  booking_id: "Бронирование",
   passenger_name: "Пассажир",
   passenger_birth_date: "Дата рождения",
   registration_number: "Госномер",
@@ -78,6 +79,7 @@ export const relationFields: Record<string, EntityCollection> = {
   trip_id: "trips",
   route_id: "routes",
   vehicle_id: "fleet",
+  booking_id: "bookings",
 }
 export const valueLabels: Record<string, string> = {
   developer: "Разработчик",
@@ -93,6 +95,8 @@ export const valueLabels: Record<string, string> = {
   temporarily_unavailable: "Временно недоступный",
   archived: "Архив",
   in_progress: "В пути / в работе",
+  awaiting_trip: "Подбор рейса",
+  booking_created: "Бронь создана",
   completed: "Завершён",
   cancelled: "Отменён",
   closed: "Закрыт",

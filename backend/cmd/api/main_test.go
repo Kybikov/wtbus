@@ -277,7 +277,7 @@ func TestCanCreateBookingForTripStatus(t *testing.T) {
 }
 
 func TestIndividualTransferRequestStatusTransitions(t *testing.T) {
-	for _, status := range []string{"new", "in_progress", "closed", "cancelled"} {
+	for _, status := range []string{"new", "in_progress", "awaiting_trip", "booking_created", "closed", "cancelled"} {
 		if !validIndividualTransferRequestStatus(status) {
 			t.Fatalf("validIndividualTransferRequestStatus(%q) = false, want true", status)
 		}
@@ -291,14 +291,18 @@ func TestIndividualTransferRequestStatusTransitions(t *testing.T) {
 		{"new", "new"},
 		{"new", "in_progress"},
 		{"new", "cancelled"},
+		{"in_progress", "awaiting_trip"},
 		{"in_progress", "closed"},
 		{"in_progress", "cancelled"},
+		{"awaiting_trip", "in_progress"},
+		{"awaiting_trip", "closed"},
+		{"awaiting_trip", "cancelled"},
 	} {
 		if !canTransitionIndividualTransferRequest(transition.current, transition.next) {
 			t.Fatalf("transition %s -> %s must be allowed", transition.current, transition.next)
 		}
 	}
-	for _, transition := range []struct{ current, next string }{{"new", "closed"}, {"closed", "in_progress"}, {"cancelled", "new"}} {
+	for _, transition := range []struct{ current, next string }{{"new", "closed"}, {"new", "booking_created"}, {"in_progress", "booking_created"}, {"closed", "in_progress"}, {"booking_created", "closed"}, {"cancelled", "new"}} {
 		if canTransitionIndividualTransferRequest(transition.current, transition.next) {
 			t.Fatalf("transition %s -> %s must be rejected", transition.current, transition.next)
 		}

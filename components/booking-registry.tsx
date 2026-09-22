@@ -5,6 +5,8 @@ import { usePageSearch } from "@/hooks/use-page-search"
 import { bookingPassengers } from "@/lib/booking-checkout"
 
 import * as React from "react"
+import Link from "next/link"
+import { TicketCheck } from "lucide-react"
 import { AdminNotice } from "@/components/admin-notice"
 
 import { AppShell } from "@/components/app-shell"
@@ -62,6 +64,21 @@ type Booking = {
   paymentMethod?: string
   paymentHoldExpiresAt?: string
   customData?: Record<string, unknown>
+  requestId?: string
+}
+
+type RequestPrefill = {
+  id: string
+  customer_id: string
+  origin_name: string
+  destination_name: string
+  requested_departure_at: string
+  passenger_name: string
+  passenger_phone_e164: string
+  passenger_birth_date: string
+  seats: number
+  status: string
+  booking_id?: string
 }
 
 type BookingCollection = { items: Booking[]; timezone: string; total?: number }
@@ -242,6 +259,8 @@ export function BookingRegistry() {
   >([])
   const [bookingForm, setBookingForm] =
     React.useState<BookingForm>(emptyBookingForm)
+  const [sourceRequest, setSourceRequest] =
+    React.useState<RequestPrefill | null>(null)
 
   const loadController = React.useRef<AbortController | null>(null)
   const load = React.useCallback(async () => {
@@ -298,6 +317,63 @@ export function BookingRegistry() {
   }, [load])
 
   React.useEffect(() => {
+    const requestID = new URLSearchParams(window.location.search).get(
+      "from_request"
+    )
+    if (!requestID) return
+    const controller = new AbortController()
+    async function loadSourceRequest() {
+      setCreateError(null)
+      try {
+        const response = await sessionFetch(
+          `/api/entity-details/requests/${encodeURIComponent(requestID!)}`,
+          { signal: controller.signal }
+        )
+        const payload: unknown = await response.json()
+        if (
+          !response.ok ||
+          typeof payload !== "object" ||
+          payload === null ||
+          !("item" in payload) ||
+          typeof payload.item !== "object" ||
+          payload.item === null
+        )
+          throw new Error(
+            errorFrom(payload, "Не удалось загрузить индивидуальную заявку.")
+          )
+        const item = payload.item as RequestPrefill
+        if (item.booking_id) {
+          window.location.replace(
+            `/bookings/${encodeURIComponent(item.booking_id)}`
+          )
+          return
+        }
+        setSourceRequest(item)
+        setBookingForm({
+          date: item.requested_departure_at.slice(0, 10),
+          tripId: "",
+          customerId: item.customer_id,
+          seats: String(item.seats),
+          passengerName: item.passenger_name,
+          passengerPhone: item.passenger_phone_e164,
+          passengerBirthDate: item.passenger_birth_date.slice(0, 10),
+          customData: {},
+        })
+        setIsCreateOpen(true)
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось загрузить индивидуальную заявку."
+        )
+      }
+    }
+    void loadSourceRequest()
+    return () => controller.abort()
+  }, [])
+
+  React.useEffect(() => {
     if (!isCreateOpen) return
     const controller = new AbortController()
     async function loadCreateData() {
@@ -338,11 +414,25 @@ export function BookingRegistry() {
         ) {
           throw new Error("Не удалось загрузить данные для бронирования.")
         }
-        setBookableTrips(
-          tripsPayload.items.filter(
-            (trip) => !["cancelled", "completed"].includes(trip.status)
-          )
+        const availableTrips = tripsPayload.items.filter(
+          (trip) => !["cancelled", "completed"].includes(trip.status)
         )
+        setBookableTrips(availableTrips)
+        if (sourceRequest) {
+          const matchingTrip = availableTrips.find(
+            (trip) =>
+              trip.origin.trim().toLocaleLowerCase() ===
+                sourceRequest.origin_name.trim().toLocaleLowerCase() &&
+              trip.destination.trim().toLocaleLowerCase() ===
+                sourceRequest.destination_name.trim().toLocaleLowerCase()
+          )
+          if (matchingTrip) {
+            setBookingForm((current) => ({
+              ...current,
+              tripId: current.tripId || matchingTrip.id,
+            }))
+          }
+        }
         setCustomers(customersPayload.items)
         setBookingCustomFields(
           fieldsPayload.items.filter((field) => field.isActive)
@@ -363,9 +453,10 @@ export function BookingRegistry() {
     }
     void loadCreateData()
     return () => controller.abort()
-  }, [bookingForm.date, isCreateOpen])
+  }, [bookingForm.date, isCreateOpen, sourceRequest])
 
   function openCreateBooking() {
+    setSourceRequest(null)
     setBookingForm(emptyBookingForm())
     setCreateError(null)
     setIsCreateOpen(true)
@@ -406,12 +497,15 @@ export function BookingRegistry() {
             bookingCustomFields,
             bookingForm.customData
           ),
+          requestId: sourceRequest?.id,
         }),
       })
       const payload: unknown = await response.json()
       if (!response.ok)
         throw new Error(errorFrom(payload, "Не удалось создать бронирование."))
       setIsCreateOpen(false)
+      setSourceRequest(null)
+      window.history.replaceState({}, "", "/bookings")
       setNotice(
         "Бронирование создано. Стоимость рейса зафиксирована в журнале и финансах."
       )
@@ -519,6 +613,24 @@ export function BookingRegistry() {
   }
 
   const columns: EntityColumn<Booking>[] = [
+    {
+      id: "request",
+      metric: { kind: "text", getValue: (booking) => booking.requestId },
+      label: "Индивидуальная заявка",
+      value: (booking) =>
+        booking.requestId ? (
+          <Link
+            className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+            href={`/requests/${encodeURIComponent(booking.requestId)}`}
+          >
+            <TicketCheck className="h-4 w-4" />
+            Открыть заявку
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      defaultVisible: false,
+    },
     {
       id: "passengers",
       metric: {
@@ -763,14 +875,7 @@ export function BookingRegistry() {
         utilities={<ThemeCustomizer />}
       >
         <div className="w-full min-w-0 space-y-5">
-          {error ? (
-            <div
-              className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-              role="alert"
-            >
-              {error}
-            </div>
-          ) : null}
+          <AdminNotice message={error} variant="error" />
           <AdminNotice message={notice} />
           <EntityDataView
             collection="bookings"
@@ -861,6 +966,15 @@ export function BookingRegistry() {
               (bookingStatus) => ({
                 id: bookingStatus,
                 label: statusLabels[bookingStatus],
+                tone:
+                  bookingStatus === "confirmed" || bookingStatus === "completed"
+                    ? "success"
+                    : bookingStatus === "cancelled" ||
+                        bookingStatus === "expired"
+                      ? "neutral"
+                      : bookingStatus === "cash_on_boarding"
+                        ? "info"
+                        : "warning",
               })
             )}
             loading={loading}
@@ -894,6 +1008,15 @@ export function BookingRegistry() {
                     {formatMoney(booking.priceMinor, booking.currency)}
                   </span>
                 </div>
+                {booking.requestId ? (
+                  <Link
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                    href={`/requests/${encodeURIComponent(booking.requestId)}`}
+                  >
+                    <TicketCheck className="h-3.5 w-3.5" />
+                    Создано из индивидуальной заявки
+                  </Link>
+                ) : null}
               </div>
             )}
             selected={selected}
@@ -902,7 +1025,13 @@ export function BookingRegistry() {
       </AppShell>
       <Dialog
         onOpenChange={(open) => {
-          if (!isCreating) setIsCreateOpen(open)
+          if (!isCreating) {
+            setIsCreateOpen(open)
+            if (!open) {
+              setSourceRequest(null)
+              window.history.replaceState({}, "", "/bookings")
+            }
+          }
         }}
         open={isCreateOpen}
       >
@@ -912,10 +1041,15 @@ export function BookingRegistry() {
         >
           <form onSubmit={createBooking}>
             <DialogHeader>
-              <DialogTitle>Новая бронь</DialogTitle>
+              <DialogTitle>
+                {sourceRequest
+                  ? "Бронь из индивидуальной заявки"
+                  : "Новая бронь"}
+              </DialogTitle>
               <DialogDescription>
-                Цена и валюта рейса фиксируются в бронировании. Ручная бронь
-                оплачивается наличными при посадке.
+                {sourceRequest
+                  ? `${sourceRequest.origin_name} → ${sourceRequest.destination_name}. Данные пассажира уже перенесены — выберите подходящий рейс.`
+                  : "Цена и валюта рейса фиксируются в бронировании. Ручная бронь оплачивается наличными при посадке."}
               </DialogDescription>
             </DialogHeader>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">

@@ -3,6 +3,9 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { CalendarDays, MapPin, TicketCheck, Users } from "lucide-react"
 import { AdminNotice } from "@/components/admin-notice"
 import { AppShell } from "@/components/app-shell"
 import { ThemeCustomizer } from "@/components/operations-dashboard"
@@ -18,7 +21,13 @@ import {
 import { usePageSearch } from "@/hooks/use-page-search"
 import { useEntitySelection } from "@/hooks/use-entity-selection"
 
-type RequestStatus = "new" | "in_progress" | "closed" | "cancelled"
+type RequestStatus =
+  | "new"
+  | "in_progress"
+  | "awaiting_trip"
+  | "booking_created"
+  | "closed"
+  | "cancelled"
 
 type TransferRequest = {
   id: string
@@ -36,6 +45,7 @@ type TransferRequest = {
   operatorNote?: string
   createdAt: string
   updatedAt: string
+  bookingId?: string
 }
 
 type RequestCollection = {
@@ -47,8 +57,50 @@ type RequestCollection = {
 const statusLabels: Record<RequestStatus, string> = {
   new: "Новая",
   in_progress: "В работе",
-  closed: "Закрыта",
+  awaiting_trip: "Подбор рейса",
+  booking_created: "Бронь создана",
+  closed: "Закрыта без брони",
   cancelled: "Отклонена",
+}
+
+const requestTones: Record<
+  RequestStatus,
+  "neutral" | "info" | "warning" | "success" | "danger" | "violet"
+> = {
+  new: "info",
+  in_progress: "warning",
+  awaiting_trip: "violet",
+  booking_created: "success",
+  closed: "neutral",
+  cancelled: "danger",
+}
+
+const requestDescriptions: Record<RequestStatus, string> = {
+  new: "Новые обращения, которые ещё не взял диспетчер",
+  in_progress: "Диспетчер уточняет детали поездки",
+  awaiting_trip: "Нужно подобрать подходящий рейс",
+  booking_created: "Заявка уже связана с бронированием",
+  closed: "Обращение закрыто без создания брони",
+  cancelled: "Клиент отказался или заявка отклонена",
+}
+
+const requestBadgeClasses: Record<RequestStatus, string> = {
+  new: "status-sky",
+  in_progress: "status-gold",
+  awaiting_trip: "status-violet",
+  booking_created: "bg-emerald-500/15 text-emerald-400",
+  closed: "status-slate",
+  cancelled: "bg-destructive/15 text-destructive",
+}
+
+function canMoveRequest(current: RequestStatus, next: RequestStatus) {
+  if (current === next) return true
+  if (current === "new") return next === "in_progress" || next === "cancelled"
+  if (current === "in_progress")
+    return ["awaiting_trip", "closed", "cancelled"].includes(next)
+  if (current === "awaiting_trip")
+    return ["in_progress", "closed", "cancelled"].includes(next)
+  return false
 }
 
 function isCollection(value: unknown): value is RequestCollection {
@@ -89,6 +141,7 @@ function formatDate(
 }
 
 export function IndividualTransferRequests() {
+  const router = useRouter()
   const [items, setItems] = React.useState<TransferRequest[]>([])
   const [total, setTotal] = React.useState(0)
   const requestController = React.useRef<AbortController | null>(null)
@@ -172,10 +225,24 @@ export function IndividualTransferRequests() {
       const payload: unknown = await response.json()
       if (!response.ok)
         throw new Error(errorFrom(payload, "Не удалось обновить заявку."))
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "item" in payload &&
+        typeof payload.item === "object" &&
+        payload.item !== null
+      ) {
+        const updated = payload.item as TransferRequest
+        setItems((current) =>
+          current.map((candidate) =>
+            candidate.id === updated.id ? updated : candidate
+          )
+        )
+      }
       setNotice(
         `Статус заявки изменён: ${statusLabels[nextStatus].toLowerCase()}.`
       )
-      await load()
+      return true
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Не удалось обновить заявку."
@@ -183,18 +250,14 @@ export function IndividualTransferRequests() {
     } finally {
       setUpdatingID(null)
     }
+    return false
   }
 
   const requestOptions = (Object.keys(statusLabels) as RequestStatus[]).map(
     (value) => ({
       value,
       label: statusLabels[value],
-      tone:
-        value === "closed"
-          ? ("success" as const)
-          : value === "cancelled"
-            ? ("danger" as const)
-            : ("info" as const),
+      tone: requestTones[value] === "violet" ? "info" : requestTones[value],
     })
   )
   const columns = [
@@ -225,6 +288,26 @@ export function IndividualTransferRequests() {
       (item) => item.status,
       requestOptions
     ),
+    {
+      id: "booking",
+      label: "Бронирование",
+      value: (item: TransferRequest) =>
+        item.bookingId ? (
+          <Link
+            className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+            href={`/bookings/${encodeURIComponent(item.bookingId)}`}
+          >
+            <TicketCheck className="h-4 w-4" />
+            Открыть бронь
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">Не создано</span>
+        ),
+      metric: {
+        kind: "text" as const,
+        getValue: (item: TransferRequest) => item.bookingId,
+      },
+    },
     numberColumn<TransferRequest>("seats", "Пассажиров", (item) => item.seats),
     textColumn<TransferRequest>(
       "comment",
@@ -276,7 +359,7 @@ export function IndividualTransferRequests() {
           maxLength={2000}
           value={notes[item.id] ?? ""}
           disabled={
-            !["new", "in_progress"].includes(item.status) ||
+            !["new", "in_progress", "awaiting_trip"].includes(item.status) ||
             !!updatingID ||
             selection.pending
           }
@@ -296,7 +379,7 @@ export function IndividualTransferRequests() {
   ]
   async function bulkStatus(next: RequestStatus) {
     await selection.run(
-      items.filter((item) => ["new", "in_progress"].includes(item.status)),
+      items.filter((item) => canMoveRequest(item.status, next)),
       async (item) => {
         const response = await sessionFetch(
           `/api/individual-transfer-requests?id=${encodeURIComponent(item.id)}`,
@@ -331,14 +414,7 @@ export function IndividualTransferRequests() {
       utilities={<ThemeCustomizer />}
     >
       <div className="w-full min-w-0 space-y-5">
-        {error ? (
-          <div
-            className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-            role="alert"
-          >
-            {error}
-          </div>
-        ) : null}
+        <AdminNotice message={error} variant="error" />
         <AdminNotice message={notice} />
 
         {selection.error ? (
@@ -356,7 +432,9 @@ export function IndividualTransferRequests() {
           loading={loading}
           selected={selection.selected}
           onSelectedChange={selection.setSelected}
-          isSelectable={(item) => ["new", "in_progress"].includes(item.status)}
+          isSelectable={(item) =>
+            ["new", "in_progress", "awaiting_trip"].includes(item.status)
+          }
           modes={["table", "list", "kanban", "calendar", "gallery"]}
           dateValue={(item) =>
             new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(
@@ -367,7 +445,18 @@ export function IndividualTransferRequests() {
           kanbanGroups={requestOptions.map((option) => ({
             id: option.value,
             label: option.label,
+            tone: requestTones[option.value],
+            description: requestDescriptions[option.value],
           }))}
+          onKanbanGroupChange={(item, next) =>
+            updateRequest(item, next as RequestStatus)
+          }
+          canMoveInKanban={(item) =>
+            !["booking_created", "closed", "cancelled"].includes(item.status)
+          }
+          canMoveToKanbanGroup={(item, next) =>
+            canMoveRequest(item.status, next as RequestStatus)
+          }
           filterValues={{ status }}
           onFiltersChange={(values) =>
             setStatus((values.status ?? "") as "" | RequestStatus)
@@ -381,18 +470,40 @@ export function IndividualTransferRequests() {
                 item.status !== "new" || !!updatingID || selection.pending,
             },
             {
-              label: "Сохранить комментарий",
-              onSelect: (item) => void updateRequest(item, item.status),
+              label: "Подобрать рейс",
+              onSelect: (item) => void updateRequest(item, "awaiting_trip"),
               disabled: (item) =>
-                !["new", "in_progress"].includes(item.status) ||
+                item.status !== "in_progress" ||
                 !!updatingID ||
                 selection.pending,
             },
             {
-              label: "Закрыть заявку",
+              label: "Создать бронирование",
+              onSelect: (item) =>
+                router.push(
+                  `/bookings?from_request=${encodeURIComponent(item.id)}`
+                ),
+              disabled: (item) =>
+                !["in_progress", "awaiting_trip"].includes(item.status) ||
+                !!item.bookingId ||
+                !!updatingID ||
+                selection.pending,
+            },
+            {
+              label: "Сохранить комментарий",
+              onSelect: (item) => void updateRequest(item, item.status),
+              disabled: (item) =>
+                !["new", "in_progress", "awaiting_trip"].includes(
+                  item.status
+                ) ||
+                !!updatingID ||
+                selection.pending,
+            },
+            {
+              label: "Закрыть без брони",
               onSelect: (item) => void updateRequest(item, "closed"),
               disabled: (item) =>
-                !["new", "in_progress"].includes(item.status) ||
+                !["in_progress", "awaiting_trip"].includes(item.status) ||
                 !!updatingID ||
                 selection.pending,
             },
@@ -401,49 +512,70 @@ export function IndividualTransferRequests() {
               onSelect: (item) => void updateRequest(item, "cancelled"),
               destructive: true,
               disabled: (item) =>
-                !["new", "in_progress"].includes(item.status) ||
+                !["new", "in_progress", "awaiting_trip"].includes(
+                  item.status
+                ) ||
                 !!updatingID ||
                 selection.pending,
             },
           ]}
           renderCard={(item) => (
-            <div className="space-y-2">
-              <p className="font-semibold">{item.passengerName}</p>
-              <p className="text-sm">
-                {item.origin} → {item.destination}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {formatDate(item.requestedDepartureAt, timezone)} · {item.seats}{" "}
-                пассажиров
-              </p>
-              <Textarea
-                aria-label={`Комментарий: ${item.passengerName}`}
-                maxLength={2000}
-                disabled={
-                  !["new", "in_progress"].includes(item.status) ||
-                  !!updatingID ||
-                  selection.pending
-                }
-                value={notes[item.id] ?? ""}
-                onChange={(event) =>
-                  setNotes((current) => ({
-                    ...current,
-                    [item.id]: event.target.value,
-                  }))
-                }
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  !["new", "in_progress"].includes(item.status) ||
-                  !!updatingID ||
-                  selection.pending
-                }
-                onClick={() => void updateRequest(item, item.status)}
-              >
-                Сохранить комментарий
-              </Button>
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-semibold">{item.passengerName}</p>
+                <span
+                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${requestBadgeClasses[item.status]}`}
+                >
+                  {statusLabels[item.status]}
+                </span>
+              </div>
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5 text-sm text-foreground">
+                  <MapPin className="h-3.5 w-3.5 text-primary" />
+                  {item.origin} → {item.destination}
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {formatDate(item.requestedDepartureAt, timezone)}
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" />
+                  {item.seats} пассажиров
+                </p>
+              </div>
+              {item.operatorNote ? (
+                <p className="line-clamp-2 rounded-md bg-muted/55 px-2.5 py-2 text-xs text-muted-foreground">
+                  {item.operatorNote}
+                </p>
+              ) : null}
+              {item.bookingId ? (
+                <Button
+                  className="w-full"
+                  render={
+                    <Link
+                      href={`/bookings/${encodeURIComponent(item.bookingId)}`}
+                    />
+                  }
+                  size="sm"
+                  variant="outline"
+                >
+                  <TicketCheck className="h-4 w-4" />
+                  Открыть бронирование
+                </Button>
+              ) : ["in_progress", "awaiting_trip"].includes(item.status) ? (
+                <Button
+                  className="w-full"
+                  size="sm"
+                  onClick={() =>
+                    router.push(
+                      `/bookings?from_request=${encodeURIComponent(item.id)}`
+                    )
+                  }
+                >
+                  <TicketCheck className="h-4 w-4" />
+                  Создать бронь
+                </Button>
+              ) : null}
             </div>
           )}
           bulkActions={
