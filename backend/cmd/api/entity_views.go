@@ -152,7 +152,7 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 		case "trips":
 			valid = (key == "kind" && (value == "regular" || value == "individual")) || (key == "status" && (value == "draft" || value == "new" || value == "assigned" || value == "in_progress" || value == "completed" || value == "cancelled"))
 		case "cash-balances":
-			valid = key == "currency" && (value == "EUR" || value == "UAH")
+			valid = key == "currency" && (value == "EUR" || value == "UAH" || value == "USD" || value == "PLN")
 		}
 		if !valid {
 			return false

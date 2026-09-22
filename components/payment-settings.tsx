@@ -3,7 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
-import { AdminNotice } from "@/components/admin-notice"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 
@@ -13,6 +13,8 @@ type PaymentConfig = {
   iban: string
   edrpou: string
   bankName: string
+  bankMfo: string
+  bankEdrpou: string
   logoUrl: string
   isEnabled: boolean
 }
@@ -23,6 +25,8 @@ const initialConfig: PaymentConfig = {
   iban: "",
   edrpou: "",
   bankName: "",
+  bankMfo: "",
+  bankEdrpou: "",
   logoUrl: "",
   isEnabled: false,
 }
@@ -41,6 +45,10 @@ function isPaymentConfig(value: unknown): value is PaymentConfig {
     typeof value.edrpou === "string" &&
     "bankName" in value &&
     typeof value.bankName === "string" &&
+    "bankMfo" in value &&
+    typeof value.bankMfo === "string" &&
+    "bankEdrpou" in value &&
+    typeof value.bankEdrpou === "string" &&
     "logoUrl" in value &&
     typeof value.logoUrl === "string" &&
     "isEnabled" in value &&
@@ -52,8 +60,6 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
   const [config, setConfig] = React.useState<PaymentConfig>(initialConfig)
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const [notice, setNotice] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -68,11 +74,9 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
         setConfig(payload)
       } catch (reason) {
         if (!controller.signal.aborted)
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Не удалось загрузить настройки оплаты."
-          )
+          toast.error("Не удалось загрузить настройки оплаты", {
+            description: reason instanceof Error ? reason.message : undefined,
+          })
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }
@@ -83,8 +87,6 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
-    setError(null)
-    setNotice(null)
     try {
       const response = await sessionFetch("/api/payment-settings", {
         method: "PATCH",
@@ -103,15 +105,11 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
         throw new Error(message)
       }
       setConfig(payload)
-      setNotice(
-        "Оплата в Telegram-боте включена. После бронирования клиент выберет банк или оплату наличными при посадке."
-      )
+      toast.success("Настройки оплаты сохранены")
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось сохранить настройки оплаты."
-      )
+      toast.error("Не удалось сохранить настройки оплаты", {
+        description: reason instanceof Error ? reason.message : undefined,
+      })
     } finally {
       setSaving(false)
     }
@@ -130,6 +128,12 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
     },
     { label: "ЕГРПОУ / ИНН", key: "edrpou" as const, placeholder: "12345678" },
     { label: "Банк", key: "bankName" as const, placeholder: "Назва банку" },
+    { label: "МФО", key: "bankMfo" as const, placeholder: "000000" },
+    {
+      label: "ЄДРПОУ банка",
+      key: "bankEdrpou" as const,
+      placeholder: "00000000",
+    },
   ]
 
   return (
@@ -139,10 +143,10 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-2xl">
-          <h2 className="font-bold">Оплата в Telegram-боте</h2>
+          <h2 className="font-bold">Оплата на IBAN</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Бот отправляет QR-код и реквизиты для перевода на IBAN. Клиент также
-            может выбрать оплату наличными при посадке.
+            Сторінка бронювання і бот показують реквізити, точну суму та QR-код.
+            Надходження автоматично звіряється за сумою і призначенням платежу.
           </p>
         </div>
         <span
@@ -151,15 +155,6 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           {config.isEnabled ? "Приём оплат включён" : "Не подключено"}
         </span>
       </div>
-      {error ? (
-        <div
-          className="mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-          role="alert"
-        >
-          {error}
-        </div>
-      ) : null}
-      <AdminNotice message={notice} />
       <div className="mt-6 grid gap-5 sm:grid-cols-2">
         {fields.map((field) => (
           <label className="text-sm font-semibold" key={field.key}>
@@ -223,8 +218,8 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
       </label>
       <div className="mt-6 flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="max-w-xl text-xs leading-5 text-muted-foreground">
-          QR-код формируется на нашем бэкенде. После подключения банковских
-          интеграций добавим автоматическое подтверждение поступления средств.
+          Гроші надходять напряму на рахунок ФОП. Для автоматичної звірки
+          потрібен персональний API-токен Monobank у блоці інтеграцій.
         </p>
         <Button
           disabled={disabled || loading || saving}

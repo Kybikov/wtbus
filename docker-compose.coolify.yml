@@ -126,7 +126,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      # The tenant token can be managed by an owner/developer in company
+      # settings. Keep the environment value only as a bootstrap fallback.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TENANT_SLUG: ${BOT_TENANT_SLUG:-vivat-bus}
       TELEGRAM_BOTS_JSON: ${TELEGRAM_BOTS_JSON:-}
     depends_on:

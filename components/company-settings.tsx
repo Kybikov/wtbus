@@ -9,6 +9,7 @@ import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { CustomFieldManager } from "@/components/custom-field-manager"
 import { PaymentSettings } from "@/components/payment-settings"
 import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
+import { ExchangeRateSettings } from "@/components/exchange-rate-settings"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 
@@ -303,15 +304,18 @@ export function CompanySettings() {
             </Button>
           </div>
         </form>
-        <PaymentSettings
-          key={`payment-${refreshVersion}`}
-          disabled={loading || isSubscriptionLocked}
-        />
         {canManageSecrets ? (
-          <IntegrationSecretsSettings
-            key={`integrations-${refreshVersion}`}
-            disabled={loading || isSubscriptionLocked}
-          />
+          <>
+            <PaymentSettings
+              key={`payment-${refreshVersion}`}
+              disabled={loading || isSubscriptionLocked}
+            />
+            <IntegrationSecretsSettings
+              key={`integrations-${refreshVersion}`}
+              disabled={loading || isSubscriptionLocked}
+            />
+            <ExchangeRateSettings disabled={loading || isSubscriptionLocked} />
+          </>
         ) : null}
         <CustomFieldManager
           key={`fields-${refreshVersion}`}

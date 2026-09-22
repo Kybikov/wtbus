@@ -35,6 +35,8 @@ type Summary = CurrencySummary & {
   timezone: string
   currencies: CurrencySummary[]
   driverCashBalances: DriverCashBalance[]
+  conversionComplete: boolean
+  missingExchangeRates: string[]
 }
 
 type Driver = { id: string; name: string }
@@ -246,6 +248,8 @@ export function FinanceDashboard() {
       currency,
       "EUR",
       "UAH",
+      "USD",
+      "PLN",
       ...(summary?.currencies.map((item) => item.currency) ?? []),
     ])
   )
@@ -347,6 +351,7 @@ export function FinanceDashboard() {
             </p>
           </section>
         </div>
+        {summary && !summary.conversionComplete ? <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">Итог в {summary.currency} неполный: задайте курс для {summary.missingExchangeRates.join(", ")} в настройках компании.</p> : null}
         <section className="overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25">
           <div className="border-b border-border px-5 py-4">
             <h2 className="font-bold">По валютам</h2>

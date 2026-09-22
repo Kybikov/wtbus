@@ -36,11 +36,16 @@ type Route = {
   defaultPricingMode: "per_passenger" | "per_booking"
   isActive: boolean
   status: string
+  tariffMode: "fixed" | "per_km"
+  distanceKm: number
+  vehicleClassRates: Record<string, number>
 }
 
-type RouteForm = Omit<Route, "id" | "defaultPriceMinor" | "driverPayMinor"> & {
+type RouteForm = Omit<Route, "id" | "defaultPriceMinor" | "driverPayMinor" | "distanceKm" | "vehicleClassRates"> & {
   price: string
   driverPay: string
+  distance: string
+  classRates: Record<string, string>
 }
 
 const emptyForm: RouteForm = {
@@ -53,6 +58,9 @@ const emptyForm: RouteForm = {
   defaultPricingMode: "per_passenger",
   isActive: true,
   status: "active",
+  tariffMode: "fixed",
+  distance: "",
+  classRates: { minivan: "", microbus: "", bus: "" },
 }
 
 function parsePriceMinor(value: string) {
@@ -136,6 +144,7 @@ export function RouteCatalog() {
     textColumn<Route>("pricing", "Модель цены", (item) =>
       item.defaultPricingMode === "per_booking" ? "За бронь" : "За пассажира"
     ),
+    textColumn<Route>("tariff", "Тариф", (item) => item.tariffMode === "per_km" ? `${item.distanceKm} км · по классу` : "Фиксированный"),
     textColumn<Route>("currency", "Валюта", (item) => item.currency, false),
     textColumn<Route>("id", "ID", (item) => item.id, false),
   ]
@@ -156,6 +165,9 @@ export function RouteCatalog() {
               defaultPriceMinor: item.defaultPriceMinor,
               defaultPricingMode: item.defaultPricingMode,
               driverPayMinor: item.driverPayMinor,
+              tariffMode: item.tariffMode,
+              distanceKm: item.distanceKm,
+              vehicleClassRates: item.vehicleClassRates,
               status,
             }),
           }
@@ -224,7 +236,9 @@ export function RouteCatalog() {
     setError(null)
     const defaultPriceMinor = parsePriceMinor(form.price)
     const driverPayMinor = parsePriceMinor(form.driverPay)
-    if (defaultPriceMinor === null || driverPayMinor === null) {
+    const distanceKm = form.distance.trim() ? Number(form.distance.replace(",", ".")) : 0
+    const vehicleClassRates = Object.fromEntries(Object.entries(form.classRates).filter(([, value]) => value.trim()).map(([key, value]) => [key, parsePriceMinor(value)]))
+    if (defaultPriceMinor === null || driverPayMinor === null || !Number.isFinite(distanceKm) || distanceKm < 0 || Object.values(vehicleClassRates).some((value) => value === null) || (form.tariffMode === "per_km" && (distanceKm <= 0 || Object.keys(vehicleClassRates).length === 0))) {
       setError("Укажите цену и зарплату числом с точностью до двух знаков.")
       return
     }
@@ -250,6 +264,9 @@ export function RouteCatalog() {
           defaultPriceMinor,
           defaultPricingMode: form.defaultPricingMode,
           driverPayMinor,
+          tariffMode: form.tariffMode,
+          distanceKm,
+          vehicleClassRates,
           status: form.status,
         }),
       })
@@ -286,6 +303,9 @@ export function RouteCatalog() {
             defaultPriceMinor: route.defaultPriceMinor,
             defaultPricingMode: route.defaultPricingMode,
             driverPayMinor: route.driverPayMinor,
+            tariffMode: route.tariffMode,
+            distanceKm: route.distanceKm,
+            vehicleClassRates: route.vehicleClassRates,
             status: route.status === "active" ? "inactive" : "active",
           }),
         }
@@ -401,6 +421,20 @@ export function RouteCatalog() {
                 value={form.defaultPricingMode}
               />
             </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Конструктор тарифа
+              <FieldSelect
+                onValueChange={(value) => updateForm("tariffMode", value as RouteForm["tariffMode"])}
+                options={[{ value: "fixed", label: "Фиксированная цена" }, { value: "per_km", label: "За километр по классу авто" }]}
+                value={form.tariffMode}
+              />
+            </label>
+            {form.tariffMode === "per_km" ? <>
+              <label className="grid gap-2 text-sm font-semibold">Расстояние, км<Input inputMode="decimal" min="0.01" onChange={(event) => updateForm("distance", event.target.value)} step="0.01" type="number" value={form.distance} /></label>
+              <div className="grid gap-3 rounded-xl border border-border p-4 md:col-span-2 sm:grid-cols-3">
+                {(["minivan", "microbus", "bus"] as const).map((vehicleClass) => <label className="grid gap-2 text-sm font-semibold" key={vehicleClass}>Цена за км · {vehicleClass}<Input inputMode="decimal" min="0" onChange={(event) => updateForm("classRates", { ...form.classRates, [vehicleClass]: event.target.value })} step="0.01" type="number" value={form.classRates[vehicleClass] ?? ""} /></label>)}
+              </div>
+            </> : null}
             <div className="grid gap-2 text-sm font-semibold">
               <span>Статус</span>
               <RouteStatusField

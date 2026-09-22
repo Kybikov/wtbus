@@ -15,8 +15,9 @@ export type PublicTrip = {
   availableSeats: number
 }
 export type PublicField = { key: string; label: string; type: "text" | "number" | "date" | "boolean" | "select"; options: string[] }
-export type PublicCatalog = { name: string; timezone: string; routes: { origin: string; destination: string }[]; fields: PublicField[] }
-export type PublicConfirmation = { reference: string; status: string; seats: number; priceMinor: number; currency: string }
+export type PublicCatalog = { name: string; timezone: string; routes: { origin: string; destination: string }[]; fields: PublicField[]; payment: { bankTransferAvailable: boolean } }
+export type PublicPayment = { status: string; checkoutToken: string; expiresAt?: string; merchantName: string; iban: string; edrpou: string; bankName: string; bankMfo?: string; bankEdrpou?: string; purpose: string; paymentUrl: string }
+export type PublicConfirmation = { reference: string; status: string; seats: number; priceMinor: number; currency: string; payment?: PublicPayment }
 
 export function travelMoney(minor: number, currency: string) {
   return new Intl.NumberFormat("uk-UA", { style: "currency", currency, maximumFractionDigits: 2 }).format(minor / 100)

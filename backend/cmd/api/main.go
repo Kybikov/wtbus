@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/mail"
@@ -29,6 +30,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/vivat-bus/tms/internal/customerexport"
 	"github.com/vivat-bus/tms/internal/customerimport"
+	"github.com/vivat-bus/tms/internal/ibanpayment"
 	"github.com/vivat-bus/tms/internal/telegramoutbox"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -154,6 +156,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/{slug}/catalog", app.publicCatalog)
 	mux.HandleFunc("GET /api/v1/public/{slug}/trips", app.publicTrips)
 	mux.HandleFunc("POST /api/v1/public/{slug}/bookings", app.publicCreateBooking)
+	mux.HandleFunc("GET /api/v1/public/{slug}/payments/{bookingID}", app.publicPaymentStatus)
+	mux.HandleFunc("GET /api/v1/public/{slug}/payments/{bookingID}/qr", app.publicPaymentQR)
 	staff := app.requireRoles("owner", "admin", "dispatcher", "driver")
 	mux.HandleFunc("GET /api/v1/realtime", app.realtime)
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
@@ -214,12 +218,14 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", drivers(app.driverPassengers))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/cash-received", drivers(app.confirmDriverCashReceived))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/summary", finance(app.financeSummary))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.getExchangeRates))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.requireActiveSubscription(app.updateExchangeRates)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/driver-cash", finance(app.requireActiveSubscription(app.recordDriverCash)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/expenses", finance(app.requireActiveSubscription(app.recordOperationalExpense)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/branding", staff(app.getBranding))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/branding", managers(app.requireActiveSubscription(app.updateBranding)))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/payment-config", managers(app.getPaymentConfig))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/payment-config", managers(app.requireActiveSubscription(app.updatePaymentConfig)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/payment-config", owners(app.getPaymentConfig))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/payment-config", owners(app.requireActiveSubscription(app.updatePaymentConfig)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/integration-secrets", owners(app.getIntegrationSecrets))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.requireActiveSubscription(app.updateIntegrationSecrets)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
@@ -1745,33 +1751,40 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 }
 
 type tripResourceResponse struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Capacity int16  `json:"capacity,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Capacity     int16  `json:"capacity,omitempty"`
+	VehicleClass string `json:"vehicleClass,omitempty"`
 }
 
 type routeResourceResponse struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	Origin             string `json:"origin"`
-	Destination        string `json:"destination"`
-	Currency           string `json:"currency"`
-	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
-	DefaultPricingMode string `json:"defaultPricingMode"`
-	DriverPayMinor     int64  `json:"driverPayMinor"`
+	ID                 string           `json:"id"`
+	Name               string           `json:"name"`
+	Origin             string           `json:"origin"`
+	Destination        string           `json:"destination"`
+	Currency           string           `json:"currency"`
+	DefaultPriceMinor  int64            `json:"defaultPriceMinor"`
+	DefaultPricingMode string           `json:"defaultPricingMode"`
+	DriverPayMinor     int64            `json:"driverPayMinor"`
+	TariffMode         string           `json:"tariffMode"`
+	DistanceKM         float64          `json:"distanceKm"`
+	VehicleClassRates  map[string]int64 `json:"vehicleClassRates"`
 }
 
 type routeResponse struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	Origin             string `json:"origin"`
-	Destination        string `json:"destination"`
-	Currency           string `json:"currency"`
-	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
-	DefaultPricingMode string `json:"defaultPricingMode"`
-	DriverPayMinor     int64  `json:"driverPayMinor"`
-	IsActive           bool   `json:"isActive"`
-	Status             string `json:"status"`
+	ID                 string           `json:"id"`
+	Name               string           `json:"name"`
+	Origin             string           `json:"origin"`
+	Destination        string           `json:"destination"`
+	Currency           string           `json:"currency"`
+	DefaultPriceMinor  int64            `json:"defaultPriceMinor"`
+	DefaultPricingMode string           `json:"defaultPricingMode"`
+	DriverPayMinor     int64            `json:"driverPayMinor"`
+	IsActive           bool             `json:"isActive"`
+	Status             string           `json:"status"`
+	TariffMode         string           `json:"tariffMode"`
+	DistanceKM         float64          `json:"distanceKm"`
+	VehicleClassRates  map[string]int64 `json:"vehicleClassRates"`
 }
 
 type routeStatusResponse struct {
@@ -1810,7 +1823,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
 		FROM routes WHERE tenant_id = $1 ORDER BY is_active DESC, name
 	`, tenant.ID)
 	if err != nil {
@@ -1822,9 +1835,14 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 	items := make([]routeResponse, 0)
 	for rows.Next() {
 		var item routeResponse
-		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status); err != nil {
+		var rates []byte
+		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &rates); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load routes"})
+			return
+		}
+		if err := json.Unmarshal(rates, &item.VehicleClassRates); err != nil {
+			app.publicFailure(w, err)
 			return
 		}
 		items = append(items, item)
@@ -1838,15 +1856,18 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 type routeInput struct {
-	Name               string `json:"name"`
-	Origin             string `json:"origin"`
-	Destination        string `json:"destination"`
-	Currency           string `json:"currency"`
-	DefaultPriceMinor  int64  `json:"defaultPriceMinor"`
-	DefaultPricingMode string `json:"defaultPricingMode"`
-	DriverPayMinor     int64  `json:"driverPayMinor"`
-	IsActive           *bool  `json:"isActive,omitempty"`
-	Status             string `json:"status"`
+	Name               string           `json:"name"`
+	Origin             string           `json:"origin"`
+	Destination        string           `json:"destination"`
+	Currency           string           `json:"currency"`
+	DefaultPriceMinor  int64            `json:"defaultPriceMinor"`
+	DefaultPricingMode string           `json:"defaultPricingMode"`
+	DriverPayMinor     int64            `json:"driverPayMinor"`
+	IsActive           *bool            `json:"isActive,omitempty"`
+	Status             string           `json:"status"`
+	TariffMode         string           `json:"tariffMode"`
+	DistanceKM         float64          `json:"distanceKm"`
+	VehicleClassRates  map[string]int64 `json:"vehicleClassRates"`
 }
 
 func validateRouteInput(input *routeInput, fallbackCurrency string) bool {
@@ -1856,6 +1877,10 @@ func validateRouteInput(input *routeInput, fallbackCurrency string) bool {
 	input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
 	input.DefaultPricingMode = normalizePricingMode(input.DefaultPricingMode)
 	input.Status = strings.ToLower(strings.TrimSpace(input.Status))
+	input.TariffMode = strings.ToLower(strings.TrimSpace(input.TariffMode))
+	if input.TariffMode == "" {
+		input.TariffMode = "fixed"
+	}
 	if input.Status == "" {
 		if input.IsActive != nil && !*input.IsActive {
 			input.Status = "inactive"
@@ -1865,6 +1890,27 @@ func validateRouteInput(input *routeInput, fallbackCurrency string) bool {
 	}
 	if input.Currency == "" {
 		input.Currency = fallbackCurrency
+	}
+	if input.TariffMode != "fixed" && input.TariffMode != "per_km" {
+		return false
+	}
+	if math.IsNaN(input.DistanceKM) || math.IsInf(input.DistanceKM, 0) || input.DistanceKM < 0 || input.DistanceKM > 100000 {
+		return false
+	}
+	if input.VehicleClassRates == nil {
+		input.VehicleClassRates = map[string]int64{}
+	}
+	normalizedRates := make(map[string]int64, len(input.VehicleClassRates))
+	for class, rate := range input.VehicleClassRates {
+		class = strings.ToLower(strings.TrimSpace(class))
+		if class == "" || len(class) > 64 || rate < 0 || rate > 1_000_000_000 {
+			return false
+		}
+		normalizedRates[class] = rate
+	}
+	input.VehicleClassRates = normalizedRates
+	if input.TariffMode == "per_km" && (input.DistanceKM <= 0 || len(input.VehicleClassRates) == 0) {
+		return false
 	}
 	return input.Name != "" && input.Origin != "" && input.Destination != "" && len([]rune(input.Name)) <= 160 && len([]rune(input.Origin)) <= 120 && len([]rune(input.Destination)) <= 120 && validBookingCurrency(input.Currency) && input.DefaultPriceMinor >= 0 && input.DefaultPriceMinor <= 10_000_000_000 && input.DriverPayMinor >= 0 && input.DriverPayMinor <= 10_000_000_000 && isPricingMode(input.DefaultPricingMode) && routeStatusKeyPattern.MatchString(input.Status)
 }
@@ -1908,7 +1954,7 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil || !validateRouteInput(&input, tenant.BaseCurrency) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route name, cities and a UAH or EUR currency are required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route name, cities, tariff and a supported currency are required"})
 		return
 	}
 	available, exists, statusErr := app.routeStatusAvailability(r, tenant.ID, input.Status)
@@ -1921,14 +1967,19 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var item routeResponse
+	ratesJSON, _ := json.Marshal(input.VehicleClassRates)
 	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status
-	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status)
+		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km, vehicle_class_rates)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
+	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON)
 	if err != nil {
 		app.log.Error("create route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create route"})
+		return
+	}
+	if err := json.Unmarshal(ratesJSON, &item.VehicleClassRates); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"item": item})
@@ -1958,11 +2009,12 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var item routeResponse
+	ratesJSON, _ := json.Marshal(input.VehicleClassRates)
 	err := app.db.QueryRow(r.Context(), `
-		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, driver_pay_minor=$7, is_active = $8, status = $9, updated_at = now()
-		WHERE id = $10 AND tenant_id = $11
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status
-	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status)
+		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, driver_pay_minor=$7, is_active = $8, status = $9, tariff_mode=$10, distance_km=$11, vehicle_class_rates=$12, updated_at = now()
+		WHERE id = $13 AND tenant_id = $14
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
+	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "route not found"})
 		return
@@ -1970,6 +2022,10 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.log.Error("update route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update route"})
+		return
+	}
+	if err := json.Unmarshal(ratesJSON, &item.VehicleClassRates); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
@@ -2598,7 +2654,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	}
 
 	vehicles, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, capacity
+		SELECT id::text, name, capacity, vehicle_class
 		FROM vehicles
 		WHERE tenant_id = $1 AND is_active
 		ORDER BY name
@@ -2613,7 +2669,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	vehicleItems := make([]tripResourceResponse, 0)
 	for vehicles.Next() {
 		var item tripResourceResponse
-		if err := vehicles.Scan(&item.ID, &item.Name, &item.Capacity); err != nil {
+		if err := vehicles.Scan(&item.ID, &item.Name, &item.Capacity, &item.VehicleClass); err != nil {
 			app.log.Error("scan vehicle", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trip resources"})
 			return
@@ -2656,7 +2712,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	}
 
 	routes, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, tariff_mode, distance_km::float8, vehicle_class_rates
 		FROM routes WHERE tenant_id = $1 AND is_active ORDER BY name
 	`, tenant.ID)
 	if err != nil {
@@ -2668,9 +2724,14 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	routeItems := make([]routeResourceResponse, 0)
 	for routes.Next() {
 		var item routeResourceResponse
-		if err := routes.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor); err != nil {
+		var rates []byte
+		if err := routes.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.TariffMode, &item.DistanceKM, &rates); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trip resources"})
+			return
+		}
+		if err := json.Unmarshal(rates, &item.VehicleClassRates); err != nil {
+			app.publicFailure(w, err)
 			return
 		}
 		routeItems = append(routeItems, item)
@@ -2764,7 +2825,8 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 	var defaultPriceMinor int64
 	var defaultPricingMode string
 	var tripCurrency string
-	if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency); err != nil {
+	var tripDriverPayMinor int64
+	if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency, &tripDriverPayMinor); err != nil {
 		app.writeResourceLookupError(w, err, "route")
 		return
 	}
@@ -2871,9 +2933,9 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		_, err := tx.Exec(r.Context(), `
 			INSERT INTO trips (
 				tenant_id, route_id, vehicle_id, driver_id, kind, status, origin_name, destination_name,
-				starts_at, ends_at, capacity, price_minor, currency, pricing_mode, notes, custom_data
-			) VALUES ($1, $2, $3, $4, 'regular', 'assigned', $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), $14)
-		`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Origin, input.Destination, instance.startsAt, instance.endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData)
+				starts_at, ends_at, capacity, price_minor, currency, pricing_mode, notes, custom_data, driver_pay_minor
+			) VALUES ($1, $2, $3, $4, 'regular', 'assigned', $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), $14, $15)
+		`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Origin, input.Destination, instance.startsAt, instance.endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData, tripDriverPayMinor)
 		if err != nil {
 			var pgError *pgconn.PgError
 			if errors.As(err, &pgError) && pgError.Code == "23P01" {
@@ -2930,10 +2992,11 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tripCurrency := tenant.BaseCurrency
+	var tripDriverPayMinor int64
 	if input.RouteID != "" {
 		var defaultPriceMinor int64
 		var defaultPricingMode string
-		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency); err != nil {
+		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency, &tripDriverPayMinor); err != nil {
 			app.writeResourceLookupError(w, err, "route")
 			return
 		}
@@ -3014,8 +3077,8 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		WITH created AS (
 			INSERT INTO trips (
 				tenant_id, route_id, vehicle_id, driver_id, kind, status, origin_name, destination_name,
-			starts_at, ends_at, capacity, price_minor, currency, pricing_mode, notes, custom_data
-		) VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5::trip_kind, 'assigned', $6, $7, $8, $9, $10, $11, $12, $13, NULLIF($14, ''), $15)
+			starts_at, ends_at, capacity, price_minor, currency, pricing_mode, notes, custom_data, driver_pay_minor
+		) VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5::trip_kind, 'assigned', $6, $7, $8, $9, $10, $11, $12, $13, NULLIF($14, ''), $15, $16)
 			RETURNING id, kind::text, status::text, origin_name, destination_name, starts_at, ends_at, capacity, price_minor, pricing_mode, currency, custom_data, vehicle_id, driver_id
 		)
 		SELECT c.id::text, c.kind, c.status, c.origin_name, c.destination_name,
@@ -3024,7 +3087,7 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		FROM created c
 		JOIN vehicles v ON v.id = c.vehicle_id
 		JOIN drivers d ON d.id = c.driver_id
-	`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData).Scan(
+	`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData, tripDriverPayMinor).Scan(
 		&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination,
 		&trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency,
 		&encodedCustomData, &trip.Vehicle, &trip.Driver,
@@ -3080,8 +3143,9 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tripCurrency := tenant.BaseCurrency
+	var tripDriverPayMinor int64
 	if input.RouteID != "" {
-		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, currency FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &tripCurrency); err != nil {
+		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &tripCurrency, &tripDriverPayMinor); err != nil {
 			app.writeResourceLookupError(w, err, "route")
 			return
 		}
@@ -3140,13 +3204,13 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		WITH updated AS (
 			UPDATE trips SET route_id = NULLIF($1, '')::uuid, vehicle_id = $2, driver_id = $3, kind = $4::trip_kind,
 				origin_name = $5, destination_name = $6, starts_at = $7, ends_at = $8, capacity = $9, price_minor = $10, pricing_mode = $11,
-				currency = $12, notes = NULLIF($13, ''), custom_data = $14, updated_at = now()
-			WHERE id = $15 AND tenant_id = $16 AND status IN ('new', 'assigned')
+				currency = $12, notes = NULLIF($13, ''), custom_data = $14, driver_pay_minor=$15, updated_at = now()
+			WHERE id = $16 AND tenant_id = $17 AND status IN ('new', 'assigned')
 			RETURNING id, kind::text, status::text, origin_name, destination_name, starts_at, ends_at, capacity, price_minor, pricing_mode, currency, custom_data, vehicle_id, driver_id
 		)
 		SELECT u.id::text, u.kind, u.status, u.origin_name, u.destination_name, u.starts_at, u.ends_at, u.capacity, u.price_minor, u.pricing_mode, u.currency, u.custom_data, v.name, d.full_name
 		FROM updated u JOIN vehicles v ON v.id = u.vehicle_id JOIN drivers d ON d.id = u.driver_id
-	`, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, input.PricingMode, tripCurrency, input.Notes, encodedCustomData, tripID, tenant.ID).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency, &responseCustomData, &trip.Vehicle, &trip.Driver)
+	`, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, input.PricingMode, tripCurrency, input.Notes, encodedCustomData, tripDriverPayMinor, tripID, tenant.ID).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency, &responseCustomData, &trip.Vehicle, &trip.Driver)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "only new or assigned trips can be edited"})
 		return
@@ -3356,7 +3420,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not change trip status"})
 		return
 	}
-	if input.Status == "completed" {
+	if nextMeta.Phase == "completed" {
 		if _, err := tx.Exec(r.Context(), `
 			UPDATE bookings
 			SET status = 'completed', updated_at = now()
@@ -3365,6 +3429,16 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		`, tenant.ID, trip.ID); err != nil {
 			app.log.Error("complete trip bookings", "error", err, "tenant", slug, "trip", tripID)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not complete trip bookings"})
+			return
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO operational_expenses(tenant_id,trip_id,category,amount_minor,currency,description,occurred_at)
+			SELECT tenant_id,id,'driver_pay',driver_pay_minor,currency,'Зарплата водителя за рейс',ends_at
+			FROM trips WHERE id=$1 AND tenant_id=$2 AND driver_pay_minor>0
+			ON CONFLICT (tenant_id,trip_id) WHERE category='driver_pay' AND trip_id IS NOT NULL DO NOTHING
+		`, trip.ID, tenant.ID); err != nil {
+			app.log.Error("record trip driver pay", "error", err, "tenant", slug, "trip", tripID)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record driver pay"})
 			return
 		}
 	}
@@ -5703,6 +5777,8 @@ type paymentConfigResponse struct {
 	IBAN         string `json:"iban"`
 	EDRPOU       string `json:"edrpou"`
 	BankName     string `json:"bankName"`
+	BankMFO      string `json:"bankMfo"`
+	BankEDRPOU   string `json:"bankEdrpou"`
 	LogoURL      string `json:"logoUrl"`
 	IsEnabled    bool   `json:"isEnabled"`
 }
@@ -5712,6 +5788,8 @@ type updatePaymentConfigRequest struct {
 	IBAN         string `json:"iban"`
 	EDRPOU       string `json:"edrpou"`
 	BankName     string `json:"bankName"`
+	BankMFO      string `json:"bankMfo"`
+	BankEDRPOU   string `json:"bankEdrpou"`
 	LogoURL      string `json:"logoUrl"`
 	IsEnabled    bool   `json:"isEnabled"`
 }
@@ -5721,11 +5799,13 @@ func validatePaymentConfigInput(input *updatePaymentConfigRequest) error {
 	input.IBAN = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(input.IBAN), " ", ""))
 	input.EDRPOU = strings.TrimSpace(input.EDRPOU)
 	input.BankName = strings.TrimSpace(input.BankName)
+	input.BankMFO = strings.TrimSpace(input.BankMFO)
+	input.BankEDRPOU = strings.TrimSpace(input.BankEDRPOU)
 	input.LogoURL = strings.TrimSpace(input.LogoURL)
 	if len([]rune(input.MerchantName)) < 2 || len([]rune(input.MerchantName)) > 160 {
 		return errors.New("merchant name must be between 2 and 160 characters")
 	}
-	if !regexp.MustCompile(`^UA[0-9]{27}$`).MatchString(input.IBAN) {
+	if !ibanpayment.ValidUAIBAN(input.IBAN) {
 		return errors.New("IBAN must use the Ukrainian UA format")
 	}
 	if !regexp.MustCompile(`^[0-9]{8,10}$`).MatchString(input.EDRPOU) {
@@ -5733,6 +5813,12 @@ func validatePaymentConfigInput(input *updatePaymentConfigRequest) error {
 	}
 	if len([]rune(input.BankName)) < 2 || len([]rune(input.BankName)) > 120 {
 		return errors.New("bank name must be between 2 and 120 characters")
+	}
+	if input.BankMFO != "" && !regexp.MustCompile(`^[0-9]{6}$`).MatchString(input.BankMFO) {
+		return errors.New("bank MFO must contain 6 digits")
+	}
+	if input.BankEDRPOU != "" && !regexp.MustCompile(`^[0-9]{8,10}$`).MatchString(input.BankEDRPOU) {
+		return errors.New("bank EDRPOU must contain 8 to 10 digits")
 	}
 	if input.LogoURL != "" && (len(input.LogoURL) > 2_000 || !strings.HasPrefix(input.LogoURL, "https://")) {
 		return errors.New("logo URL must be an HTTPS URL")
@@ -5748,9 +5834,9 @@ func (app *application) getPaymentConfig(w http.ResponseWriter, r *http.Request)
 	}
 	response := paymentConfigResponse{Provider: "internal"}
 	err := app.db.QueryRow(r.Context(), `
-		SELECT provider, merchant_name, iban, edrpou, bank_name, COALESCE(logo_url, ''), is_enabled
+		SELECT provider, merchant_name, iban, edrpou, bank_name, bank_mfo, bank_edrpou, COALESCE(logo_url, ''), is_enabled
 		FROM tenant_payment_configs WHERE tenant_id = $1
-	`, tenant.ID).Scan(&response.Provider, &response.MerchantName, &response.IBAN, &response.EDRPOU, &response.BankName, &response.LogoURL, &response.IsEnabled)
+	`, tenant.ID).Scan(&response.Provider, &response.MerchantName, &response.IBAN, &response.EDRPOU, &response.BankName, &response.BankMFO, &response.BankEDRPOU, &response.LogoURL, &response.IsEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -5782,13 +5868,14 @@ func (app *application) updatePaymentConfig(w http.ResponseWriter, r *http.Reque
 	}
 	response := paymentConfigResponse{Provider: "internal"}
 	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO tenant_payment_configs (tenant_id, provider, merchant_name, iban, edrpou, bank_name, logo_url, is_enabled)
-		VALUES ($1, 'internal', $2, $3, $4, $5, NULLIF($6, ''), $7)
+		INSERT INTO tenant_payment_configs (tenant_id, provider, merchant_name, iban, edrpou, bank_name, bank_mfo, bank_edrpou, logo_url, is_enabled)
+		VALUES ($1, 'internal', $2, $3, $4, $5, $6, $7, NULLIF($8, ''), $9)
 		ON CONFLICT (tenant_id) DO UPDATE SET
 			provider = 'internal', merchant_name = EXCLUDED.merchant_name, iban = EXCLUDED.iban, edrpou = EXCLUDED.edrpou,
-			bank_name = EXCLUDED.bank_name, logo_url = EXCLUDED.logo_url, is_enabled = EXCLUDED.is_enabled, updated_at = now()
-		RETURNING provider, merchant_name, iban, edrpou, bank_name, COALESCE(logo_url, ''), is_enabled
-	`, tenant.ID, input.MerchantName, input.IBAN, input.EDRPOU, input.BankName, input.LogoURL, input.IsEnabled).Scan(&response.Provider, &response.MerchantName, &response.IBAN, &response.EDRPOU, &response.BankName, &response.LogoURL, &response.IsEnabled)
+			bank_name = EXCLUDED.bank_name, bank_mfo=EXCLUDED.bank_mfo, bank_edrpou=EXCLUDED.bank_edrpou,
+			logo_url = EXCLUDED.logo_url, is_enabled = EXCLUDED.is_enabled, updated_at = now()
+		RETURNING provider, merchant_name, iban, edrpou, bank_name, bank_mfo, bank_edrpou, COALESCE(logo_url, ''), is_enabled
+	`, tenant.ID, input.MerchantName, input.IBAN, input.EDRPOU, input.BankName, input.BankMFO, input.BankEDRPOU, input.LogoURL, input.IsEnabled).Scan(&response.Provider, &response.MerchantName, &response.IBAN, &response.EDRPOU, &response.BankName, &response.BankMFO, &response.BankEDRPOU, &response.LogoURL, &response.IsEnabled)
 	if err != nil {
 		app.log.Error("update payment config", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save payment settings"})
@@ -5798,8 +5885,11 @@ func (app *application) updatePaymentConfig(w http.ResponseWriter, r *http.Reque
 }
 
 type integrationSecretsResponse struct {
-	MonobankConfigured    bool `json:"monobankConfigured"`
-	TelegramBotConfigured bool `json:"telegramBotConfigured"`
+	MonobankConfigured    bool       `json:"monobankConfigured"`
+	TelegramBotConfigured bool       `json:"telegramBotConfigured"`
+	MonobankLastAttemptAt *time.Time `json:"monobankLastAttemptAt,omitempty"`
+	MonobankLastSuccessAt *time.Time `json:"monobankLastSuccessAt,omitempty"`
+	MonobankLastError     string     `json:"monobankLastError,omitempty"`
 }
 
 type updateIntegrationSecretsRequest struct {
@@ -5816,9 +5906,12 @@ func (app *application) getIntegrationSecrets(w http.ResponseWriter, r *http.Req
 	}
 	var response integrationSecretsResponse
 	err := app.db.QueryRow(r.Context(), `
-		SELECT COALESCE(monobank_token,'')<>'', COALESCE(telegram_bot_token,'')<>''
-		FROM tenant_integration_secrets WHERE tenant_id=$1
-	`, tenant.ID).Scan(&response.MonobankConfigured, &response.TelegramBotConfigured)
+		SELECT COALESCE(secret.monobank_token,'')<>'', COALESCE(secret.telegram_bot_token,'')<>'',
+			state.last_attempt_at,state.last_success_at,COALESCE(state.last_error,'')
+		FROM tenant_integration_secrets secret
+		LEFT JOIN payment_reconciliation_state state ON state.tenant_id=secret.tenant_id
+		WHERE secret.tenant_id=$1
+	`, tenant.ID).Scan(&response.MonobankConfigured, &response.TelegramBotConfigured, &response.MonobankLastAttemptAt, &response.MonobankLastSuccessAt, &response.MonobankLastError)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -5891,6 +5984,8 @@ type financeSummaryResponse struct {
 	NetProfitMinor           int64                    `json:"netProfitMinor"`
 	Currencies               []financeCurrencySummary `json:"currencies"`
 	DriverCashBalances       []driverCashBalance      `json:"driverCashBalances"`
+	ConversionComplete       bool                     `json:"conversionComplete"`
+	MissingExchangeRates     []string                 `json:"missingExchangeRates"`
 }
 
 type financeCurrencySummary struct {
@@ -5929,12 +6024,37 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := financeSummaryResponse{
-		From:               from.Format("2006-01-02"),
-		To:                 to.AddDate(0, 0, -1).Format("2006-01-02"),
-		Timezone:           tenant.Timezone,
-		Currency:           tenant.BaseCurrency,
-		DriverCashBalances: make([]driverCashBalance, 0),
+		From:                 from.Format("2006-01-02"),
+		To:                   to.AddDate(0, 0, -1).Format("2006-01-02"),
+		Timezone:             tenant.Timezone,
+		Currency:             tenant.BaseCurrency,
+		DriverCashBalances:   make([]driverCashBalance, 0),
+		ConversionComplete:   true,
+		MissingExchangeRates: make([]string, 0),
 	}
+	rates := map[string]float64{tenant.BaseCurrency: 1}
+	rateRows, err := app.db.Query(r.Context(), `SELECT currency,rate_to_base::float8 FROM tenant_exchange_rates WHERE tenant_id=$1`, tenant.ID)
+	if err != nil {
+		app.log.Error("load exchange rates", "error", err, "tenant", slug)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load finance summary"})
+		return
+	}
+	for rateRows.Next() {
+		var currency string
+		var rate float64
+		if err = rateRows.Scan(&currency, &rate); err != nil {
+			rateRows.Close()
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load finance summary"})
+			return
+		}
+		rates[currency] = rate
+	}
+	if err = rateRows.Err(); err != nil {
+		rateRows.Close()
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load finance summary"})
+		return
+	}
+	rateRows.Close()
 	rows, err := app.db.Query(r.Context(), `
 		WITH currencies AS (
 			SELECT $4::text AS currency
@@ -5991,16 +6111,21 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 		item.DriverCashBalanceMinor = item.CashCollectedMinor - item.CashHandedInMinor
 		item.NetProfitMinor = item.ConfirmedRevenueMinor - item.OperationalExpensesMinor
 		response.Currencies = append(response.Currencies, item)
-		if item.Currency == tenant.BaseCurrency {
-			response.ConfirmedRevenueMinor = item.ConfirmedRevenueMinor
-			response.PendingRevenueMinor = item.PendingRevenueMinor
-			response.ConfirmedBookings = item.ConfirmedBookings
-			response.CashCollectedMinor = item.CashCollectedMinor
-			response.CashHandedInMinor = item.CashHandedInMinor
-			response.DriverCashBalanceMinor = item.DriverCashBalanceMinor
-			response.OperationalExpensesMinor = item.OperationalExpensesMinor
-			response.NetProfitMinor = item.NetProfitMinor
+		response.ConfirmedBookings += item.ConfirmedBookings
+		rate, exists := rates[item.Currency]
+		if !exists {
+			response.ConversionComplete = false
+			response.MissingExchangeRates = append(response.MissingExchangeRates, item.Currency)
+			continue
 		}
+		convert := func(value int64) int64 { return int64(math.Round(float64(value) * rate)) }
+		response.ConfirmedRevenueMinor += convert(item.ConfirmedRevenueMinor)
+		response.PendingRevenueMinor += convert(item.PendingRevenueMinor)
+		response.CashCollectedMinor += convert(item.CashCollectedMinor)
+		response.CashHandedInMinor += convert(item.CashHandedInMinor)
+		response.DriverCashBalanceMinor += convert(item.DriverCashBalanceMinor)
+		response.OperationalExpensesMinor += convert(item.OperationalExpensesMinor)
+		response.NetProfitMinor += convert(item.NetProfitMinor)
 	}
 	if err := rows.Err(); err != nil {
 		app.log.Error("iterate finance summary", "error", err, "tenant", slug)
@@ -6233,7 +6358,7 @@ func (app *application) recordDriverCash(w http.ResponseWriter, r *http.Request)
 	}
 	input.Currency = normalizedFinanceCurrency(input.Currency, tenant.BaseCurrency)
 	if strings.TrimSpace(input.DriverID) == "" || input.AmountMinor < 1 || input.AmountMinor > 1_000_000_000 || (input.Kind != "cash_collected" && input.Kind != "collection") || !validBookingCurrency(input.Currency) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver, positive amount, cash operation and UAH or EUR currency are required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver, positive amount, cash operation and a supported currency are required"})
 		return
 	}
 	var driverExists bool
@@ -6330,12 +6455,90 @@ func normalizedFinanceCurrency(value, fallback string) string {
 	return value
 }
 
+type exchangeRatesResponse struct {
+	BaseCurrency string             `json:"baseCurrency"`
+	Rates        map[string]float64 `json:"rates"`
+}
+
+type updateExchangeRatesRequest struct {
+	Rates map[string]float64 `json:"rates"`
+}
+
+func (app *application) getExchangeRates(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	response := exchangeRatesResponse{BaseCurrency: tenant.BaseCurrency, Rates: map[string]float64{tenant.BaseCurrency: 1}}
+	rows, err := app.db.Query(r.Context(), `SELECT currency,rate_to_base::float8 FROM tenant_exchange_rates WHERE tenant_id=$1 ORDER BY currency`, tenant.ID)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var currency string
+		var rate float64
+		if err = rows.Scan(&currency, &rate); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		response.Rates[currency] = rate
+	}
+	if err = rows.Err(); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (app *application) updateExchangeRates(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	var input updateExchangeRatesRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil || len(input.Rates) > 32 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "exchange rates are invalid"})
+		return
+	}
+	if input.Rates == nil {
+		input.Rates = make(map[string]float64)
+	}
+	input.Rates[tenant.BaseCurrency] = 1
+	for currency, rate := range input.Rates {
+		if !validFinanceCurrency(currency) || math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 || rate > 1_000_000 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "every exchange rate must be a positive three-letter currency rate"})
+			return
+		}
+	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	for currency, rate := range input.Rates {
+		if _, err = tx.Exec(r.Context(), `INSERT INTO tenant_exchange_rates(tenant_id,currency,rate_to_base) VALUES($1,$2,$3) ON CONFLICT(tenant_id,currency) DO UPDATE SET rate_to_base=EXCLUDED.rate_to_base,updated_at=now()`, tenant.ID, currency, rate); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	app.getExchangeRates(w, r)
+}
+
 func validFinanceCurrency(value string) bool {
 	return financeCurrencyPattern.MatchString(value)
 }
 
 func validBookingCurrency(value string) bool {
-	return value == "UAH" || value == "EUR"
+	return value == "UAH" || value == "EUR" || value == "USD" || value == "PLN"
 }
 
 func financeRange(w http.ResponseWriter, r *http.Request, location *time.Location) (time.Time, time.Time, bool) {

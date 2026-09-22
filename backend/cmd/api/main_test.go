@@ -203,15 +203,29 @@ func TestValidUserPreferences(t *testing.T) {
 }
 
 func TestValidBookingCurrency(t *testing.T) {
-	for _, currency := range []string{"UAH", "EUR"} {
+	for _, currency := range []string{"UAH", "EUR", "USD", "PLN"} {
 		if !validBookingCurrency(currency) {
 			t.Fatalf("validBookingCurrency(%q) = false, want true", currency)
 		}
 	}
-	for _, currency := range []string{"usd", "USD", "PLN", "", "UA"} {
+	for _, currency := range []string{"usd", "GBP", "", "UA"} {
 		if validBookingCurrency(currency) {
 			t.Fatalf("validBookingCurrency(%q) = true, want false", currency)
 		}
+	}
+}
+
+func TestValidateRoutePerKilometreTariff(t *testing.T) {
+	input := routeInput{Name: "Kyiv — Warsaw", Origin: "Kyiv", Destination: "Warsaw", Currency: "PLN", DefaultPricingMode: "per_passenger", Status: "active", TariffMode: "per_km", DistanceKM: 780.5, VehicleClassRates: map[string]int64{" MicroBus ": 120}}
+	if !validateRouteInput(&input, "EUR") {
+		t.Fatal("valid per-kilometre route was rejected")
+	}
+	if input.VehicleClassRates["microbus"] != 120 {
+		t.Fatalf("vehicle class was not normalized: %#v", input.VehicleClassRates)
+	}
+	input.DistanceKM = 0
+	if validateRouteInput(&input, "EUR") {
+		t.Fatal("per-kilometre tariff without a distance was accepted")
 	}
 }
 

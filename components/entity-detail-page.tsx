@@ -179,6 +179,9 @@ function updateRequest(
         defaultPriceMinor: Number(item.default_price_minor),
         defaultPricingMode: item.default_pricing_mode,
         driverPayMinor: Number(item.driver_pay_minor ?? 0),
+        tariffMode: item.tariff_mode ?? "fixed",
+        distanceKm: Number(item.distance_km ?? 0),
+        vehicleClassRates: item.vehicle_class_rates ?? {},
         status: item.status,
       },
     }

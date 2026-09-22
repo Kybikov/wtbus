@@ -179,6 +179,27 @@ func TestValidUAIBAN(t *testing.T) {
 	}
 }
 
+func TestMonobankReconciliationRequiresExactAmountAndReference(t *testing.T) {
+	payment := pendingIBANPayment{ID: "12345678-1234-1234-1234-123456789abc", AmountMinor: 120050, Currency: "UAH"}
+	valid := monobankStatementItem{ID: "statement-1", Amount: 120050, Description: "Оплата бронювання VIVAT-12345678"}
+	if !matchesMonobankTransaction(valid, payment) {
+		t.Fatal("exact incoming transaction did not match")
+	}
+	for name, transaction := range map[string]monobankStatementItem{
+		"wrong amount":    {ID: "statement-2", Amount: 120000, Description: valid.Description},
+		"wrong reference": {ID: "statement-3", Amount: 120050, Description: "VIVAT-87654321"},
+		"outgoing":        {ID: "statement-4", Amount: -120050, Description: valid.Description},
+		"hold":            {ID: "statement-5", Amount: 120050, Description: valid.Description, Hold: true},
+		"missing id":      {Amount: 120050, Description: valid.Description},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if matchesMonobankTransaction(transaction, payment) {
+				t.Fatal("unsafe transaction matched")
+			}
+		})
+	}
+}
+
 func TestFormatMoneyUsesExactMinorUnits(t *testing.T) {
 	for _, test := range []struct {
 		minor int64

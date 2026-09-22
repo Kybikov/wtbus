@@ -11,6 +11,9 @@ import { sessionFetch } from "@/lib/session-navigation"
 type State = {
   monobankConfigured: boolean
   telegramBotConfigured: boolean
+  monobankLastAttemptAt?: string
+  monobankLastSuccessAt?: string
+  monobankLastError?: string
 }
 
 const emptyState: State = {
@@ -153,6 +156,28 @@ export function IntegrationSecretsSettings({
           </div>
         ))}
       </div>
+      {state.monobankConfigured ? (
+        <div className="mt-5 rounded-xl border border-border bg-background/55 p-4 text-sm">
+          <p className="font-semibold">Автоматична звірка Monobank</p>
+          <p className="mt-1 text-muted-foreground">
+            Використовується персональний API-токен Monobank. Платіж
+            підтверджується лише за точною сумою та унікальним призначенням.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+            <span>
+              Остання перевірка: {state.monobankLastAttemptAt ? new Date(state.monobankLastAttemptAt).toLocaleString("uk-UA") : "ще не виконувалась"}
+            </span>
+            <span>
+              Успішна звірка: {state.monobankLastSuccessAt ? new Date(state.monobankLastSuccessAt).toLocaleString("uk-UA") : "ще не виконувалась"}
+            </span>
+          </div>
+          {state.monobankLastError ? (
+            <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {state.monobankLastError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-5 flex justify-end border-t border-border pt-5">
         <Button
           disabled={

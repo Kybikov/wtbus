@@ -23,7 +23,7 @@ export function validateCheckout({ passengers, seats, phone, paymentMethod, fiel
   })
   if (passengers.length !== seats) errors.passengers = `Додайте дані всіх пасажирів: ${passengers.length} із ${seats}.`
   if (!phone || !isValidPhoneNumber(phone)) errors["passenger-phone"] = "Вкажіть правильний номер із кодом країни."
-  if (paymentMethod !== "cash_on_boarding") errors["payment-method"] = "Оберіть спосіб оплати."
+  if (!["cash_on_boarding", "bank_transfer"].includes(paymentMethod)) errors["payment-method"] = "Оберіть спосіб оплати."
   fields.forEach((field) => {
     const value = custom[field.key]
     if (value === undefined || value === "" || (typeof value === "string" && !value.trim())) errors[`booking-${field.key}`] = "Заповніть це поле."

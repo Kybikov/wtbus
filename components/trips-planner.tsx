@@ -80,6 +80,7 @@ type TripResource = {
   id: string
   name: string
   capacity?: number
+  vehicleClass?: string
 }
 
 type RouteResource = {
@@ -90,6 +91,17 @@ type RouteResource = {
   currency: string
   defaultPriceMinor: number
   defaultPricingMode: "per_passenger" | "per_booking"
+  tariffMode: "fixed" | "per_km"
+  distanceKm: number
+  vehicleClassRates: Record<string, number>
+}
+
+function routePrice(route: RouteResource | undefined, vehicleId: string, vehicles: TripResource[]) {
+  if (!route) return null
+  if (route.tariffMode !== "per_km") return route.defaultPriceMinor
+  const vehicleClass = vehicles.find((vehicle) => vehicle.id === vehicleId)?.vehicleClass
+  const rate = vehicleClass ? route.vehicleClassRates[vehicleClass.toLowerCase()] : undefined
+  return rate === undefined ? route.defaultPriceMinor : Math.round(rate * route.distanceKm)
 }
 
 type TripForm = {
@@ -1272,7 +1284,7 @@ export function TripsPlanner() {
                         origin: route?.origin ?? current.origin,
                         destination: route?.destination ?? current.destination,
                         price: route
-                          ? (route.defaultPriceMinor / 100).toFixed(2)
+                          ? ((routePrice(route, current.vehicleId, resources.vehicles) ?? route.defaultPriceMinor) / 100).toFixed(2)
                           : current.price,
                         pricingMode:
                           route?.defaultPricingMode ?? current.pricingMode,
@@ -1295,12 +1307,11 @@ export function TripsPlanner() {
                   disabled={
                     isResourcesLoading || resources.vehicles.length === 0
                   }
-                  onValueChange={(value) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      vehicleId: value,
-                    }))
-                  }
+                  onValueChange={(value) => setTripForm((current) => {
+                    const route = resources.routes.find((item) => item.id === current.routeId)
+                    const nextPrice = routePrice(route, value, resources.vehicles)
+                    return { ...current, vehicleId: value, ...(nextPrice === null ? {} : { price: (nextPrice / 100).toFixed(2) }) }
+                  })}
                   options={[
                     {
                       value: "",

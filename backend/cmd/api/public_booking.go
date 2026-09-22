@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/vivat-bus/tms/internal/ibanpayment"
 )
 
 // This predicate is shared by discovery and checkout. No private transfers,
@@ -121,7 +125,12 @@ func (app *application) publicCatalog(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": company.Name, "timezone": company.Timezone, "routes": routes, "fields": fields})
+	var bankTransferAvailable bool
+	if err := app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM tenant_payment_configs WHERE tenant_id=$1 AND is_enabled)`, company.ID).Scan(&bankTransferAvailable); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": company.Name, "timezone": company.Timezone, "routes": routes, "fields": fields, "payment": map[string]bool{"bankTransferAvailable": bankTransferAvailable}})
 }
 
 func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
@@ -228,8 +237,8 @@ type publicPassenger struct {
 var publicLatinName = regexp.MustCompile(`^[A-Za-z]+([ '-][A-Za-z]+)*$`)
 
 func normalizePublicPassengers(input *publicBookingInput, now time.Time) (bookingPassengerDetails, error) {
-	if input.PaymentMethod != "cash_on_boarding" {
-		return bookingPassengerDetails{}, errors.New("Оберіть доступний спосіб оплати: готівка при посадці.")
+	if input.PaymentMethod != "cash_on_boarding" && input.PaymentMethod != "bank_transfer" {
+		return bookingPassengerDetails{}, errors.New("Оберіть спосіб оплати.")
 	}
 	if len(input.Passengers) != int(input.Seats) || input.Seats < 1 || input.Seats > 20 {
 		return bookingPassengerDetails{}, errors.New("Вкажіть дані кожного пасажира відповідно до кількості місць.")
@@ -256,11 +265,64 @@ func normalizePublicPassengers(input *publicBookingInput, now time.Time) (bookin
 }
 
 type publicConfirmation struct {
-	Reference  string `json:"reference"`
-	Status     string `json:"status"`
-	Seats      int16  `json:"seats"`
-	PriceMinor int64  `json:"priceMinor"`
-	Currency   string `json:"currency"`
+	Reference  string                     `json:"reference"`
+	Status     string                     `json:"status"`
+	Seats      int16                      `json:"seats"`
+	PriceMinor int64                      `json:"priceMinor"`
+	Currency   string                     `json:"currency"`
+	Payment    *publicPaymentConfirmation `json:"payment,omitempty"`
+}
+
+type publicPaymentConfirmation struct {
+	Status        string     `json:"status"`
+	CheckoutToken string     `json:"checkoutToken"`
+	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
+	MerchantName  string     `json:"merchantName"`
+	IBAN          string     `json:"iban"`
+	EDRPOU        string     `json:"edrpou"`
+	BankName      string     `json:"bankName"`
+	BankMFO       string     `json:"bankMfo,omitempty"`
+	BankEDRPOU    string     `json:"bankEdrpou,omitempty"`
+	Purpose       string     `json:"purpose"`
+	PaymentURL    string     `json:"paymentUrl"`
+}
+
+func loadPublicPaymentConfirmation(ctx context.Context, tx pgx.Tx, tenantID, bookingID string) (*publicPaymentConfirmation, error) {
+	var paymentID string
+	var payment publicPaymentConfirmation
+	var amount int64
+	var currency string
+	err := tx.QueryRow(ctx, `
+		SELECT payment.id::text,payment.status,payment.amount_minor,payment.currency,
+			booking.payment_hold_expires_at,
+			config.merchant_name,config.iban,config.edrpou,config.bank_name,config.bank_mfo,config.bank_edrpou
+		FROM payments payment
+		JOIN bookings booking ON booking.id=payment.booking_id
+		JOIN tenant_payment_configs config ON config.tenant_id=payment.tenant_id
+		WHERE payment.tenant_id=$1 AND payment.booking_id=$2 AND payment.provider='internal' AND payment.payment_method='bank_transfer'
+		ORDER BY payment.created_at DESC LIMIT 1
+	`, tenantID, bookingID).Scan(&paymentID, &payment.Status, &amount, &currency, &payment.ExpiresAt, &payment.MerchantName, &payment.IBAN, &payment.EDRPOU, &payment.BankName, &payment.BankMFO, &payment.BankEDRPOU)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Rotate the public status token on an idempotent checkout replay. Only its
+	// hash is persisted, so a database read cannot expose a usable payment URL.
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return nil, err
+	}
+	payment.CheckoutToken = base64.RawURLEncoding.EncodeToString(tokenBytes)
+	checkoutHash := sha256.Sum256([]byte(payment.CheckoutToken))
+	if _, err := tx.Exec(ctx, `UPDATE payments SET checkout_token_hash=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3`, checkoutHash[:], paymentID, tenantID); err != nil {
+		return nil, err
+	}
+	details := ibanpayment.Details{PaymentID: paymentID, Merchant: payment.MerchantName, IBAN: payment.IBAN, EDRPOU: payment.EDRPOU, Bank: payment.BankName, AmountMinor: amount, Currency: currency}
+	payment.Purpose = ibanpayment.Purpose(paymentID)
+	payment.PaymentURL = ibanpayment.QRURL(details, time.Now())
+	return &payment, nil
 }
 
 func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +380,11 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Дані змінились. Почніть нове бронювання."})
 			return
 		}
+		result.Payment, err = loadPublicPaymentConfirmation(r.Context(), tx, company.ID, result.Reference)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"item": result})
 		return
 	}
@@ -361,6 +428,25 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Ціна рейсу потребує уточнення у перевізника."})
 		return
 	}
+	var merchantName, iban, edrpou, bankName, bankMFO, bankEDRPOU string
+	if input.PaymentMethod == "bank_transfer" {
+		if currency != "UAH" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Переказ за IBAN доступний лише для рейсів у гривні."})
+			return
+		}
+		err = tx.QueryRow(r.Context(), `
+			SELECT merchant_name,iban,edrpou,bank_name,bank_mfo,bank_edrpou
+			FROM tenant_payment_configs WHERE tenant_id=$1 AND is_enabled
+		`, company.ID).Scan(&merchantName, &iban, &edrpou, &bankName, &bankMFO, &bankEDRPOU)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Оплата за IBAN ще не налаштована. Оберіть готівку при посадці."})
+			return
+		}
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+	}
 	var customerID string
 	// Reusing a phone must not overwrite an existing customer's identity.
 	err = tx.QueryRow(r.Context(), `INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,$2,$3) ON CONFLICT(tenant_id,phone_e164) DO UPDATE SET phone_e164=EXCLUDED.phone_e164 RETURNING id::text`, company.ID, passenger.Name, passenger.Phone).Scan(&customerID)
@@ -385,10 +471,42 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 	custom["passenger_name"], custom["passenger_phone"], custom["passenger_birth_date"] = passenger.Name, passenger.Phone, passenger.BirthDate
 	custom["passengers"], custom["payment_method"] = input.Passengers, input.PaymentMethod
 	data, _ := json.Marshal(custom)
-	err = tx.QueryRow(r.Context(), `INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data) VALUES($1,$2,$3,'cash_on_boarding',$4,$5,$6,'web',$7) RETURNING id::text,status::text,seats,price_minor,currency`, company.ID, input.TripID, customerID, input.Seats, total, currency, data).Scan(&result.Reference, &result.Status, &result.Seats, &result.PriceMinor, &result.Currency)
+	bookingStatus := "cash_on_boarding"
+	var holdExpiresAt *time.Time
+	if input.PaymentMethod == "bank_transfer" {
+		bookingStatus = "awaiting_payment"
+		expires := time.Now().UTC().Add(30 * time.Minute)
+		holdExpiresAt = &expires
+	}
+	err = tx.QueryRow(r.Context(), `
+		INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data,payment_hold_expires_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'web',$8,$9)
+		RETURNING id::text,status::text,seats,price_minor,currency
+	`, company.ID, input.TripID, customerID, bookingStatus, input.Seats, total, currency, data, holdExpiresAt).Scan(&result.Reference, &result.Status, &result.Seats, &result.PriceMinor, &result.Currency)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
+	}
+	if input.PaymentMethod == "bank_transfer" {
+		tokenBytes := make([]byte, 32)
+		if _, err = rand.Read(tokenBytes); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		checkoutToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
+		checkoutHash := sha256.Sum256([]byte(checkoutToken))
+		var paymentID string
+		err = tx.QueryRow(r.Context(), `
+			INSERT INTO payments(tenant_id,booking_id,provider,status,amount_minor,currency,idempotency_key,payment_method,checkout_token_hash,provider_payload)
+			VALUES($1,$2,'internal','pending',$3,$4,$5,'bank_transfer',$6,jsonb_build_object('checkout','web'))
+			RETURNING id::text
+		`, company.ID, result.Reference, total, currency, "public:"+result.Reference, checkoutHash[:]).Scan(&paymentID)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		details := ibanpayment.Details{PaymentID: paymentID, Merchant: merchantName, IBAN: iban, EDRPOU: edrpou, Bank: bankName, AmountMinor: total, Currency: currency}
+		result.Payment = &publicPaymentConfirmation{Status: "pending", CheckoutToken: checkoutToken, ExpiresAt: holdExpiresAt, MerchantName: merchantName, IBAN: iban, EDRPOU: edrpou, BankName: bankName, BankMFO: bankMFO, BankEDRPOU: bankEDRPOU, Purpose: ibanpayment.Purpose(paymentID), PaymentURL: ibanpayment.QRURL(details, time.Now())}
 	}
 	if _, err = tx.Exec(r.Context(), `INSERT INTO public_booking_requests(tenant_id,request_key,request_hash,booking_id) VALUES($1,$2,$3,$4)`, company.ID, input.RequestKey, hash[:], result.Reference); err != nil {
 		app.publicFailure(w, err)
@@ -408,4 +526,87 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"item": result})
+}
+
+type publicPaymentAccess struct {
+	Details       ibanpayment.Details
+	BookingStatus string
+	PaymentStatus string
+	ExpiresAt     *time.Time
+	PaidAt        *time.Time
+}
+
+func (app *application) loadPublicPaymentAccess(ctx context.Context, tenantID, bookingID, token string) (publicPaymentAccess, error) {
+	var result publicPaymentAccess
+	hash := sha256.Sum256([]byte(token))
+	err := app.db.QueryRow(ctx, `
+		SELECT payment.id::text,payment.amount_minor,payment.currency,payment.status,booking.status,
+			booking.payment_hold_expires_at,payment.paid_at,config.merchant_name,config.iban,config.edrpou,config.bank_name
+		FROM payments payment
+		JOIN bookings booking ON booking.id=payment.booking_id
+		JOIN tenant_payment_configs config ON config.tenant_id=payment.tenant_id
+		WHERE payment.tenant_id=$1 AND payment.booking_id=$2 AND payment.checkout_token_hash=$3
+		  AND payment.provider='internal' AND payment.payment_method='bank_transfer'
+	`, tenantID, bookingID, hash[:]).Scan(&result.Details.PaymentID, &result.Details.AmountMinor, &result.Details.Currency, &result.PaymentStatus, &result.BookingStatus, &result.ExpiresAt, &result.PaidAt, &result.Details.Merchant, &result.Details.IBAN, &result.Details.EDRPOU, &result.Details.Bank)
+	return result, err
+}
+
+func (app *application) publicPaymentStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	bookingID, token := strings.TrimSpace(r.PathValue("bookingID")), strings.TrimSpace(r.URL.Query().Get("token"))
+	if !publicUUID.MatchString(bookingID) || len(token) < 32 || len(token) > 128 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Платіж не знайдено."})
+		return
+	}
+	payment, err := app.loadPublicPaymentAccess(r.Context(), tenant.ID, bookingID, token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Платіж не знайдено."})
+		return
+	}
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"bookingStatus": payment.BookingStatus, "paymentStatus": payment.PaymentStatus, "expiresAt": payment.ExpiresAt, "paidAt": payment.PaidAt})
+}
+
+func (app *application) publicPaymentQR(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	tenant, ok := app.loadTenant(w, r, strings.ToLower(strings.TrimSpace(r.PathValue("slug"))))
+	if !ok {
+		return
+	}
+	bookingID, token := strings.TrimSpace(r.PathValue("bookingID")), strings.TrimSpace(r.URL.Query().Get("token"))
+	if !publicUUID.MatchString(bookingID) || len(token) < 32 || len(token) > 128 {
+		http.NotFound(w, r)
+		return
+	}
+	payment, err := app.loadPublicPaymentAccess(r.Context(), tenant.ID, bookingID, token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		app.log.Error("load public payment QR", "error", err, "tenant", r.PathValue("slug"))
+		http.Error(w, "QR unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if payment.ExpiresAt != nil && payment.ExpiresAt.Before(time.Now()) && payment.PaymentStatus != "paid" {
+		http.Error(w, "Payment expired", http.StatusGone)
+		return
+	}
+	png, err := ibanpayment.PNG(payment.Details, time.Now(), 512)
+	if err != nil {
+		app.log.Error("generate public payment QR", "error", err, "tenant", r.PathValue("slug"))
+		http.Error(w, "QR unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Length", strconv.Itoa(len(png)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(png)
 }

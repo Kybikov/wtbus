@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -21,7 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	qrcode "github.com/skip2/go-qrcode"
+	"github.com/vivat-bus/tms/internal/ibanpayment"
 	"github.com/vivat-bus/tms/internal/telegramoutbox"
 )
 
@@ -29,6 +31,7 @@ const (
 	stateTTL                 = 20 * time.Minute
 	notificationPollInterval = 2 * time.Second
 	holdExpiryPollInterval   = time.Minute
+	paymentPollInterval      = 65 * time.Second
 	maximumPassengerAgeYears = 125
 )
 
@@ -44,6 +47,10 @@ type app struct {
 	subscriptionStatus string
 	systemMembershipID string
 	timezone           *time.Location
+	httpClient         *http.Client
+	monobankAccountID  string
+	monobankIBAN       string
+	monobankAccountAt  time.Time
 }
 
 // botBinding connects one Telegram bot to one isolated tenant. Tokens are read
@@ -175,7 +182,7 @@ func main() {
 			logger.Error("connect telegram", "tenant", binding.TenantSlug, "error", err)
 			os.Exit(1)
 		}
-		application := &app{db: db, redis: redisClient, bot: bot, log: logger, tenantSlug: binding.TenantSlug}
+		application := &app{db: db, redis: redisClient, bot: bot, log: logger, tenantSlug: binding.TenantSlug, httpClient: &http.Client{Timeout: 12 * time.Second}}
 		if err := application.loadTenant(ctx); err != nil {
 			logger.Error("load tenant", "tenant", binding.TenantSlug, "error", err)
 			os.Exit(1)
@@ -259,6 +266,7 @@ func (app *app) run(signalContext context.Context) {
 	updates := app.bot.GetUpdatesChan(updateConfig)
 	go app.deliverTelegramNotifications(signalContext)
 	go app.expireBookingHoldsLoop(signalContext)
+	go app.reconcileIBANPaymentsLoop(signalContext)
 	for {
 		select {
 		case <-signalContext.Done():
@@ -314,6 +322,224 @@ func (app *app) expireBookingHoldsLoop(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+type monobankAccount struct {
+	ID           string `json:"id"`
+	IBAN         string `json:"iban"`
+	CurrencyCode int    `json:"currencyCode"`
+}
+
+type monobankClientInfo struct {
+	Accounts []monobankAccount `json:"accounts"`
+}
+
+type monobankStatementItem struct {
+	ID          string `json:"id"`
+	Time        int64  `json:"time"`
+	Description string `json:"description"`
+	Comment     string `json:"comment"`
+	Amount      int64  `json:"amount"`
+	Hold        bool   `json:"hold"`
+}
+
+type pendingIBANPayment struct {
+	ID          string
+	BookingID   string
+	AmountMinor int64
+	Currency    string
+}
+
+func (app *app) reconcileIBANPaymentsLoop(ctx context.Context) {
+	ticker := time.NewTicker(paymentPollInterval)
+	defer ticker.Stop()
+	for {
+		if err := app.reconcileIBANPayments(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			app.log.Warn("reconcile IBAN payments", "tenant", app.tenantSlug, "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (app *app) reconcileIBANPayments(ctx context.Context) error {
+	var token, configuredIBAN string
+	err := app.db.QueryRow(ctx, `
+		SELECT COALESCE(secret.monobank_token,''), config.iban
+		FROM tenant_payment_configs config
+		LEFT JOIN tenant_integration_secrets secret ON secret.tenant_id=config.tenant_id
+		WHERE config.tenant_id=$1 AND config.is_enabled
+	`, app.tenantID).Scan(&token, &configuredIBAN)
+	if errors.Is(err, pgx.ErrNoRows) || token == "" || configuredIBAN == "" {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	accountID, err := app.monobankAccount(ctx, token, configuredIBAN)
+	if err != nil {
+		app.recordReconciliationResult(ctx, err)
+		return err
+	}
+	to := time.Now().UTC()
+	from := to.Add(-2 * time.Hour)
+	requestURL := fmt.Sprintf("https://api.monobank.ua/personal/statement/%s/%d/%d", url.PathEscape(accountID), from.Unix(), to.Unix())
+	var statement []monobankStatementItem
+	if err := app.monobankGET(ctx, token, requestURL, &statement); err != nil {
+		app.recordReconciliationResult(ctx, err)
+		return err
+	}
+	rows, err := app.db.Query(ctx, `
+		SELECT payment.id::text,payment.booking_id::text,payment.amount_minor,payment.currency
+		FROM payments payment
+		JOIN bookings booking ON booking.id=payment.booking_id
+		WHERE payment.tenant_id=$1 AND payment.provider='internal' AND payment.status='pending'
+		  AND payment.payment_method='bank_transfer' AND payment.currency='UAH'
+		  AND booking.status='awaiting_payment' AND booking.payment_hold_expires_at>now()
+		ORDER BY payment.created_at
+	`, app.tenantID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	pending := make([]pendingIBANPayment, 0)
+	for rows.Next() {
+		var payment pendingIBANPayment
+		if err := rows.Scan(&payment.ID, &payment.BookingID, &payment.AmountMinor, &payment.Currency); err != nil {
+			return err
+		}
+		pending = append(pending, payment)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, transaction := range statement {
+		for _, payment := range pending {
+			if !matchesMonobankTransaction(transaction, payment) {
+				continue
+			}
+			if err := app.confirmReconciledPayment(ctx, payment, transaction); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	app.recordReconciliationResult(ctx, nil)
+	return nil
+}
+
+func matchesMonobankTransaction(transaction monobankStatementItem, payment pendingIBANPayment) bool {
+	if transaction.Hold || transaction.Amount <= 0 || transaction.ID == "" || transaction.Amount != payment.AmountMinor {
+		return false
+	}
+	description := strings.ToUpper(transaction.Description + " " + transaction.Comment)
+	return strings.Contains(description, ibanpayment.Reference(payment.ID))
+}
+
+func (app *app) monobankAccount(ctx context.Context, token, configuredIBAN string) (string, error) {
+	normalized := ibanpayment.NormalizeIBAN(configuredIBAN)
+	if app.monobankAccountID != "" && app.monobankIBAN == normalized && time.Since(app.monobankAccountAt) < 15*time.Minute {
+		return app.monobankAccountID, nil
+	}
+	var info monobankClientInfo
+	if err := app.monobankGET(ctx, token, "https://api.monobank.ua/personal/client-info", &info); err != nil {
+		return "", err
+	}
+	for _, account := range info.Accounts {
+		if ibanpayment.NormalizeIBAN(account.IBAN) == normalized && account.CurrencyCode == 980 {
+			app.monobankAccountID, app.monobankIBAN, app.monobankAccountAt = account.ID, normalized, time.Now()
+			return account.ID, nil
+		}
+	}
+	return "", errors.New("налаштований IBAN не знайдено серед гривневих рахунків monobank")
+}
+
+func (app *app) monobankGET(ctx context.Context, token, requestURL string, output any) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("X-Token", token)
+	request.Header.Set("Accept", "application/json")
+	response, err := app.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+		return fmt.Errorf("monobank API returned %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(output)
+}
+
+func (app *app) confirmReconciledPayment(ctx context.Context, payment pendingIBANPayment, transaction monobankStatementItem) error {
+	tx, err := app.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `
+		UPDATE payments SET status='paid',provider_payment_id=$3,paid_at=to_timestamp($4),updated_at=now(),
+			provider_payload=provider_payload||jsonb_build_object('reconciliation','monobank_statement','description',$5::text)
+		WHERE id=$1 AND tenant_id=$2 AND status='pending' AND payment_method='bank_transfer'
+	`, payment.ID, app.tenantID, transaction.ID, transaction.Time, transaction.Description)
+	if err != nil {
+		var pgError *pgconn.PgError
+		if errors.As(err, &pgError) && pgError.Code == "23505" {
+			return nil
+		}
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return nil
+	}
+	result, err = tx.Exec(ctx, `UPDATE bookings SET status='confirmed',payment_hold_expires_at=NULL,updated_at=now() WHERE id=$1 AND tenant_id=$2 AND status='awaiting_payment' AND payment_hold_expires_at>now()`, payment.BookingID, app.tenantID)
+	if err != nil || result.RowsAffected() == 0 {
+		if err != nil {
+			return err
+		}
+		return pgx.ErrNoRows
+	}
+	payload, err := json.Marshal(telegramoutbox.PaymentConfirmedPayload{BookingID: payment.BookingID, AmountMinor: payment.AmountMinor, Currency: payment.Currency})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO telegram_notification_outbox(tenant_id,chat_id,kind,payload)
+		SELECT $1,customer.telegram_id,$3,$4::jsonb FROM bookings booking
+		JOIN customers customer ON customer.id=booking.customer_id
+		WHERE booking.id=$2 AND booking.tenant_id=$1 AND customer.telegram_id IS NOT NULL
+	`, app.tenantID, payment.BookingID, telegramoutbox.KindPaymentConfirmed, payload); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details)
+		VALUES($1,$2,'system','payment.reconciled','payment',$3,jsonb_build_object('provider','monobank_statement'))
+	`, app.tenantID, app.systemMembershipID, payment.ID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (app *app) recordReconciliationResult(ctx context.Context, reconcileErr error) {
+	message := ""
+	if reconcileErr != nil {
+		message = reconcileErr.Error()
+		if len(message) > 500 {
+			message = message[:500]
+		}
+	}
+	_, _ = app.db.Exec(ctx, `
+		INSERT INTO payment_reconciliation_state(tenant_id,account_id,last_attempt_at,last_success_at,last_error)
+		VALUES($1,$2,now(),CASE WHEN $3='' THEN now() END,$3)
+		ON CONFLICT(tenant_id) DO UPDATE SET account_id=$2,last_attempt_at=now(),
+			last_success_at=CASE WHEN $3='' THEN now() ELSE payment_reconciliation_state.last_success_at END,
+			last_error=$3,updated_at=now()
+	`, app.tenantID, app.monobankAccountID, message)
 }
 
 func (app *app) deliverPendingTelegramNotifications(ctx context.Context) error {
@@ -374,6 +600,16 @@ func (app *app) deliverPendingTelegramNotifications(ctx context.Context) error {
 				continue
 			}
 			text = formatIndividualTransferRequestStatusNotification(payload, app.timezone)
+		case telegramoutbox.KindPaymentConfirmed:
+			var payload telegramoutbox.PaymentConfirmedPayload
+			if err := json.Unmarshal(notification.Payload, &payload); err != nil {
+				app.log.Error("decode payment confirmation notification", "error", err, "notification", notification.ID)
+				if err := app.retryTelegramNotification(ctx, notification.ID); err != nil {
+					return err
+				}
+				continue
+			}
+			text = fmt.Sprintf("Оплату отримано: %s. Бронювання %s підтверджено.", formatMoney(payload.AmountMinor, payload.Currency), payload.BookingID)
 		default:
 			app.log.Error("unsupported telegram notification kind", "kind", notification.Kind, "notification", notification.ID)
 			if err := app.retryTelegramNotification(ctx, notification.ID); err != nil {
@@ -1819,7 +2055,7 @@ func (app *app) sendBankPayment(chatID, telegramID int64, bankCode, paymentID st
 		app.log.Warn("set telegram payment method", "error", err, "payment", paymentID)
 	}
 	qrData := nbuPaymentQR(payment)
-	png, err := qrcode.Encode(qrData, qrcode.Medium, 512)
+	png, err := ibanpayment.PNG(paymentIBANDetails(payment), time.Now(), 512)
 	if err != nil {
 		app.log.Error("generate payment qr", "error", err, "payment", paymentID)
 		app.send(chatID, paymentDetailsText(payment)+"\n\nQR-код временно недоступен. Используйте реквизиты выше или выберите оплату при посадке.")
@@ -1927,7 +2163,7 @@ func findBank(code string) (supportedBank, bool) {
 }
 
 func paymentDetailsText(payment telegramPayment) string {
-	purpose := "Оплата бронирования " + strings.ToUpper(strings.ReplaceAll(payment.ID[:8], "-", ""))
+	purpose := ibanpayment.Purpose(payment.ID)
 	return fmt.Sprintf("Сумма: %s\nПолучатель: %s\nIBAN: %s\nЕГРПОУ / ИНН: %s\nБанк: %s\nНазначение: %s", formatMoney(payment.AmountMinor, payment.Currency), payment.MerchantName, payment.IBAN, payment.EDRPOU, payment.BankName, purpose)
 }
 
@@ -1936,13 +2172,11 @@ func nbuPaymentQR(payment telegramPayment) string {
 }
 
 func nbuPaymentQRAt(payment telegramPayment, issuedAt time.Time) string {
-	purpose := "Оплата бронирования " + strings.ToUpper(strings.ReplaceAll(payment.ID[:8], "-", ""))
-	fields := []string{
-		"BCD", "003", "1", "UCT", "", qrField(payment.MerchantName), normalizeIBAN(payment.IBAN), nbuAmount(payment),
-		qrField(payment.EDRPOU), "SUPP/SUPP", nbuPaymentReference(payment), qrField(purpose), "", "FFFF",
-		issuedAt.Add(30 * time.Minute).Format("060102150405"), issuedAt.Format("060102150405"), "RFU",
-	}
-	return "https://qr.bank.gov.ua/" + base64.RawURLEncoding.EncodeToString([]byte(strings.Join(fields, "\n")))
+	return ibanpayment.QRURL(paymentIBANDetails(payment), issuedAt)
+}
+
+func paymentIBANDetails(payment telegramPayment) ibanpayment.Details {
+	return ibanpayment.Details{PaymentID: payment.ID, Merchant: payment.MerchantName, IBAN: payment.IBAN, EDRPOU: payment.EDRPOU, Bank: payment.BankName, AmountMinor: payment.AmountMinor, Currency: payment.Currency, Route: payment.Route}
 }
 
 func nbuAmount(payment telegramPayment) string {
@@ -1956,7 +2190,7 @@ func nbuAmount(payment telegramPayment) string {
 }
 
 func nbuPaymentReference(payment telegramPayment) string {
-	return "VIVAT-" + strings.ToUpper(strings.ReplaceAll(payment.ID[:8], "-", ""))
+	return ibanpayment.Reference(payment.ID)
 }
 
 func qrField(value string) string {
@@ -1964,7 +2198,7 @@ func qrField(value string) string {
 }
 
 func normalizeIBAN(value string) string {
-	return strings.ToUpper(strings.NewReplacer(" ", "", "-", "").Replace(value))
+	return ibanpayment.NormalizeIBAN(value)
 }
 
 func priceForBooking(unitPrice int64, seats int16, pricingMode string) (int64, bool) {
