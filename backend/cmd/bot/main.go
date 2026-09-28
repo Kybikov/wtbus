@@ -32,6 +32,7 @@ const (
 	notificationPollInterval = 2 * time.Second
 	holdExpiryPollInterval   = time.Minute
 	paymentPollInterval      = 65 * time.Second
+	botRetryInterval         = 30 * time.Second
 	maximumPassengerAgeYears = 125
 )
 
@@ -145,63 +146,112 @@ func main() {
 		logger.Error("ping redis", "error", err)
 		os.Exit(1)
 	}
+	signalContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	tenantSlug := optionalEnv("TENANT_SLUG", "vivat-bus")
 	fallbackToken := optionalEnv("TELEGRAM_BOT_TOKEN", "")
 	bindingsJSON := optionalEnv("TELEGRAM_BOTS_JSON", "")
-	if strings.TrimSpace(bindingsJSON) == "" {
-		var configuredToken string
-		err := db.QueryRow(ctx, `
-			SELECT COALESCE(secret.telegram_bot_token,'')
-			FROM tenants tenant
-			LEFT JOIN tenant_integration_secrets secret ON secret.tenant_id=tenant.id
-			WHERE tenant.slug=$1
-		`, tenantSlug).Scan(&configuredToken)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			logger.Error("load configured Telegram token", "tenant", tenantSlug, "error", err)
-			os.Exit(1)
-		}
-		if configuredToken != "" {
-			fallbackToken = configuredToken
-		}
-	}
-	bindings, err := parseBotBindings(bindingsJSON, botBinding{
-		Token:      fallbackToken,
-		TenantSlug: tenantSlug,
-	})
-	if err != nil {
+	bindings, err := parseBotBindings(bindingsJSON, botBinding{Token: fallbackToken, TenantSlug: tenantSlug})
+	if strings.TrimSpace(bindingsJSON) != "" && err != nil {
 		logger.Error("load bot bindings", "error", err)
-		os.Exit(1)
+		<-signalContext.Done()
+		return
 	}
-
-	signalContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	if strings.TrimSpace(bindingsJSON) == "" {
+		// The owner can replace the token in company settings while this process
+		// is running. Resolve it on every reconnect attempt.
+		bindings = []botBinding{{Token: fallbackToken, TenantSlug: tenantSlug}}
+	}
 	var workers sync.WaitGroup
 	for _, binding := range bindings {
-		bot, err := tgbotapi.NewBotAPI(binding.Token)
-		if err != nil {
-			logger.Error("connect telegram", "tenant", binding.TenantSlug, "error", err)
-			os.Exit(1)
-		}
-		// This service consumes updates with long polling. A token may still have
-		// a webhook registered by a previous deployment or external setup; Telegram
-		// rejects getUpdates until that webhook is removed. Keep queued updates.
-		if _, err := bot.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: false}); err != nil {
-			logger.Error("disable telegram webhook", "tenant", binding.TenantSlug, "error", err)
-			os.Exit(1)
-		}
-		application := &app{db: db, redis: redisClient, bot: bot, log: logger, tenantSlug: binding.TenantSlug, httpClient: &http.Client{Timeout: 12 * time.Second}}
-		if err := application.loadTenant(ctx); err != nil {
-			logger.Error("load tenant", "tenant", binding.TenantSlug, "error", err)
-			os.Exit(1)
-		}
-		logger.Info("telegram bot started", "username", bot.Self.UserName, "tenant", application.tenantSlug)
 		workers.Add(1)
-		go func(application *app) {
+		go func(binding botBinding) {
 			defer workers.Done()
-			application.run(signalContext)
-		}(application)
+			runBotWithRetry(signalContext, db, redisClient, logger, binding, strings.TrimSpace(bindingsJSON) == "")
+		}(binding)
 	}
 	workers.Wait()
+}
+
+func runBotWithRetry(ctx context.Context, db *pgxpool.Pool, redisClient *redis.Client, logger *slog.Logger, binding botBinding, useCompanySettings bool) {
+	for ctx.Err() == nil {
+		attemptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		token := binding.Token
+		if useCompanySettings {
+			configuredToken, err := loadConfiguredBotToken(attemptCtx, db, binding.TenantSlug)
+			if err != nil {
+				logger.Error("load configured Telegram token", "tenant", binding.TenantSlug, "error", err)
+				cancel()
+				if !waitForBotRetry(ctx) {
+					return
+				}
+				continue
+			}
+			if configuredToken != "" {
+				token = configuredToken
+			}
+		}
+		if strings.TrimSpace(token) == "" {
+			logger.Warn("Telegram bot token is not configured", "tenant", binding.TenantSlug)
+			cancel()
+			if !waitForBotRetry(ctx) {
+				return
+			}
+			continue
+		}
+		bot, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, &http.Client{Timeout: 12 * time.Second})
+		if err == nil {
+			// getUpdates long polls for 30 seconds, so its client needs a longer timeout.
+			bot.Client = &http.Client{Timeout: 45 * time.Second}
+			// Long polling cannot run while Telegram still has a webhook registered.
+			_, err = bot.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: false})
+		}
+		application := &app{db: db, redis: redisClient, bot: bot, log: logger, tenantSlug: binding.TenantSlug, httpClient: &http.Client{Timeout: 12 * time.Second}}
+		if err == nil {
+			err = application.loadTenant(attemptCtx)
+		}
+		cancel()
+		if err != nil {
+			logger.Error("connect telegram", "tenant", binding.TenantSlug, "error", err)
+			if !waitForBotRetry(ctx) {
+				return
+			}
+			continue
+		}
+		logger.Info("telegram bot started", "username", bot.Self.UserName, "tenant", binding.TenantSlug)
+		application.run(ctx)
+		if ctx.Err() == nil {
+			logger.Warn("telegram update stream stopped; reconnecting", "tenant", binding.TenantSlug)
+			if !waitForBotRetry(ctx) {
+				return
+			}
+		}
+	}
+}
+
+func loadConfiguredBotToken(ctx context.Context, db *pgxpool.Pool, tenantSlug string) (string, error) {
+	var token string
+	err := db.QueryRow(ctx, `
+		SELECT COALESCE(secret.telegram_bot_token,'')
+		FROM tenants tenant
+		LEFT JOIN tenant_integration_secrets secret ON secret.tenant_id=tenant.id
+		WHERE tenant.slug=$1
+	`, tenantSlug).Scan(&token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return token, err
+}
+
+func waitForBotRetry(ctx context.Context) bool {
+	timer := time.NewTimer(botRetryInterval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func parseBotBindings(raw string, fallback botBinding) ([]botBinding, error) {
@@ -268,12 +318,15 @@ func (app *app) loadTenant(ctx context.Context) error {
 }
 
 func (app *app) run(signalContext context.Context) {
+	runContext, cancel := context.WithCancel(signalContext)
+	defer cancel()
+	defer app.bot.StopReceivingUpdates()
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 30
 	updates := app.bot.GetUpdatesChan(updateConfig)
-	go app.deliverTelegramNotifications(signalContext)
-	go app.expireBookingHoldsLoop(signalContext)
-	go app.reconcileIBANPaymentsLoop(signalContext)
+	go app.deliverTelegramNotifications(runContext)
+	go app.expireBookingHoldsLoop(runContext)
+	go app.reconcileIBANPaymentsLoop(runContext)
 	for {
 		select {
 		case <-signalContext.Done():
