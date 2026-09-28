@@ -7,8 +7,12 @@ import { isPublicBookingPath } from "@/lib/public-booking"
 
 export function SessionMonitor() {
   const pathname = usePathname()
+  const publicPage =
+    pathname === "/login" ||
+    pathname.startsWith("/offline") ||
+    isPublicBookingPath(pathname)
   useEffect(() => {
-    if (pathname === "/login" || pathname.startsWith("/offline") || isPublicBookingPath(pathname)) return
+    if (publicPage) return
     const controller = new AbortController()
     let pending = false
     async function check() {
@@ -43,6 +47,6 @@ export function SessionMonitor() {
       document.removeEventListener("visibilitychange", check)
       window.removeEventListener("online", check)
     }
-  }, [pathname])
+  }, [publicPage])
   return null
 }

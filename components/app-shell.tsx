@@ -126,6 +126,12 @@ type SearchBooking = {
   startsAt: string
 }
 type SidebarVariant = "default" | "inset" | "floating"
+type ShellBootstrap = {
+  branding: unknown
+  brandingOK: boolean
+  identity: unknown
+  identityOK: boolean
+}
 
 const operationsRoles: MembershipRole[] = [
   "developer",
@@ -197,6 +203,34 @@ const defaultShellBrand: ShellBrand = {
   tenantName: "Vivat Bus",
   userInitials: "АК",
   role: "owner",
+}
+let shellBootstrapCache:
+  { expiresAt: number; promise: Promise<ShellBootstrap> } | undefined
+
+function invalidateShellBootstrap() {
+  shellBootstrapCache = undefined
+}
+
+function loadShellBootstrap() {
+  const now = Date.now()
+  if (shellBootstrapCache && shellBootstrapCache.expiresAt > now)
+    return shellBootstrapCache.promise
+  const promise = Promise.all([
+    sessionFetch("/api/branding"),
+    sessionFetch("/api/auth/me"),
+  ])
+    .then(async ([brandingResponse, identityResponse]) => ({
+      branding: await brandingResponse.json().catch(() => null),
+      brandingOK: brandingResponse.ok,
+      identity: await identityResponse.json().catch(() => null),
+      identityOK: identityResponse.ok,
+    }))
+    .catch((error) => {
+      invalidateShellBootstrap()
+      throw error
+    })
+  shellBootstrapCache = { expiresAt: now + 30_000, promise }
+  return promise
 }
 const pageDescriptions: Record<string, string> = {
   Обзор: "Оперативная картина на сегодня",
@@ -421,6 +455,7 @@ export function AppShell({
     function updated(event: Event) {
       const detail = (event as CustomEvent<{ displayName?: string }>).detail
       if (typeof detail?.displayName !== "string") return
+      invalidateShellBootstrap()
       profileVersion.current += 1
       setUserName(detail.displayName)
       setBrand((current) => ({
@@ -443,24 +478,15 @@ export function AppShell({
   const [bookings, setBookings] = React.useState<SearchBooking[]>([])
 
   React.useEffect(() => {
-    const controller = new AbortController()
+    let cancelled = false
     const initialProfileVersion = profileVersion.current
-    void Promise.all([
-      sessionFetch("/api/branding", { signal: controller.signal }),
-      sessionFetch("/api/auth/me", { signal: controller.signal }),
-    ])
-      .then(async ([brandingResponse, identityResponse]) => {
-        const branding: unknown = await brandingResponse
-          .json()
-          .catch(() => null)
-        const identity: unknown = await identityResponse
-          .json()
-          .catch(() => null)
-        if (controller.signal.aborted) return
-        setIdentityReady(identityResponse.ok)
+    void loadShellBootstrap()
+      .then(({ branding, brandingOK, identity, identityOK }) => {
+        if (cancelled) return
+        setIdentityReady(identityOK)
         if (
           initialProfileVersion === profileVersion.current &&
-          identityResponse.ok &&
+          identityOK &&
           typeof identity === "object" &&
           identity !== null &&
           "displayName" in identity &&
@@ -469,7 +495,7 @@ export function AppShell({
           setUserName(identity.displayName)
         setBrand((current) => {
           const tenantSlug =
-            identityResponse.ok &&
+            identityOK &&
             typeof identity === "object" &&
             identity !== null &&
             "tenantSlug" in identity &&
@@ -477,7 +503,7 @@ export function AppShell({
               ? identity.tenantSlug
               : current.tenantSlug
           const tenantName =
-            identityResponse.ok &&
+            identityOK &&
             typeof identity === "object" &&
             identity !== null &&
             "tenantSlug" in identity &&
@@ -486,7 +512,7 @@ export function AppShell({
               : current.tenantName
           const userInitials =
             initialProfileVersion === profileVersion.current &&
-            identityResponse.ok &&
+            identityOK &&
             typeof identity === "object" &&
             identity !== null &&
             "displayName" in identity &&
@@ -494,7 +520,7 @@ export function AppShell({
               ? initials(identity.displayName)
               : current.userInitials
           const role =
-            identityResponse.ok &&
+            identityOK &&
             typeof identity === "object" &&
             identity !== null &&
             "role" in identity &&
@@ -502,7 +528,7 @@ export function AppShell({
               ? identity.role
               : current.role
           const logoUrl =
-            brandingResponse.ok &&
+            brandingOK &&
             typeof branding === "object" &&
             branding !== null &&
             "logoUrl" in branding &&
@@ -515,7 +541,9 @@ export function AppShell({
         })
       })
       .catch(() => undefined)
-    return () => controller.abort()
+    return () => {
+      cancelled = true
+    }
   }, [])
   React.useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -581,6 +609,7 @@ export function AppShell({
     const change = (event: Event) => {
       const detail = (event as CustomEvent<{ logoUrl?: string | null }>).detail
       if (!detail || !("logoUrl" in detail)) return
+      invalidateShellBootstrap()
       setBrand((current) => ({
         ...current,
         logoUrl:

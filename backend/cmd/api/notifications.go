@@ -455,10 +455,13 @@ func (app *application) notificationWorker(ctx context.Context) {
 			}
 		}()
 	}
-	// A Redis outage must not block background push; a slow push provider must not block CRM events.
-	run("publish realtime events", 500*time.Millisecond, app.publishRealtime)
-	for range 4 {
-		run("deliver push job", 200*time.Millisecond, app.deliverPush)
+	// Keep notifications responsive without continuously polling an empty database.
+	// Two push workers are enough to deliver concurrently; the partial indexes make
+	// each idle probe cheap, while the longer cadence avoids dozens of transactions
+	// per second when there is no work.
+	run("publish realtime events", 750*time.Millisecond, app.publishRealtime)
+	for range 2 {
+		run("deliver push job", time.Second, app.deliverPush)
 	}
 	run("retain notification history", time.Hour, func(ctx context.Context) error {
 		_, err := app.db.Exec(ctx, `DELETE FROM push_jobs WHERE finished_at<now()-interval '7 days';

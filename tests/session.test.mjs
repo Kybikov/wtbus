@@ -34,10 +34,11 @@ test("server session gate checks the backend and distinguishes outages from inva
   let status = 200
   let calls = 0
   let fail = false
+  let expectedSession = "fake-session"
   t.mock.method(globalThis, "fetch", async (url, init) => {
     calls++
     assert.equal(url.toString(), "http://api.test/api/v1/auth/me")
-    assert.equal(init.headers.Authorization, "Bearer fake-session")
+    assert.equal(init.headers.Authorization, `Bearer ${expectedSession}`)
     assert.equal(init.cache, "no-store")
     assert.equal(init.redirect, "error")
     assert.ok(init.signal instanceof AbortSignal)
@@ -53,20 +54,28 @@ test("server session gate checks the backend and distinguishes outages from inva
     await checkSession("fake-session", "http://api.test"),
     "authenticated"
   )
-  status = 401
   assert.equal(
     await checkSession("fake-session", "http://api.test"),
+    "authenticated"
+  )
+  assert.equal(calls, 1)
+  status = 401
+  expectedSession = "invalid-session"
+  assert.equal(
+    await checkSession(expectedSession, "http://api.test"),
     "unauthenticated"
   )
   for (status of [403, 429, 500, 502, 503]) {
+    expectedSession = `error-session-${status}`
     assert.equal(
-      await checkSession("fake-session", "http://api.test"),
+      await checkSession(expectedSession, "http://api.test"),
       "unavailable"
     )
   }
   fail = true
+  expectedSession = "network-failure-session"
   assert.equal(
-    await checkSession("fake-session", "http://api.test"),
+    await checkSession(expectedSession, "http://api.test"),
     "unavailable"
   )
 })
