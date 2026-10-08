@@ -624,24 +624,15 @@ export function EntityDataView<T>({
         onClearSelection={() => onSelectedChange(new Set())}
         filterRequest={filterRequest}
         onFilterRequestHandled={() => setFilterRequest(null)}
+        onConfigureCard={
+          mode === "kanban" ||
+          mode === "list" ||
+          mode === "gallery" ||
+          mode === "calendar"
+            ? () => setCardSettingsOpen(true)
+            : undefined
+        }
       />
-
-      {mode === "kanban" ||
-      mode === "list" ||
-      mode === "gallery" ||
-      mode === "calendar" ? (
-        <div className="flex justify-end">
-          <Button
-            onClick={() => setCardSettingsOpen(true)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <Settings2 />
-            Карточка
-          </Button>
-        </div>
-      ) : null}
       <EntityCardSettings
         columns={columns.map((column) => ({
           id: column.id,

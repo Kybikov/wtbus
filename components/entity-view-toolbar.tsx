@@ -45,6 +45,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
   entityModeLabels,
@@ -125,6 +126,7 @@ type Props<T> = {
   onClearSelection?: () => void
   filterRequest?: string | null
   onFilterRequestHandled?: () => void
+  onConfigureCard?: () => void
 }
 
 export function EntityViewToolbar<T>({
@@ -142,6 +144,7 @@ export function EntityViewToolbar<T>({
   onClearSelection,
   filterRequest,
   onFilterRequestHandled,
+  onConfigureCard,
 }: Props<T>) {
   const [views, setViews] = React.useState<SavedEntityView[]>([])
   const [active, setActive] = React.useState<string>("")
@@ -332,7 +335,7 @@ export function EntityViewToolbar<T>({
               <Plus />
               <span className="sr-only sm:not-sr-only">Создать вид</span>
             </Button>
-            {current?.canEdit ? (
+            {current?.canEdit || onConfigureCard ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -348,15 +351,27 @@ export function EntityViewToolbar<T>({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuGroup>
-                    <DropdownMenuItem onClick={() => open("edit")}>
-                      Настроить и сохранить вид
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => open("delete")}
-                    >
-                      Удалить вид
-                    </DropdownMenuItem>
+                    {onConfigureCard ? (
+                      <DropdownMenuItem onClick={onConfigureCard}>
+                        Настройка карточки
+                      </DropdownMenuItem>
+                    ) : null}
+                    {onConfigureCard && current?.canEdit ? (
+                      <DropdownMenuSeparator />
+                    ) : null}
+                    {current?.canEdit ? (
+                      <>
+                        <DropdownMenuItem onClick={() => open("edit")}>
+                          Настроить и сохранить вид
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => open("delete")}
+                        >
+                          Удалить вид
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
