@@ -3,10 +3,12 @@
 import * as React from "react"
 import { sessionFetch } from "@/lib/session-navigation"
 import { adminControlClassName } from "@/lib/admin-ui"
+import { cn } from "@/lib/utils"
 import {
   ChevronDown,
   CheckSquare2,
   CalendarDays,
+  Ellipsis,
   GalleryHorizontal,
   KanbanSquare,
   List,
@@ -14,8 +16,6 @@ import {
   Table2,
   Columns3,
   Filter,
-  LayoutGrid,
-  Lock,
   Plus,
   Save,
   Users,
@@ -45,7 +45,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
   entityModeLabels,
@@ -68,6 +67,48 @@ const modeIcons: Record<
   calendar: CalendarDays,
   gallery: GalleryHorizontal,
   schedule: Rows3,
+}
+
+function ViewChip({
+  label,
+  mode,
+  selected,
+  shared,
+  dirty,
+  onClick,
+}: {
+  label: string
+  mode: EntityViewMode
+  selected: boolean
+  shared?: boolean
+  dirty?: boolean
+  onClick: () => void
+}) {
+  const Icon = modeIcons[mode]
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      aria-pressed={selected}
+      title={`${label} · ${entityModeLabels[mode]}${shared ? " · общий" : ""}`}
+      className={cn(
+        control,
+        "max-w-56",
+        selected && "border-primary/50 bg-primary/15 text-foreground"
+      )}
+      onClick={onClick}
+    >
+      <Icon />
+      <span className="truncate">{label}</span>
+      {shared ? <Users className="text-muted-foreground" /> : null}
+      {selected && dirty ? (
+        <span
+          aria-label="Есть несохранённые изменения"
+          className="size-1.5 shrink-0 rounded-full bg-primary"
+        />
+      ) : null}
+    </Button>
+  )
 }
 type Props<T> = {
   extras?: React.ReactNode
@@ -249,76 +290,38 @@ export function EntityViewToolbar<T>({
         aria-label="Виды и настройки отображения"
       >
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             {extras}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="outline" size="sm" className={control} />
-                }
-              >
-                {current?.visibility === "shared" ? (
-                  <Users />
-                ) : current ? (
-                  <Lock />
-                ) : (
-                  <LayoutGrid />
-                )}
-                <span className="max-w-28 truncate sm:max-w-44">
-                  {current?.name ?? "По умолчанию"}
-                </span>
-                {dirty ? (
-                  <span
-                    aria-label="Есть несохранённые изменения"
-                    className="size-1.5 rounded-full bg-primary"
-                  />
-                ) : null}
-                <ChevronDown />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="max-h-80 w-64 overflow-y-auto"
-              >
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => select()}>
-                    По умолчанию
-                  </DropdownMenuItem>
-                  {(["shared", "private"] as const).map((group) => (
-                    <React.Fragment key={group}>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>
-                        {group === "shared" ? "Общие виды" : "Мои виды"}
-                      </DropdownMenuLabel>
-                      {views
-                        .filter((view) => view.visibility === group)
-                        .map((view) => (
-                          <DropdownMenuItem
-                            key={view.id}
-                            onClick={() => select(view)}
-                          >
-                            {view.name}
-                            {active === view.id ? " ✓" : ""}
-                          </DropdownMenuItem>
-                        ))}
-                    </React.Fragment>
-                  ))}
-                  {current?.canEdit ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => open("edit")}>
-                        Настроить и сохранить вид
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => open("delete")}
-                      >
-                        Удалить вид
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div
+              role="group"
+              aria-label="Сохранённые виды"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
+            >
+              <ViewChip
+                label="По умолчанию"
+                mode={active ? defaults.mode : config.mode}
+                selected={!active}
+                dirty={dirty}
+                onClick={() => select()}
+              />
+              {(["shared", "private"] as const).flatMap((group) =>
+                views
+                  .filter((view) => view.visibility === group)
+                  .map((view) => (
+                    <ViewChip
+                      key={view.id}
+                      label={view.name}
+                      mode={
+                        view.id === active ? config.mode : view.config.mode
+                      }
+                      selected={view.id === active}
+                      shared={view.visibility === "shared"}
+                      dirty={dirty}
+                      onClick={() => select(view)}
+                    />
+                  ))
+              )}
+            </div>
             <Button
               variant="outline"
               size="sm"
@@ -329,6 +332,35 @@ export function EntityViewToolbar<T>({
               <Plus />
               <span className="sr-only sm:not-sr-only">Создать вид</span>
             </Button>
+            {current?.canEdit ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={control}
+                      aria-label="Действия вида"
+                    />
+                  }
+                >
+                  <Ellipsis />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onClick={() => open("edit")}>
+                      Настроить и сохранить вид
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => open("delete")}
+                    >
+                      Удалить вид
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {current?.canEdit && dirty ? (
               <Button
                 variant="outline"
