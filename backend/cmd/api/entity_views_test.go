@@ -40,8 +40,14 @@ func TestEntityViewValidation(t *testing.T) {
 	if !validateEntityView("bookings", &input) || input.Name != "Active" {
 		t.Fatal("valid config rejected")
 	}
+	input.Config.Card = &entityViewCard{Size: "xs", Rows: []entityViewCardRow{{Fields: []string{"name", "custom:test"}, Layout: "two"}}}
+	if !validateEntityView("bookings", &input) {
+		t.Fatal("valid card rejected")
+	}
 	for _, change := range []func(*entityViewInput){
-		func(v *entityViewInput) { v.Name = " " }, func(v *entityViewInput) { v.Visibility = "public" }, func(v *entityViewInput) { v.Config.Columns = []string{"name", "name"} }, func(v *entityViewInput) { v.Config.Columns = nil }, func(v *entityViewInput) { v.Config.Filters["date"] = "2026-02-30" }, func(v *entityViewInput) { v.Config.Filters["status"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["source"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["tripStatus"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["paymentMethod"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["unknown"] = "yes" }, func(v *entityViewInput) { v.Config.ColumnWidths["name"] = 20 }, func(v *entityViewInput) { v.Config.ColumnWidths["missing"] = 200 }, func(v *entityViewInput) { v.Config.PinnedColumns.Right = []string{"name"} }, func(v *entityViewInput) { v.Config.Sort.Direction = "sideways" },
+		func(v *entityViewInput) { v.Name = " " }, func(v *entityViewInput) { v.Visibility = "public" }, func(v *entityViewInput) { v.Config.Columns = []string{"name", "name"} }, func(v *entityViewInput) { v.Config.Columns = nil }, func(v *entityViewInput) { v.Config.Filters["date"] = "2026-02-30" }, func(v *entityViewInput) { v.Config.Filters["status"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["source"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["tripStatus"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["paymentMethod"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["unknown"] = "yes" }, func(v *entityViewInput) { v.Config.ColumnWidths["name"] = 20 }, func(v *entityViewInput) { v.Config.ColumnWidths["missing"] = 200 }, func(v *entityViewInput) { v.Config.PinnedColumns.Right = []string{"name"} }, func(v *entityViewInput) { v.Config.Sort.Direction = "sideways" }, func(v *entityViewInput) {
+			v.Config.Card = &entityViewCard{Size: "huge", Rows: []entityViewCardRow{{Fields: []string{"name"}, Layout: "one"}}}
+		},
 	} {
 		input = valid()
 		change(&input)

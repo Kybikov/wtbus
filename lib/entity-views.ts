@@ -13,6 +13,10 @@ export const entityCollections = [
 export type EntityCollection = (typeof entityCollections)[number]
 export type EntityViewMode =
   "table" | "list" | "kanban" | "calendar" | "gallery" | "schedule"
+export type CardLayoutKind = "title" | "one" | "two"
+export type CardSize = "xs" | "sm" | "md"
+export type CardRow = { fields: string[]; layout: CardLayoutKind }
+export type CardLayout = { size: CardSize; rows: CardRow[] }
 export type EntityViewConfig = {
   mode: EntityViewMode
   columns: string[]
@@ -21,6 +25,7 @@ export type EntityViewConfig = {
   columnWidths?: Record<string, number>
   pinnedColumns?: { left: string[]; right: string[] }
   sort?: { columnId: string; direction: "asc" | "desc" } | null
+  card?: CardLayout
 }
 export type SavedEntityView = {
   id: string
@@ -37,6 +42,17 @@ export type EntityFilter<T> = {
   options?: { value: string; label: string }[]
   matches?: (item: T, value: string) => boolean
 }
+export function defaultCardLayout(columnIds: string[]): CardLayout {
+  const [title, ...rest] = columnIds
+  return {
+    size: "sm",
+    rows: [
+      ...(title ? [{ fields: [title], layout: "title" as const }] : []),
+      ...rest.slice(0, 4).map((id) => ({ fields: [id], layout: "one" as const })),
+    ],
+  }
+}
+
 export const entityModeLabels: Record<EntityViewMode, string> = {
   table: "Таблица",
   list: "Список",
@@ -67,6 +83,35 @@ export function normalizeViewConfig(
   const right = cleanPins(pins.right).filter((id) => !left.includes(id))
   const sort =
     config.sort && visible.has(config.sort.columnId) ? config.sort : null
+  const known = new Set(columnIds)
+  const rows = (config.card?.rows ?? [])
+    .flatMap((row) => {
+      const fields = row.fields.filter((id) => known.has(id))
+      if (row.layout === "two") {
+        const unique = [...new Set(fields)]
+        return unique.length >= 2
+          ? [{ layout: "two" as const, fields: unique.slice(0, 2) }]
+          : []
+      }
+      if (!fields.length) return []
+      return [
+        {
+          layout: row.layout === "title" ? ("title" as const) : ("one" as const),
+          fields: [fields[0]],
+        },
+      ]
+    })
+    .slice(0, 12)
+  const card =
+    rows.length > 0
+      ? {
+          size:
+            config.card?.size === "xs" || config.card?.size === "md"
+              ? config.card.size
+              : ("sm" as const),
+          rows,
+        }
+      : undefined
   return {
     mode: modes.includes(config.mode) ? config.mode : modes[0],
     columns: columns.length ? columns : defaults,
@@ -79,6 +124,7 @@ export function normalizeViewConfig(
     columnWidths: widths,
     pinnedColumns: { left, right },
     sort,
+    ...(card ? { card } : {}),
   }
 }
 
@@ -96,6 +142,7 @@ export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
       ),
       pinnedColumns: value.pinnedColumns ?? { left: [], right: [] },
       sort: value.sort ?? null,
+      card: value.card ?? null,
     })
   return canonical(a) === canonical(b)
 }

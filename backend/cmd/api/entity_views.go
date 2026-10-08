@@ -20,6 +20,17 @@ type entityViewConfig struct {
 	ColumnWidths  map[string]int          `json:"columnWidths,omitempty"`
 	PinnedColumns entityViewPinnedColumns `json:"pinnedColumns,omitempty"`
 	Sort          *entityViewSort         `json:"sort,omitempty"`
+	Card          *entityViewCard         `json:"card,omitempty"`
+}
+
+type entityViewCard struct {
+	Size string              `json:"size"`
+	Rows []entityViewCardRow `json:"rows"`
+}
+
+type entityViewCardRow struct {
+	Fields []string `json:"fields"`
+	Layout string   `json:"layout"`
 }
 
 type entityViewPinnedColumns struct {
@@ -89,6 +100,24 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 	}
 	if input.Config.Sort != nil && (!seen[input.Config.Sort.ColumnID] || (input.Config.Sort.Direction != "asc" && input.Config.Sort.Direction != "desc")) {
 		return false
+	}
+	if card := input.Config.Card; card != nil {
+		if (card.Size != "xs" && card.Size != "sm" && card.Size != "md") || len(card.Rows) < 1 || len(card.Rows) > 12 {
+			return false
+		}
+		for _, row := range card.Rows {
+			fields := len(row.Fields)
+			if (row.Layout != "title" && row.Layout != "one" && row.Layout != "two") || fields < 1 || fields > 2 || (row.Layout == "two" && fields != 2) || (row.Layout != "two" && fields != 1) {
+				return false
+			}
+			rowSeen := map[string]bool{}
+			for _, field := range row.Fields {
+				if !entityColumnID.MatchString(field) || rowSeen[field] {
+					return false
+				}
+				rowSeen[field] = true
+			}
+		}
 	}
 	if len(input.Config.Metrics) > 12 {
 		return false

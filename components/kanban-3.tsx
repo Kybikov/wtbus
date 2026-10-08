@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { GripVertical } from "lucide-react"
+import { createPortal } from "react-dom"
 
 import { cn } from "@/lib/utils"
 
@@ -25,10 +25,10 @@ type Props<T> = {
   getGroup: (item: T) => string
   getLabel: (item: T) => string
   renderCard: (item: T) => React.ReactNode
-  renderGhost?: (item: T) => React.ReactNode
   canMove?: (item: T) => boolean
   canMoveTo?: (item: T, group: string) => boolean
   onMove?: (item: T, group: string) => boolean | void | Promise<boolean | void>
+  onOpen?: (item: T) => void
   emptyText?: string
 }
 
@@ -80,6 +80,7 @@ export default function ReactBitsKanban<T>({
   canMove = () => true,
   canMoveTo = () => true,
   onMove,
+  onOpen,
   emptyText = "Здесь пока ничего нет",
 }: Props<T>) {
   const itemById = React.useMemo(
@@ -93,6 +94,15 @@ export default function ReactBitsKanban<T>({
   const [grabbedId, setGrabbedId] = React.useState<string | null>(null)
   const [shown, setShown] = React.useState<Record<string, number>>({})
   const [announcement, setAnnouncement] = React.useState("")
+  const [dropSlot, setDropSlot] = React.useState<{
+    group: string
+    index: number
+  } | null>(null)
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
   const rootRef = React.useRef<HTMLDivElement>(null)
   const ghostRef = React.useRef<HTMLDivElement>(null)
   const columnRefs = React.useRef(new Map<string, HTMLElement>())
@@ -106,9 +116,14 @@ export default function ReactBitsKanban<T>({
     startX: number
     startY: number
     pointerId: number
+    pointerType: string
+    hold: boolean
+    travel: number
   } | null>(null)
   const dropRef = React.useRef<{ group: string; index: number } | null>(null)
   const keyboardOrigin = React.useRef<string | null>(null)
+  const skipClick = React.useRef(false)
+  const holdTimer = React.useRef<number | null>(null)
 
   const effectiveOrder = React.useMemo(() => {
     const seen = new Set(order)
@@ -248,7 +263,6 @@ export default function ReactBitsKanban<T>({
     const card = event.currentTarget.closest<HTMLElement>("[data-kanban-card]")
     const root = rootRef.current
     if (!card || !root) return
-    event.preventDefault()
     const bounds = card.getBoundingClientRect()
     dragRef.current = {
       id,
@@ -260,51 +274,80 @@ export default function ReactBitsKanban<T>({
       startX: event.clientX,
       startY: event.clientY,
       pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      hold: event.pointerType !== "touch",
+      travel: 0,
     }
-    root.setPointerCapture(event.pointerId)
+    if (holdTimer.current != null) window.clearTimeout(holdTimer.current)
+    if (event.pointerType === "touch") {
+      holdTimer.current = window.setTimeout(() => {
+        const drag = dragRef.current
+        if (drag?.id === id) drag.hold = true
+      }, 220)
+    }
   }
 
   const movePointer = (event: React.PointerEvent<HTMLElement>) => {
     const drag = dragRef.current
     const root = rootRef.current
     const ghost = ghostRef.current
-    if (!drag || !root || !ghost) return
-    if (!drag.active) {
-      if (
-        Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <
-        4
-      )
-        return
-      drag.active = true
-      setDragId(drag.id)
-      ghost.hidden = false
-      ghost.textContent = getLabel(itemById.get(drag.id)!)
+    if (!drag || !root) return
+    const distance = Math.hypot(
+      event.clientX - drag.startX,
+      event.clientY - drag.startY
+    )
+    drag.travel = Math.max(drag.travel, distance)
+    if (!drag.hold) {
+      if (drag.pointerType === "touch" && distance > 8) {
+        skipClick.current = true
+        dragRef.current = null
+        if (holdTimer.current != null) window.clearTimeout(holdTimer.current)
+      }
+      return
     }
-    const rootBounds = root.getBoundingClientRect()
-    ghost.style.transform = `translate(${event.clientX - rootBounds.left - drag.dx}px, ${event.clientY - rootBounds.top - drag.dy}px)`
+    if (!drag.active) {
+      if (distance < 5) return
+      drag.active = true
+      const ids = cardsByColumn.get(drag.origin) ?? []
+      setDropSlot({ group: drag.origin, index: Math.max(0, ids.indexOf(drag.id)) })
+      setDragId(drag.id)
+      root.setPointerCapture(event.pointerId)
+    }
+    if (!ghost) return
     ghost.style.width = `${drag.width}px`
+    ghost.style.transform = `translate3d(${event.clientX - drag.dx}px, ${event.clientY - drag.dy}px, 0) rotate(-1.5deg) scale(1.02)`
     const target = targetFromPoint(event.clientX, event.clientY, drag.id)
     dropRef.current = target
     paintDrop(target?.group ?? null)
+    if (!target) return
+    setDropSlot((current) =>
+      current?.group === target.group && current.index === target.index
+        ? current
+        : target
+    )
   }
 
   const endPointerDrag = () => {
     const drag = dragRef.current
     if (!drag) return
     const target = dropRef.current
+    const moved = drag.active
     dragRef.current = null
     dropRef.current = null
+    if (holdTimer.current != null) window.clearTimeout(holdTimer.current)
+    if (moved || drag.travel > 5) skipClick.current = true
     const root = rootRef.current
     if (root?.hasPointerCapture(drag.pointerId)) {
       root.releasePointerCapture(drag.pointerId)
     }
     hideGhost()
     paintDrop(null)
-    if (drag.active && target) {
-      const moved = place(drag.id, target.group, target.index)
-      if (moved) void commitMove(drag.id, drag.origin, target.group)
+    if (moved && target) {
+      const accepted = place(drag.id, target.group, target.index)
+      if (accepted) void commitMove(drag.id, drag.origin, target.group)
     }
     setDragId(null)
+    setDropSlot(null)
   }
 
   const moveWithKeyboard = (
@@ -377,8 +420,27 @@ export default function ReactBitsKanban<T>({
       <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-2">
         {visibleColumns.map((column) => {
           const ids = cardsByColumn.get(column.id) ?? []
-          const limit = shown[column.id] ?? PAGE
-          const visibleIds = ids.slice(0, limit)
+          const ordered =
+            dragId && dropSlot
+              ? (() => {
+                  const rest = ids.filter((id) => id !== dragId)
+                  if (dropSlot.group !== column.id) return rest
+                  const next = [...rest]
+                  next.splice(
+                    Math.max(0, Math.min(dropSlot.index, next.length)),
+                    0,
+                    dragId
+                  )
+                  return next
+                })()
+              : ids
+          const limit = Math.max(
+            shown[column.id] ?? PAGE,
+            dragId && dropSlot && dropSlot.group === column.id
+              ? dropSlot.index + 1
+              : 0
+          )
+          const visibleIds = ordered.slice(0, limit)
           const tone = toneStyles[column.tone ?? "neutral"]
           return (
             <section
@@ -405,7 +467,7 @@ export default function ReactBitsKanban<T>({
                     tone.count
                   )}
                 >
-                  {ids.length}
+                  {ordered.length}
                 </span>
                 {column.description ? (
                   <span className="sr-only">{column.description}</span>
@@ -421,37 +483,49 @@ export default function ReactBitsKanban<T>({
                   return (
                     <div
                       className={cn(
-                        "rounded-[var(--rb-r-lg)] border border-border/80 bg-card p-3 text-left shadow-sm",
-                        movable &&
-                          "cursor-grab hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-primary",
+                        "rounded-[var(--rb-r-lg)] border border-border/80 bg-card text-left shadow-sm transition-[border-color,background-color,box-shadow] duration-200 ease-out",
+                        (movable || onOpen) &&
+                          "cursor-pointer select-none hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-primary",
                         grabbed && "border-primary ring-2 ring-primary/20",
                         dragging &&
-                          "border-dashed bg-muted opacity-60"
+                          "border-dashed border-primary/50 bg-primary/10 shadow-none"
                       )}
                       data-kanban-card={id}
                       key={id}
+                      onClick={(event) => {
+                        if (skipClick.current) {
+                          skipClick.current = false
+                          return
+                        }
+                        if (
+                          (event.target as HTMLElement).closest(
+                            "button,a,input,textarea,select,[role=checkbox],[data-no-drag]"
+                          )
+                        )
+                          return
+                        onOpen?.(item)
+                      }}
                       onKeyDown={(event) => moveWithKeyboard(event, id)}
-                      onPointerDown={(event) => {
-                        if (event.pointerType === "mouse") {
-                          startPointerDrag(event, id)
+                      onKeyUp={(event) => {
+                        if (event.key === " " || event.key === "Enter") {
+                          event.preventDefault()
                         }
                       }}
-                      role={movable ? "button" : undefined}
-                      tabIndex={movable ? 0 : undefined}
+                      onPointerDown={(event) => startPointerDrag(event, id)}
+                      role={movable || onOpen ? "button" : undefined}
+                      tabIndex={movable || onOpen ? 0 : undefined}
                     >
-                      {movable ? (
-                        <GripVertical
-                          aria-hidden
-                          className="float-right h-4 w-4 text-muted-foreground/45"
-                        />
-                      ) : null}
-                      <div className={cn(movable && "pr-5")}>
+                      <div
+                        className={cn(
+                          dragging && "pointer-events-none opacity-40"
+                        )}
+                      >
                         {renderCard(item)}
                       </div>
                     </div>
                   )
                 })}
-                {ids.length > visibleIds.length ? (
+                {ordered.length > visibleIds.length ? (
                   <button
                     className="w-full rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-muted"
                     onClick={() =>
@@ -462,10 +536,10 @@ export default function ReactBitsKanban<T>({
                     }
                     type="button"
                   >
-                    Ещё {ids.length - visibleIds.length}
+                    Ещё {ordered.length - visibleIds.length}
                   </button>
                 ) : null}
-                {ids.length === 0 ? (
+                {ordered.length === 0 ? (
                   <p className="px-3 py-8 text-center text-xs text-muted-foreground">
                     {emptyText}
                   </p>
@@ -475,12 +549,21 @@ export default function ReactBitsKanban<T>({
           )
         })}
       </div>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute top-0 left-0 z-50 truncate rounded-[var(--rb-r-lg)] border border-primary/30 bg-card px-3 py-2 text-sm font-semibold shadow-2xl"
-        hidden
-        ref={ghostRef}
-      />
+      {mounted
+        ? createPortal(
+            <div
+              aria-hidden
+              className="pointer-events-none fixed top-0 left-0 z-[80] rounded-[var(--rb-r-lg)] border border-primary/40 bg-card shadow-2xl will-change-transform"
+              hidden={!dragId}
+              ref={ghostRef}
+            >
+              {dragId && itemById.get(dragId)
+                ? renderCard(itemById.get(dragId)!)
+                : null}
+            </div>,
+            document.body
+          )
+        : null}
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>

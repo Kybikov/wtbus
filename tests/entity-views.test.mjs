@@ -52,6 +52,24 @@ test("saved views preserve table layout and remove invalid pin, width and sort s
     }
   )
 })
+test("card layout keeps known fields and drops a broken two-column row", () => {
+  const saved = {
+    mode: "kanban",
+    columns: ["name"],
+    filters: {},
+    card: {
+      size: "xs",
+      rows: [
+        { fields: ["name", "missing"], layout: "two" },
+        { fields: ["name"], layout: "title" },
+      ],
+    },
+  }
+  assert.deepEqual(
+    normalizeViewConfig(saved, ["kanban"], ["name"], ["name"], []).card,
+    { size: "xs", rows: [{ fields: ["name"], layout: "title" }] }
+  )
+})
 test("dirty state tracks column order and ignores cleared filters while detecting actual changes", () => {
   const a = {
     mode: "table",

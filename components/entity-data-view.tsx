@@ -28,6 +28,7 @@ import ReactBitsKanban, {
   type ReactBitsKanbanColumn,
 } from "@/components/kanban-3"
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
+import { EntityCardSettings } from "@/components/entity-card-settings"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -59,7 +60,9 @@ import {
   type MetricField,
 } from "@/lib/entity-metrics"
 import {
+  defaultCardLayout,
   normalizeViewConfig,
+  type CardLayout,
   type EntityCollection,
   type EntityFilter,
   type EntityViewConfig,
@@ -281,6 +284,8 @@ export function EntityDataView<T>({
     right: string[]
   }>({ left: [], right: [] })
   const [sort, setSort] = React.useState<EntityViewConfig["sort"]>(null)
+  const [cardLayout, setCardLayout] = React.useState<CardLayout | undefined>()
+  const [cardSettingsOpen, setCardSettingsOpen] = React.useState(false)
   const [filterRequest, setFilterRequest] = React.useState<string | null>(null)
   const dragColumn = React.useRef<string | null>(null)
   const [localFilters, setLocalFilters] = React.useState<
@@ -368,6 +373,7 @@ export function EntityDataView<T>({
     columnWidths,
     pinnedColumns,
     sort,
+    ...(cardLayout ? { card: cardLayout } : {}),
   }
   function applyConfig(next: EntityViewConfig) {
     const safe = normalizeViewConfig(
@@ -388,6 +394,7 @@ export function EntityDataView<T>({
     setColumnWidths(safe.columnWidths ?? {})
     setPinnedColumns(safe.pinnedColumns ?? { left: [], right: [] })
     setSort(safe.sort ?? null)
+    setCardLayout(safe.card)
     setMetrics(normalizeMetrics(safe.metrics, metricFields))
     if (onFiltersChange) onFiltersChange(safe.filters)
     else setLocalFilters(safe.filters)
@@ -519,48 +526,86 @@ export function EntityDataView<T>({
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", stop)
   }
-  const cardContent = (item: T) =>
-    renderCard?.(item) ?? (
-      <div className="space-y-2">
-        <p className="font-semibold">{getLabel(item)}</p>
-        {visibleColumns.slice(1, 5).map((column) => (
-          <div className="flex justify-between gap-4 text-sm" key={column.id}>
-            <span className="text-muted-foreground">{column.label}</span>
-            <span className="text-right">{column.value(item)}</span>
-          </div>
-        ))}
-      </div>
+  const activeCard =
+    cardLayout ??
+    defaultCardLayout(
+      (visibleColumns.length ? visibleColumns : columns).map(
+        (column) => column.id
+      )
     )
-
+  const cardPadding =
+    activeCard.size === "xs"
+      ? "gap-1 p-2 text-xs"
+      : activeCard.size === "md"
+        ? "gap-2 p-3.5 text-sm"
+        : "gap-1.5 p-2.5 text-sm"
+  const columnById = new Map(columns.map((column) => [column.id, column]))
   const card = (item: T, withSelection = false) => (
-    <div className="flex min-w-0 gap-3">
+    <div className={cn("flex min-w-0", cardPadding)}>
       {withSelection ? (
-        <Checkbox
-          aria-label={`Выбрать ${getLabel(item)}`}
-          className="mt-1 shrink-0"
-          checked={selected.has(getId(item))}
-          disabled={!isSelectable(item)}
-          onCheckedChange={(checked) => toggleOne(item, checked)}
-          onKeyDown={(event) => event.stopPropagation()}
-        />
+        <div data-no-drag onPointerDown={(event) => event.stopPropagation()}>
+          <Checkbox
+            aria-label={`Выбрать ${getLabel(item)}`}
+            className="mt-0.5 shrink-0"
+            checked={selected.has(getId(item))}
+            disabled={!isSelectable(item)}
+            onCheckedChange={(checked) => toggleOne(item, checked)}
+            onKeyDown={(event) => event.stopPropagation()}
+          />
+        </div>
       ) : null}
-      <div className="min-w-0 flex-1 space-y-2">
-        {cardContent(item)}
-        {detailEnabled ? (
-          <Link
-            className={buttonVariants({
-              size: "sm",
-              variant: "link",
-              className: "h-7 px-0",
-            })}
-            href={entityDetailHref(collection, getId(item))}
-          >
-            Открыть детали
-          </Link>
-        ) : null}
+      <div className="min-w-0 flex-1 space-y-1.5">
+        {!cardLayout && renderCard
+          ? renderCard(item)
+          : activeCard.rows.map((row, index) => {
+            const fields = row.fields
+              .map((id) => columnById.get(id))
+              .filter((column) => column != null)
+            if (!fields.length) return null
+            if (row.layout === "title") {
+              return (
+                <p className="truncate font-semibold" key={index}>
+                  {fields[0].value(item)}
+                </p>
+              )
+            }
+            if (row.layout === "two") {
+              return (
+                <div className="grid grid-cols-2 gap-2" key={index}>
+                  {fields.slice(0, 2).map((column) => (
+                    <div className="min-w-0" key={column.id}>
+                      <div className="truncate text-muted-foreground">
+                        {column.label}
+                      </div>
+                      <div className="truncate">{column.value(item)}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+            const column = fields[0]
+            return (
+              <div className="flex items-baseline justify-between gap-3" key={index}>
+                <span className="truncate text-muted-foreground">
+                  {column.label}
+                </span>
+                <span className="truncate text-right">{column.value(item)}</span>
+              </div>
+            )
+          })}
       </div>
     </div>
   )
+  const openCard = (item: T, event: React.MouseEvent) => {
+    if (!detailEnabled) return
+    if (
+      (event.target as HTMLElement).closest(
+        "button,a,input,textarea,select,[role=checkbox],[data-no-drag]"
+      )
+    )
+      return
+    router.push(entityDetailHref(collection, getId(item)))
+  }
   return (
     <section className={cn("space-y-3", className)} aria-busy={loading}>
       <EntityViewToolbar
@@ -581,6 +626,35 @@ export function EntityDataView<T>({
         onFilterRequestHandled={() => setFilterRequest(null)}
       />
 
+      {mode === "kanban" ||
+      mode === "list" ||
+      mode === "gallery" ||
+      mode === "calendar" ? (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => setCardSettingsOpen(true)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Settings2 />
+            Карточка
+          </Button>
+        </div>
+      ) : null}
+      <EntityCardSettings
+        columns={columns.map((column) => ({
+          id: column.id,
+          label: column.label,
+        }))}
+        onApply={(layout) => {
+          setCardLayout(layout)
+          setCardSettingsOpen(false)
+        }}
+        onOpenChange={setCardSettingsOpen}
+        open={cardSettingsOpen}
+        value={activeCard}
+      />
       <FadeContent duration={240} initialOpacity={0.5} key={mode}>
         {loading && items.length === 0 ? (
           <div className="surface-card p-8 text-center text-sm text-muted-foreground">
@@ -966,7 +1040,12 @@ export function EntityDataView<T>({
             {items.map((item) => (
               <ContextMenu key={getId(item)}>
                 <ContextMenuTrigger
-                  render={<article className="flex items-start gap-4 p-4" />}
+                  render={
+                    <article
+                      className="flex cursor-pointer items-start gap-3 px-2 py-1"
+                      onClick={(event) => openCard(item, event)}
+                    />
+                  }
                 >
                   <Checkbox
                     aria-label={`Выбрать ${getLabel(item)}`}
@@ -1009,6 +1088,12 @@ export function EntityDataView<T>({
             getLabel={getLabel}
             items={items}
             onMove={onKanbanGroupChange}
+            onOpen={
+              detailEnabled
+                ? (item) =>
+                    router.push(entityDetailHref(collection, getId(item)))
+                : undefined
+            }
             renderCard={(item) => (
               <ContextMenu>
                 <ContextMenuTrigger render={<div />}>
@@ -1031,7 +1116,12 @@ export function EntityDataView<T>({
             renderItem={(item) => (
               <ContextMenu>
                 <ContextMenuTrigger
-                  render={<div className="rounded-xl bg-muted/60 p-3" />}
+                  render={
+                    <div
+                      className="cursor-pointer rounded-xl bg-muted/60"
+                      onClick={(event) => openCard(item, event)}
+                    />
+                  }
                 >
                   {card(item, true)}
                 </ContextMenuTrigger>
@@ -1048,7 +1138,12 @@ export function EntityDataView<T>({
             {items.map((item) => (
               <ContextMenu key={getId(item)}>
                 <ContextMenuTrigger
-                  render={<article className="surface-card p-4" />}
+                  render={
+                    <article
+                      className="surface-card cursor-pointer"
+                      onClick={(event) => openCard(item, event)}
+                    />
+                  }
                 >
                   {card(item, true)}
                 </ContextMenuTrigger>
