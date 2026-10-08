@@ -100,8 +100,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      args:
-        COMMAND: bot
+    entrypoint: ["/vivat-bot"]
     container_name: vivat-bot
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-vivat}:${POSTGRES_PASSWORD:-vivat_local_only}@postgres:5432/${POSTGRES_DB:-vivat}?sslmode=disable

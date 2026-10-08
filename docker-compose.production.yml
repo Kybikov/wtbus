@@ -119,8 +119,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      args:
-        COMMAND: bot
+    entrypoint: ["/vivat-bot"]
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.production}@redis:6379/0
