@@ -21,6 +21,13 @@ type entityViewConfig struct {
 	PinnedColumns entityViewPinnedColumns `json:"pinnedColumns,omitempty"`
 	Sort          *entityViewSort         `json:"sort,omitempty"`
 	Card          *entityViewCard         `json:"card,omitempty"`
+	Board         *entityViewBoard        `json:"board,omitempty"`
+}
+
+type entityViewBoard struct {
+	Hidden  []string `json:"hidden,omitempty"`
+	Order   []string `json:"order,omitempty"`
+	OrderBy string   `json:"orderBy,omitempty"`
 }
 
 type entityViewCard struct {
@@ -64,6 +71,22 @@ type entityViewInput struct {
 }
 
 var entityColumnID = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,100}$`)
+
+func validBoardIDs(ids []string) bool {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if id == "" || len([]rune(id)) > 100 || seen[id] {
+			return false
+		}
+		for _, r := range id {
+			if r < 32 || r == 127 {
+				return false
+			}
+		}
+		seen[id] = true
+	}
+	return true
+}
 
 func validateEntityView(entity string, input *entityViewInput) bool {
 	if !validEntityCollection(entity) {
@@ -117,6 +140,17 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 				}
 				rowSeen[field] = true
 			}
+		}
+	}
+	if board := input.Config.Board; board != nil {
+		if board.OrderBy != "" && board.OrderBy != "manual" && board.OrderBy != "name" && board.OrderBy != "count" {
+			return false
+		}
+		if len(board.Hidden) > 40 || len(board.Order) > 40 {
+			return false
+		}
+		if !validBoardIDs(board.Hidden) || !validBoardIDs(board.Order) {
+			return false
 		}
 	}
 	if len(input.Config.Metrics) > 12 {

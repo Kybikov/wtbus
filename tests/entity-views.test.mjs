@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { normalizeViewConfig, sameViewConfig } from "../lib/entity-views.ts"
+import {
+  arrangeBoardGroups,
+  normalizeViewConfig,
+  sameViewConfig,
+} from "../lib/entity-views.ts"
 
 test("saved views survive removed columns, modes and filters without an empty table", () => {
   const saved = {
@@ -68,6 +72,43 @@ test("card layout keeps known fields and drops a broken two-column row", () => {
   assert.deepEqual(
     normalizeViewConfig(saved, ["kanban"], ["name"], ["name"], []).card,
     { size: "xs", rows: [{ fields: ["name"], layout: "title" }] }
+  )
+})
+test("kanban board keeps a manual order and drops a broken id", () => {
+  const saved = {
+    mode: "kanban",
+    columns: ["name"],
+    filters: {},
+    board: {
+      hidden: ["pending", "pending", "bad\nid"],
+      order: ["done", "pending"],
+      orderBy: "manual",
+    },
+  }
+  assert.deepEqual(
+    normalizeViewConfig(saved, ["kanban"], ["name"], ["name"], []).board,
+    { hidden: ["pending"], order: ["done", "pending"], orderBy: "manual" }
+  )
+  assert.deepEqual(
+    arrangeBoardGroups(
+      [
+        { id: "new", label: "Создано", count: 1 },
+        { id: "paid", label: "Оплачено", count: 4 },
+        { id: "pending", label: "Ожидает", count: 2 },
+      ],
+      { hidden: ["pending"], order: ["paid", "new"], orderBy: "manual" }
+    ).map((group) => group.id),
+    ["paid", "new"]
+  )
+  assert.deepEqual(
+    arrangeBoardGroups(
+      [
+        { id: "new", label: "Создано", count: 1 },
+        { id: "paid", label: "Оплачено", count: 4 },
+      ],
+      { hidden: [], order: [], orderBy: "count" }
+    ).map((group) => group.id),
+    ["paid", "new"]
   )
 })
 test("dirty state tracks column order and ignores cleared filters while detecting actual changes", () => {

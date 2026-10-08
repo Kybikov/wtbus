@@ -6,6 +6,7 @@ import { adminControlClassName } from "@/lib/admin-ui"
 import { cn } from "@/lib/utils"
 import {
   ChevronDown,
+  ChevronUp,
   CheckSquare2,
   CalendarDays,
   Ellipsis,
@@ -18,10 +19,12 @@ import {
   Filter,
   Plus,
   Save,
+  Settings2,
   Users,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { FieldSelect } from "@/components/ui/field-select"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -48,8 +51,11 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
+  arrangeBoardGroups,
   entityModeLabels,
   sameViewConfig,
+  type BoardLayout,
+  type BoardOrderBy,
   type EntityCollection,
   type EntityFilter,
   type EntityViewConfig,
@@ -111,6 +117,201 @@ function ViewChip({
     </Button>
   )
 }
+function BoardSettings({
+  groups,
+  columns,
+  config,
+  onChange,
+  onConfigureCard,
+}: {
+  groups: { id: string; label: string; count: number }[]
+  columns: { id: string; label: string }[]
+  config: EntityViewConfig
+  onChange: (config: EntityViewConfig) => void
+  onConfigureCard?: () => void
+}) {
+  const board = config.board
+  const hidden = new Set(board?.hidden ?? [])
+  const orderBy = board?.orderBy ?? "manual"
+  const shown = arrangeBoardGroups(groups, {
+    hidden: [],
+    order: board?.order ?? [],
+    orderBy,
+  })
+  const visibleCount = groups.filter((group) => !hidden.has(group.id)).length
+  function update(next: BoardLayout) {
+    onChange({ ...config, board: next })
+  }
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" className={control} />}
+      >
+        <KanbanSquare />
+        <span className="sr-only sm:not-sr-only">Столбцы</span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-80 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl p-3"
+      >
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Порядок столбцов
+          </p>
+          <FieldSelect
+            aria-label="Порядок столбцов"
+            onValueChange={(value) =>
+              update({
+                hidden: [...hidden],
+                order:
+                  value === "manual"
+                    ? shown.map((group) => group.id)
+                    : (board?.order ?? []),
+                orderBy: value as BoardOrderBy,
+              })
+            }
+            options={[
+              { value: "manual", label: "Вручную" },
+              { value: "name", label: "По названию" },
+              { value: "count", label: "По количеству записей" },
+            ]}
+            value={orderBy}
+          />
+        </div>
+        <div className="max-h-60 space-y-1 overflow-y-auto">
+          {shown.map((group, index) => {
+            const checked = !hidden.has(group.id)
+            return (
+              <div className="flex items-center gap-2" key={group.id}>
+                {orderBy === "manual" ? (
+                  <div className="flex flex-col">
+                    <Button
+                      aria-label={`Выше: ${group.label}`}
+                      disabled={index === 0}
+                      onClick={() => {
+                        const ids = shown.map((item) => item.id)
+                        const [moved] = ids.splice(index, 1)
+                        ids.splice(index - 1, 0, moved)
+                        update({
+                          hidden: [...hidden],
+                          order: ids,
+                          orderBy: "manual",
+                        })
+                      }}
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <ChevronUp />
+                    </Button>
+                    <Button
+                      aria-label={`Ниже: ${group.label}`}
+                      disabled={index === shown.length - 1}
+                      onClick={() => {
+                        const ids = shown.map((item) => item.id)
+                        const [moved] = ids.splice(index, 1)
+                        ids.splice(index + 1, 0, moved)
+                        update({
+                          hidden: [...hidden],
+                          order: ids,
+                          orderBy: "manual",
+                        })
+                      }}
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <ChevronDown />
+                    </Button>
+                  </div>
+                ) : null}
+                <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={checked}
+                    disabled={checked && visibleCount === 1}
+                    onCheckedChange={(value) => {
+                      const next = new Set(hidden)
+                      if (value) next.delete(group.id)
+                      else next.add(group.id)
+                      update({
+                        hidden: [...next],
+                        order: board?.order ?? [],
+                        orderBy,
+                      })
+                    }}
+                  />
+                  <span className="truncate">{group.label}</span>
+                  <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                    {group.count}
+                  </span>
+                </label>
+              </div>
+            )
+          })}
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Сортировать карточки
+          </p>
+          <FieldSelect
+            aria-label="Сортировать карточки"
+            onValueChange={(columnId) =>
+              onChange({
+                ...config,
+                sort: columnId
+                  ? {
+                      columnId,
+                      direction: config.sort?.direction ?? "asc",
+                    }
+                  : null,
+              })
+            }
+            options={[
+              { value: "", label: "Без сортировки" },
+              ...columns.map((column) => ({
+                value: column.id,
+                label: column.label,
+              })),
+            ]}
+            value={config.sort?.columnId ?? ""}
+          />
+          {config.sort ? (
+            <FieldSelect
+              aria-label="Направление сортировки"
+              onValueChange={(direction) =>
+                onChange({
+                  ...config,
+                  sort: {
+                    columnId: config.sort?.columnId ?? "",
+                    direction: direction === "desc" ? "desc" : "asc",
+                  },
+                })
+              }
+              options={[
+                { value: "asc", label: "По возрастанию" },
+                { value: "desc", label: "По убыванию" },
+              ]}
+              value={config.sort.direction}
+            />
+          ) : null}
+        </div>
+        {onConfigureCard ? (
+          <Button
+            className="w-full justify-start"
+            onClick={onConfigureCard}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Settings2 />
+            Настройка карточки
+          </Button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 type Props<T> = {
   extras?: React.ReactNode
   collection: EntityCollection
@@ -127,6 +328,7 @@ type Props<T> = {
   filterRequest?: string | null
   onFilterRequestHandled?: () => void
   onConfigureCard?: () => void
+  groups?: { id: string; label: string; count: number }[]
 }
 
 export function EntityViewToolbar<T>({
@@ -145,6 +347,7 @@ export function EntityViewToolbar<T>({
   filterRequest,
   onFilterRequestHandled,
   onConfigureCard,
+  groups = [],
 }: Props<T>) {
   const [views, setViews] = React.useState<SavedEntityView[]>([])
   const [active, setActive] = React.useState<string>("")
@@ -422,6 +625,65 @@ export function EntityViewToolbar<T>({
                 </PopoverContent>
               </Popover>
             ) : null}
+            {config.mode === "table" ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="outline" size="sm" className={control} />
+                  }
+                >
+                  <Columns3 />
+                  <span className="sr-only sm:not-sr-only">Колонки</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="max-h-80 overflow-y-auto"
+                >
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Видимые колонки</DropdownMenuLabel>
+                    {columns.map((column) => (
+                      <DropdownMenuCheckboxItem
+                        key={column.id}
+                        checked={config.columns.includes(column.id)}
+                        disabled={
+                          config.columns.length === 1 &&
+                          config.columns.includes(column.id)
+                        }
+                        onCheckedChange={(checked) =>
+                          onChange({
+                            ...config,
+                            columns: checked
+                              ? [...config.columns, column.id]
+                              : config.columns.filter((id) => id !== column.id),
+                          })
+                        }
+                      >
+                        {column.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : config.mode === "kanban" ? (
+              <BoardSettings
+                columns={columns}
+                config={config}
+                groups={groups}
+                onChange={onChange}
+                onConfigureCard={onConfigureCard}
+              />
+            ) : onConfigureCard ? (
+              <Button
+                className={control}
+                onClick={onConfigureCard}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Settings2 />
+                <span className="sr-only sm:not-sr-only">Карточка</span>
+              </Button>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -436,7 +698,7 @@ export function EntityViewToolbar<T>({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel>Режим отображения</DropdownMenuLabel>
+                  <DropdownMenuLabel>Отображение</DropdownMenuLabel>
                   {modes.map((mode) => (
                     <DropdownMenuItem
                       key={mode}
@@ -561,46 +823,6 @@ export function EntityViewToolbar<T>({
                   </div>
                 </PopoverContent>
               </Popover>
-            ) : null}
-            {config.mode === "table" ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="outline" size="sm" className={control} />
-                }
-              >
-                <Columns3 />
-                <span className="sr-only sm:not-sr-only">Колонки</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="max-h-80 overflow-y-auto"
-              >
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Видимые колонки</DropdownMenuLabel>
-                  {columns.map((column) => (
-                    <DropdownMenuCheckboxItem
-                      key={column.id}
-                      checked={config.columns.includes(column.id)}
-                      disabled={
-                        config.columns.length === 1 &&
-                        config.columns.includes(column.id)
-                      }
-                      onCheckedChange={(checked) =>
-                        onChange({
-                          ...config,
-                          columns: checked
-                            ? [...config.columns, column.id]
-                            : config.columns.filter((id) => id !== column.id),
-                        })
-                      }
-                    >
-                      {column.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
             ) : null}
           </div>
         </div>

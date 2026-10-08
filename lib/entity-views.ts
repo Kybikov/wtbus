@@ -17,6 +17,12 @@ export type CardLayoutKind = "title" | "one" | "two"
 export type CardSize = "xs" | "sm" | "md"
 export type CardRow = { fields: string[]; layout: CardLayoutKind }
 export type CardLayout = { size: CardSize; rows: CardRow[] }
+export type BoardOrderBy = "manual" | "name" | "count"
+export type BoardLayout = {
+  hidden: string[]
+  order: string[]
+  orderBy: BoardOrderBy
+}
 export type EntityViewConfig = {
   mode: EntityViewMode
   columns: string[]
@@ -26,6 +32,7 @@ export type EntityViewConfig = {
   pinnedColumns?: { left: string[]; right: string[] }
   sort?: { columnId: string; direction: "asc" | "desc" } | null
   card?: CardLayout
+  board?: BoardLayout
 }
 export type SavedEntityView = {
   id: string
@@ -42,6 +49,55 @@ export type EntityFilter<T> = {
   options?: { value: string; label: string }[]
   matches?: (item: T, value: string) => boolean
 }
+const boardId = /^[^\u0000-\u001f\u007f]{1,100}$/
+
+export function cleanBoard(board?: BoardLayout): BoardLayout | undefined {
+  const hidden: string[] = []
+  const order: string[] = []
+  const seenHidden = new Set<string>()
+  const seenOrder = new Set<string>()
+  for (const id of board?.hidden ?? []) {
+    if (!boardId.test(id) || seenHidden.has(id)) continue
+    seenHidden.add(id)
+    hidden.push(id)
+    if (hidden.length === 40) break
+  }
+  for (const id of board?.order ?? []) {
+    if (!boardId.test(id) || seenOrder.has(id)) continue
+    seenOrder.add(id)
+    order.push(id)
+    if (order.length === 40) break
+  }
+  const orderBy: BoardOrderBy =
+    board?.orderBy === "name" || board?.orderBy === "count"
+      ? board.orderBy
+      : "manual"
+  if (!hidden.length && !order.length && orderBy === "manual") return undefined
+  return { hidden, order, orderBy }
+}
+
+export function arrangeBoardGroups<T extends { id: string; label: string; count: number }>(
+  groups: T[],
+  board?: BoardLayout
+): T[] {
+  const hidden = new Set(board?.hidden ?? [])
+  const visible = groups.filter((group) => !hidden.has(group.id))
+  if (board?.orderBy === "name") {
+    return [...visible].sort((a, b) => a.label.localeCompare(b.label, "ru"))
+  }
+  if (board?.orderBy === "count") {
+    return [...visible].sort(
+      (a, b) => b.count - a.count || a.label.localeCompare(b.label, "ru")
+    )
+  }
+  const rank = new Map((board?.order ?? []).map((id, index) => [id, index]))
+  return [...visible].sort(
+    (a, b) =>
+      (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+  )
+}
+
 export function defaultCardLayout(columnIds: string[]): CardLayout {
   const [title, ...rest] = columnIds
   return {
@@ -101,6 +157,7 @@ export function normalizeViewConfig(
       ]
     })
     .slice(0, 12)
+  const board = cleanBoard(config.board)
   const card =
     rows.length > 0
       ? {
@@ -124,6 +181,7 @@ export function normalizeViewConfig(
     pinnedColumns: { left, right },
     sort,
     ...(card ? { card } : {}),
+    ...(board ? { board } : {}),
   }
 }
 
@@ -142,6 +200,13 @@ export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
       pinnedColumns: value.pinnedColumns ?? { left: [], right: [] },
       sort: value.sort ?? null,
       card: value.card ?? null,
+      board: value.board
+        ? {
+            hidden: [...value.board.hidden].sort(),
+            order: value.board.order,
+            orderBy: value.board.orderBy,
+          }
+        : null,
     })
   return canonical(a) === canonical(b)
 }

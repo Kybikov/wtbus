@@ -60,8 +60,10 @@ import {
   type MetricField,
 } from "@/lib/entity-metrics"
 import {
+  arrangeBoardGroups,
   defaultCardLayout,
   normalizeViewConfig,
+  type BoardLayout,
   type CardLayout,
   type EntityCollection,
   type EntityFilter,
@@ -285,6 +287,7 @@ export function EntityDataView<T>({
   }>({ left: [], right: [] })
   const [sort, setSort] = React.useState<EntityViewConfig["sort"]>(null)
   const [cardLayout, setCardLayout] = React.useState<CardLayout | undefined>()
+  const [board, setBoard] = React.useState<BoardLayout | undefined>()
   const [cardSettingsOpen, setCardSettingsOpen] = React.useState(false)
   const [filterRequest, setFilterRequest] = React.useState<string | null>(null)
   const dragColumn = React.useRef<string | null>(null)
@@ -374,6 +377,7 @@ export function EntityDataView<T>({
     pinnedColumns,
     sort,
     ...(cardLayout ? { card: cardLayout } : {}),
+    ...(board ? { board } : {}),
   }
   function applyConfig(next: EntityViewConfig) {
     const safe = normalizeViewConfig(
@@ -395,6 +399,7 @@ export function EntityDataView<T>({
     setPinnedColumns(safe.pinnedColumns ?? { left: [], right: [] })
     setSort(safe.sort ?? null)
     setCardLayout(safe.card)
+    setBoard(safe.board)
     setMetrics(normalizeMetrics(safe.metrics, metricFields))
     if (onFiltersChange) onFiltersChange(safe.filters)
     else setLocalFilters(safe.filters)
@@ -606,6 +611,19 @@ export function EntityDataView<T>({
       return
     router.push(entityDetailHref(collection, getId(item)))
   }
+  const groupOf = (item: T) => groupBy?.(item) ?? "Без группы"
+  const boardGroups = (
+    kanbanGroups ??
+    [...new Set(items.map(groupOf))].map((group) => ({
+      id: group,
+      label: group,
+    }))
+  ).map((group) => ({
+    ...group,
+    count: items.filter((item) => groupOf(item) === group.id).length,
+  }))
+  const visibleBoardGroups = arrangeBoardGroups(boardGroups, board)
+  const hiddenBoardGroups = new Set(board?.hidden ?? [])
   return (
     <section className={cn("space-y-3", className)} aria-busy={loading}>
       <EntityViewToolbar
@@ -632,6 +650,7 @@ export function EntityDataView<T>({
             ? () => setCardSettingsOpen(true)
             : undefined
         }
+        groups={boardGroups}
       />
       <EntityCardSettings
         columns={columns.map((column) => ({
@@ -1063,21 +1082,15 @@ export function EntityDataView<T>({
           </div>
         ) : mode === "kanban" ? (
           <ReactBitsKanban
+            key={`${sort?.columnId ?? ""}:${sort?.direction ?? ""}`}
             canMove={canMoveInKanban}
             canMoveTo={canMoveToKanbanGroup}
-            columns={
-              kanbanGroups ??
-              [
-                ...new Set(
-                  items.map((item) => groupBy?.(item) ?? "Без группы")
-                ),
-              ].map((group) => ({ id: group, label: group }))
-            }
+            columns={visibleBoardGroups}
             emptyText="Нет записей"
-            getGroup={(item) => groupBy?.(item) ?? "Без группы"}
+            getGroup={groupOf}
             getId={getId}
             getLabel={getLabel}
-            items={items}
+            items={items.filter((item) => !hiddenBoardGroups.has(groupOf(item)))}
             onMove={onKanbanGroupChange}
             onOpen={
               detailEnabled
