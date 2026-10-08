@@ -84,8 +84,7 @@ export function normalizeViewConfig(
   const sort =
     config.sort && visible.has(config.sort.columnId) ? config.sort : null
   const known = new Set(columnIds)
-  const rows = (config.card?.rows ?? [])
-    .flatMap((row) => {
+  const rows: CardRow[] = (config.card?.rows ?? []).flatMap((row): CardRow[] => {
       const fields = row.fields.filter((id) => known.has(id))
       if (row.layout === "two") {
         const unique = [...new Set(fields)]
