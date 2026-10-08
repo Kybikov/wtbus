@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react"
 
+import { EntityCalendar } from "@/components/entity-calendar"
 import ReactBitsKanban, {
   type ReactBitsKanbanColumn,
 } from "@/components/kanban-3"
@@ -1021,38 +1022,27 @@ export function EntityDataView<T>({
               </ContextMenu>
             )}
           />
-        ) : mode === "calendar" ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {[...new Set(items.map((item) => dateValue?.(item) ?? "Без даты"))]
-              .sort()
-              .map((date) => (
-                <section className="surface-card p-4" key={date}>
-                  <h3 className="mb-3 text-sm font-semibold">{date}</h3>
-                  <div className="space-y-2">
-                    {items
-                      .filter(
-                        (item) => (dateValue?.(item) ?? "Без даты") === date
-                      )
-                      .map((item) => (
-                        <ContextMenu key={getId(item)}>
-                          <ContextMenuTrigger
-                            render={
-                              <div className="rounded-xl bg-muted/60 p-3" />
-                            }
-                          >
-                            {card(item, true)}
-                          </ContextMenuTrigger>
-                          <EntityMenu
-                            actions={actions}
-                            item={item}
-                            label={getLabel(item)}
-                          />
-                        </ContextMenu>
-                      ))}
-                  </div>
-                </section>
-              ))}
-          </div>
+        ) : mode === "calendar" && dateValue ? (
+          <EntityCalendar
+            dateValue={dateValue}
+            getId={getId}
+            getLabel={getLabel}
+            items={items}
+            renderItem={(item) => (
+              <ContextMenu>
+                <ContextMenuTrigger
+                  render={<div className="rounded-xl bg-muted/60 p-3" />}
+                >
+                  {card(item, true)}
+                </ContextMenuTrigger>
+                <EntityMenu
+                  actions={actions}
+                  item={item}
+                  label={getLabel(item)}
+                />
+              </ContextMenu>
+            )}
+          />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {items.map((item) => (

@@ -4,7 +4,7 @@ import "testing"
 
 func TestEntityViewNewCollections(t *testing.T) {
 	for entity, config := range map[string]entityViewConfig{
-		"routes":        {Mode: "gallery", Filters: map[string]string{"active": "active"}},
+		"routes":        {Mode: "kanban", Filters: map[string]string{"active": "active"}},
 		"fleet":         {Mode: "kanban", Filters: map[string]string{"active": "inactive"}},
 		"requests":      {Mode: "calendar", Filters: map[string]string{"status": "in_progress"}},
 		"availability":  {Mode: "calendar", Filters: map[string]string{"scope": "route"}},

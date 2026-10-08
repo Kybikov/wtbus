@@ -285,6 +285,55 @@ export function RouteCatalog() {
     }
   }
 
+  async function moveStatus(route: Route, status: string) {
+    if (route.status === status) return false
+    const previous = routes
+    setRoutes((current) =>
+      current.map((item) =>
+        item.id === route.id ? { ...item, status } : item
+      )
+    )
+    setSaving(true)
+    setError(null)
+    try {
+      const response = await sessionFetch(
+        `/api/routes?id=${encodeURIComponent(route.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: route.name,
+            origin: route.origin,
+            destination: route.destination,
+            currency: route.currency,
+            defaultPriceMinor: route.defaultPriceMinor,
+            defaultPricingMode: route.defaultPricingMode,
+            driverPayMinor: route.driverPayMinor,
+            tariffMode: route.tariffMode,
+            distanceKm: route.distanceKm,
+            vehicleClassRates: route.vehicleClassRates,
+            status,
+          }),
+        }
+      )
+      const payload: unknown = await response.json()
+      if (!response.ok) {
+        throw new Error(getError(payload, "Не удалось обновить маршрут."))
+      }
+      return true
+    } catch (reason) {
+      setRoutes(previous)
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось обновить маршрут."
+      )
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function toggle(route: Route) {
     setSaving(true)
     setError(null)
@@ -518,7 +567,21 @@ export function RouteCatalog() {
           loading={loading}
           selected={selection.selected}
           onSelectedChange={selection.setSelected}
-          modes={["table", "list", "gallery"]}
+          modes={["table", "list", "kanban", "gallery"]}
+          groupBy={(item) => item.status}
+          kanbanGroups={(statuses.length
+            ? statuses.map((status) => ({
+                id: status.key,
+                label: status.label,
+                tone: status.tone,
+              }))
+            : activeOptions.map((status) => ({
+                id: status.value,
+                label: status.label,
+                tone: status.tone,
+              }))
+          )}
+          onKanbanGroupChange={(item, status) => moveStatus(item, status)}
           filters={[
             {
               id: "status",

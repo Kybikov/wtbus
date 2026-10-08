@@ -63,7 +63,7 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 		return false
 	}
 	mode := input.Config.Mode
-	if mode != "table" && mode != "list" && mode != "gallery" && !(mode == "schedule" && entity == "trips") && !(mode == "kanban" && (entity == "bookings" || entity == "team" || entity == "requests" || entity == "trips" || entity == "fleet")) && !(mode == "calendar" && (entity == "bookings" || entity == "requests" || entity == "trips" || entity == "availability")) {
+	if mode != "table" && mode != "list" && mode != "gallery" && !(mode == "schedule" && entity == "trips") && !(mode == "kanban" && (entity == "bookings" || entity == "team" || entity == "requests" || entity == "trips" || entity == "fleet" || entity == "routes")) && !(mode == "calendar" && (entity == "bookings" || entity == "requests" || entity == "trips" || entity == "availability")) {
 		return false
 	}
 	seen := map[string]bool{}
