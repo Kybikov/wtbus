@@ -562,6 +562,7 @@ export function EntityViewToolbar<T>({
                 </PopoverContent>
               </Popover>
             ) : null}
+            {config.mode === "table" ? (
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -600,6 +601,7 @@ export function EntityViewToolbar<T>({
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+            ) : null}
           </div>
         </div>
         {activeFilters.length ? (
