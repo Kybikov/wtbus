@@ -70,16 +70,9 @@ export function IntegrationConnectionCard({
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-semibold">{name}</h3>
         </div>
-        <Badge
-          variant="secondary"
-          className={
-            configured
-              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
-              : ""
-          }
-        >
+        <Badge variant="secondary">
           {configured ? <Check /> : <KeyRound />}
-          {configured ? "Подключено" : "Не настроено"}
+          {configured ? "Ключ сохранён" : "Не настроено"}
         </Badge>
       </div>
       <p className="mt-3 min-h-10 text-sm leading-5 text-muted-foreground">
