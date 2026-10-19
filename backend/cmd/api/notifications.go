@@ -20,6 +20,7 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/coder/websocket"
 	"github.com/jackc/pgx/v5"
+	"github.com/vivat-bus/tms/internal/notificationprefs"
 )
 
 var pushHTTPClient = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
@@ -97,7 +98,7 @@ func (app *application) ensurePushKeys(ctx context.Context) error {
 
 func notificationURL(path string) bool {
 	switch path {
-	case "/requests", "/bookings", "/finance", "/trips", "/driver", "/profile":
+	case "/requests", "/bookings", "/finance", "/trips", "/driver", "/profile", "/team":
 		return true
 	}
 	return false
@@ -263,10 +264,11 @@ func (app *application) notifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT id::text,category,title,body,url,created_at,read_at FROM app_notifications
-	WHERE membership_id=$1 AND (category<>'payments' OR $2 IN ('owner','admin','developer'))
+	WHERE membership_id=$1 AND (category NOT IN ('payments','team') OR $2 IN ('owner','admin','developer'))
 	AND ($2<>'driver' OR category IN ('trips','newBookings','test'))
-	AND ($3='' OR (created_at,id)<(SELECT created_at,id FROM app_notifications WHERE id::text=$3 AND membership_id=$1))
-	ORDER BY created_at DESC,id DESC LIMIT 51`, actor.MembershipID, actor.Role, cursor)
+	AND (NOT $4 OR read_at IS NULL)
+    AND ($3='' OR (created_at,id)<(SELECT created_at,id FROM app_notifications WHERE id::text=$3 AND membership_id=$1))
+	ORDER BY created_at DESC,id DESC LIMIT 51`, actor.MembershipID, actor.Role, cursor, r.URL.Query().Get("unread") == "1")
 	if err != nil {
 		writeError(w, 503, "Не удалось загрузить уведомления.")
 		return
@@ -297,7 +299,7 @@ func (app *application) notifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var unread int
-	if err := app.db.QueryRow(r.Context(), `SELECT count(*) FROM app_notifications WHERE membership_id=$1 AND read_at IS NULL AND (category<>'payments' OR $2 IN ('owner','admin','developer')) AND ($2<>'driver' OR category IN ('trips','newBookings','test'))`, actor.MembershipID, actor.Role).Scan(&unread); err != nil {
+	if err := app.db.QueryRow(r.Context(), `SELECT count(*) FROM app_notifications WHERE membership_id=$1 AND read_at IS NULL AND (category NOT IN ('payments','team') OR $2 IN ('owner','admin','developer')) AND ($2<>'driver' OR category IN ('trips','newBookings','test'))`, actor.MembershipID, actor.Role).Scan(&unread); err != nil {
 		writeError(w, 503, "Не удалось загрузить счётчик.")
 		return
 	}
@@ -463,8 +465,11 @@ func (app *application) notificationWorker(ctx context.Context) {
 	for range 2 {
 		run("deliver push job", time.Second, app.deliverPush)
 	}
+	run("deliver staff Telegram", time.Second, app.deliverStaffTelegram)
 	run("retain notification history", time.Hour, func(ctx context.Context) error {
 		_, err := app.db.Exec(ctx, `DELETE FROM push_jobs WHERE finished_at<now()-interval '7 days';
+        DELETE FROM telegram_delivery_jobs WHERE finished_at<now()-interval '7 days';
+        DELETE FROM staff_telegram_link_tokens WHERE expires_at<now();
 		DELETE FROM app_notifications WHERE created_at<now()-interval '90 days';
 		DELETE FROM realtime_events WHERE published_at<now()-interval '7 days';
 		DELETE FROM push_subscriptions s WHERE NOT EXISTS(SELECT 1 FROM user_sessions us WHERE us.token_hash=s.session_hash AND us.membership_id=s.membership_id AND us.revoked_at IS NULL AND us.expires_at>now())`)
@@ -529,15 +534,15 @@ func (app *application) deliverPush(ctx context.Context) error {
 		return err
 	}
 	var s webpush.Subscription
-	var id, member, role, category, title, body, path, subscriptionID string
+	var id, member, role, category, title, body, path, subscriptionID, eventType string
 	var attempts int
 	var created time.Time
 	var enabled, validSession bool
-	err = app.db.QueryRow(ctx, `SELECT s.id::text,s.endpoint,s.p256dh,s.auth,n.id::text,n.membership_id::text,m.role::text,n.category,n.title,n.body,n.url,n.created_at,j.attempts,
+	err = app.db.QueryRow(ctx, `SELECT s.id::text,s.endpoint,s.p256dh,s.auth,n.id::text,n.membership_id::text,m.role::text,n.category,n.title,n.body,n.url,n.created_at,j.attempts,n.event_type,
  coalesce((p.categories->>n.category)::boolean,true),
  m.is_active AND EXISTS(SELECT 1 FROM user_sessions us WHERE us.token_hash=s.session_hash AND us.membership_id=s.membership_id AND us.revoked_at IS NULL AND us.expires_at>now())
  FROM push_jobs j JOIN push_subscriptions s ON s.id=j.subscription_id JOIN app_notifications n ON n.id=j.notification_id
- JOIN memberships m ON m.id=n.membership_id LEFT JOIN notification_preferences p ON p.membership_id=m.id WHERE j.id=$1 AND s.membership_id=n.membership_id`, jobID).Scan(&subscriptionID, &s.Endpoint, &s.Keys.P256dh, &s.Keys.Auth, &id, &member, &role, &category, &title, &body, &path, &created, &attempts, &enabled, &validSession)
+ JOIN memberships m ON m.id=n.membership_id LEFT JOIN notification_preferences p ON p.membership_id=m.id WHERE j.id=$1 AND s.membership_id=n.membership_id`, jobID).Scan(&subscriptionID, &s.Endpoint, &s.Keys.P256dh, &s.Keys.Auth, &id, &member, &role, &category, &title, &body, &path, &created, &attempts, &eventType, &enabled, &validSession)
 	if errors.Is(err, pgx.ErrNoRows) {
 		_, err = app.db.Exec(ctx, `UPDATE push_jobs SET finished_at=now() WHERE id=$1`, jobID)
 		return err
@@ -545,9 +550,18 @@ func (app *application) deliverPush(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	permitted := role == "owner" || role == "admin" || role == "developer" || (role == "dispatcher" && category != "payments") || (role == "driver" && (category == "trips" || category == "newBookings" || category == "test"))
+	preferences, prefsErr := app.deliveryPreferences(ctx, member)
+	if prefsErr != nil {
+		return prefsErr
+	}
+	enabled = preferences.Enabled(eventType, category, "push")
+	permitted := notificationprefs.Allowed(role, category)
 	if !enabled || !validSession || !permitted || time.Since(created) > 24*time.Hour || !validPushSubscription(s) {
 		_, err = app.db.Exec(ctx, `UPDATE push_jobs SET finished_at=now() WHERE id=$1`, jobID)
+		return err
+	}
+	if resume := preferences.ResumeAt(time.Now()); category != "test" && resume.After(time.Now()) {
+		_, err = app.db.Exec(ctx, `UPDATE push_jobs SET available_at=$2,locked_until=NULL,attempts=greatest(0,attempts-1) WHERE id=$1`, jobID, resume)
 		return err
 	}
 	if role == "driver" && category != "test" {

@@ -107,8 +107,8 @@ body:has([data-public-booking]) {
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.93 0.007 106.5);
   --input: oklch(0.93 0.007 106.5);
-  --control: color-mix(in oklch, var(--card), var(--foreground) 4%);
-  --control-hover: color-mix(in oklch, var(--card), var(--foreground) 8%);
+  --control: var(--background);
+  --control-hover: var(--accent);
   --ring: oklch(0.737 0.021 106.9);
   --chart-1: oklch(0.837 0.128 66.29);
   --chart-2: oklch(0.705 0.213 47.604);

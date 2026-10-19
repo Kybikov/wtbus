@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SettingsFormSection, SettingsRow } from "@/components/settings-form-1"
 import { sessionFetch } from "@/lib/session-navigation"
+import { SettingsWorkspace } from "@/components/settings-workspace"
+import { NotificationPreferences } from "@/components/notification-preferences"
 import { ProfileAppSettings } from "@/components/profile-app-settings"
 
 type Profile = {
@@ -50,7 +52,12 @@ const roles: Record<string, string> = {
   driver: "Водитель",
 }
 
-export function PersonalProfile() {
+export type ProfileSection = "personal" | "security" | "notifications" | "app"
+export function PersonalProfile({
+  section = "personal",
+}: {
+  section?: ProfileSection
+}) {
   const [profile, setProfile] = React.useState<Profile | null>(null)
   const [name, setName] = React.useState("")
   const [loading, setLoading] = React.useState(true)
@@ -152,145 +159,157 @@ export function PersonalProfile() {
       refreshing={loading || saving}
       utilities={<ThemeCustomizer />}
     >
-      <div className="space-y-5">
-        {profile ? <ProfileAppSettings identity={profile} /> : null}
-        {error ? (
-          <p
-            role="alert"
-            className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-          >
-            {error}
-          </p>
-        ) : null}
-        <AdminNotice message={notice} />
-        <div className="grid items-start gap-5 xl:grid-cols-2">
-          <SettingsFormSection
-            title="Личные данные"
-            description="Ваше имя и доступ в компанию."
-          >
-            <form
-              className="@container space-y-5"
-              onSubmit={(event) => void save(event, false)}
-            >
-              <SettingsRow
-                id="profile-name"
-                label="Имя"
-                changed={
-                  profile !== null && name.trim() !== profile.displayName
-                }
+      <SettingsWorkspace
+        role={profile?.role}
+        active={section === "personal" ? "/profile" : `/profile/${section}`}
+      >
+        <div className="space-y-5">
+          {profile && section === "app" ? <ProfileAppSettings /> : null}
+          {profile && section === "notifications" ? (
+            <NotificationPreferences identity={profile} />
+          ) : null}
+          <AdminNotice message={error} variant="error" />
+          <AdminNotice message={notice} />
+          <div className="min-w-0 space-y-4">
+            {section === "personal" ? (
+              <SettingsFormSection
+                title="Личные данные"
+                description="Ваше имя и доступ в компанию."
               >
-                <Input
-                  id="profile-name"
-                  autoComplete="name"
-                  disabled={loading || saving}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  maxLength={100}
-                  required
-                />
-              </SettingsRow>
-              <SettingsRow
-                id="profile-email"
-                label="Email"
-                description="Используется для входа в аккаунт."
+                <form
+                  className="@container space-y-5"
+                  onSubmit={(event) => void save(event, false)}
+                >
+                  <SettingsRow
+                    id="profile-name"
+                    label="Имя"
+                    changed={
+                      profile !== null && name.trim() !== profile.displayName
+                    }
+                  >
+                    <Input
+                      id="profile-name"
+                      autoComplete="name"
+                      disabled={loading || saving}
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      maxLength={100}
+                      required
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    id="profile-email"
+                    label="Email"
+                    description="Используется для входа в аккаунт."
+                  >
+                    <Input
+                      id="profile-email"
+                      aria-describedby="profile-email-hint"
+                      autoComplete="email"
+                      readOnly
+                      value={profile?.email ?? ""}
+                    />
+                  </SettingsRow>
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <span className="text-muted-foreground">
+                      Роль в компании
+                    </span>
+                    <Badge variant="secondary">
+                      {profile
+                        ? (roles[profile.role] ?? profile.role)
+                        : "Загружаем…"}
+                    </Badge>
+                  </div>
+                  <Button
+                    disabled={
+                      loading ||
+                      saving ||
+                      !name.trim() ||
+                      name.trim() === profile?.displayName
+                    }
+                    type="submit"
+                  >
+                    {saving ? "Сохраняем…" : "Сохранить имя"}
+                  </Button>
+                </form>
+              </SettingsFormSection>
+            ) : null}
+            {section === "security" ? (
+              <SettingsFormSection
+                title="Смена пароля"
+                description="После изменения потребуется заново войти на других устройствах."
               >
-                <Input
-                  id="profile-email"
-                  aria-describedby="profile-email-hint"
-                  autoComplete="email"
-                  readOnly
-                  value={profile?.email ?? ""}
-                />
-              </SettingsRow>
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <span className="text-muted-foreground">Роль в компании</span>
-                <Badge variant="secondary">
-                  {profile
-                    ? (roles[profile.role] ?? profile.role)
-                    : "Загружаем…"}
-                </Badge>
-              </div>
-              <Button
-                disabled={
-                  loading ||
-                  saving ||
-                  !name.trim() ||
-                  name.trim() === profile?.displayName
-                }
-                type="submit"
-              >
-                {saving ? "Сохраняем…" : "Сохранить имя"}
-              </Button>
-            </form>
-          </SettingsFormSection>
-          <SettingsFormSection
-            title="Смена пароля"
-            description="После изменения потребуется заново войти на других устройствах."
-          >
-            <form
-              className="@container space-y-5"
-              onSubmit={(event) => void save(event, true)}
-            >
-              <SettingsRow id="profile-current-password" label="Текущий пароль">
-                <Input
-                  id="profile-current-password"
-                  autoComplete="current-password"
-                  type="password"
-                  required
-                  disabled={loading || saving}
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                />
-              </SettingsRow>
-              <SettingsRow
-                id="profile-new-password"
-                label="Новый пароль"
-                description="От 10 символов. Максимум 72 байта."
-              >
-                <Input
-                  id="profile-new-password"
-                  aria-describedby="profile-new-password-hint"
-                  autoComplete="new-password"
-                  type="password"
-                  minLength={10}
-                  required
-                  disabled={loading || saving}
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                />
-              </SettingsRow>
-              <SettingsRow
-                id="profile-confirmation"
-                label="Повторите новый пароль"
-              >
-                <Input
-                  id="profile-confirmation"
-                  autoComplete="new-password"
-                  type="password"
-                  minLength={10}
-                  required
-                  disabled={loading || saving}
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                />
-              </SettingsRow>
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={
-                  loading ||
-                  saving ||
-                  !currentPassword ||
-                  !newPassword ||
-                  !confirmation
-                }
-              >
-                {saving ? "Сохраняем…" : "Изменить пароль"}
-              </Button>
-            </form>
-          </SettingsFormSection>
+                <form
+                  className="@container space-y-5"
+                  onSubmit={(event) => void save(event, true)}
+                >
+                  <SettingsRow
+                    id="profile-current-password"
+                    label="Текущий пароль"
+                  >
+                    <Input
+                      id="profile-current-password"
+                      autoComplete="current-password"
+                      type="password"
+                      required
+                      disabled={loading || saving}
+                      value={currentPassword}
+                      onChange={(event) =>
+                        setCurrentPassword(event.target.value)
+                      }
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    id="profile-new-password"
+                    label="Новый пароль"
+                    description="От 10 символов. Максимум 72 байта."
+                  >
+                    <Input
+                      id="profile-new-password"
+                      aria-describedby="profile-new-password-hint"
+                      autoComplete="new-password"
+                      type="password"
+                      minLength={10}
+                      required
+                      disabled={loading || saving}
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    id="profile-confirmation"
+                    label="Повторите новый пароль"
+                  >
+                    <Input
+                      id="profile-confirmation"
+                      autoComplete="new-password"
+                      type="password"
+                      minLength={10}
+                      required
+                      disabled={loading || saving}
+                      value={confirmation}
+                      onChange={(event) => setConfirmation(event.target.value)}
+                    />
+                  </SettingsRow>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={
+                      loading ||
+                      saving ||
+                      !currentPassword ||
+                      !newPassword ||
+                      !confirmation
+                    }
+                  >
+                    {saving ? "Сохраняем…" : "Изменить пароль"}
+                  </Button>
+                </form>
+              </SettingsFormSection>
+            ) : null}
+          </div>
         </div>
-      </div>
+      </SettingsWorkspace>
     </AppShell>
   )
 }

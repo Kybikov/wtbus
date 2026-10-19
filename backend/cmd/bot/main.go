@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/vivat-bus/tms/internal/ibanpayment"
+	"github.com/vivat-bus/tms/internal/notificationprefs"
 	"github.com/vivat-bus/tms/internal/telegramoutbox"
 )
 
@@ -720,6 +721,17 @@ func (app *app) handleMessage(message *tgbotapi.Message) {
 	if message.IsCommand() {
 		switch message.Command() {
 		case "start":
+			if strings.HasPrefix(message.CommandArguments(), "staff_") {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				linked, err := notificationprefs.ClaimTelegramLink(ctx, app.db, app.tenantID, strings.TrimPrefix(message.CommandArguments(), "staff_"), message.Chat.ID, message.From.UserName)
+				cancel()
+				if err != nil || !linked {
+					app.send(message.Chat.ID, "Ссылка недействительна, истекла или Telegram уже привязан к другому сотруднику. Создайте новую ссылку в профиле.")
+				} else {
+					app.send(message.Chat.ID, "Telegram подключён к вашему рабочему профилю. Вернитесь в приложение, чтобы выбрать события и проверить доставку.")
+				}
+				return
+			}
 			app.clearState(message.Chat.ID)
 			app.sendWelcome(message.Chat.ID)
 		default:

@@ -3,8 +3,15 @@ import { apiFetch } from "@/lib/api-fetch"
 export const dynamic = "force-dynamic"
 async function forward(request: Request) {
   const url = new URL(request.url)
-  const resource =
-    url.searchParams.get("resource") === "push" ? "push" : "notifications"
+  const resources: Record<string, string> = {
+    push: "push",
+    delivery: "notification-preferences",
+    telegram: "telegram",
+  }
+  const requestedResource = url.searchParams.get("resource") ?? ""
+  const resource = Object.hasOwn(resources, requestedResource)
+    ? resources[requestedResource]
+    : "notifications"
   try {
     const body = request.method === "GET" ? undefined : await request.text()
     if (body && body.length > 8192)
@@ -31,6 +38,8 @@ async function forward(request: Request) {
     )
     if (resource === "notifications" && url.searchParams.has("before"))
       upstream.searchParams.set("before", url.searchParams.get("before")!)
+    if (resource === "notifications" && url.searchParams.get("unread") === "1")
+      upstream.searchParams.set("unread", "1")
     const response = await apiFetch(upstream, {
       method: request.method,
       cache: "no-store",

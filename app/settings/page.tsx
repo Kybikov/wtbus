@@ -1,5 +1,4 @@
-import { CompanySettings } from "@/components/company-settings"
-
+import { redirect } from "next/navigation"
 export default function SettingsPage() {
-  return <CompanySettings />
+  redirect("/settings/company")
 }

@@ -141,7 +141,7 @@ func TestNotificationsPostgres(t *testing.T) {
 		trip := row(`INSERT INTO trips(tenant_id,driver_id,kind,origin_name,destination_name,starts_at,ends_at,capacity,currency) VALUES($1,$2,'regular','A','B',now()+interval '1 day',now()+interval '2 days',10,'UAH') RETURNING id::text`, tenant, driverID)
 		for _, token := range []string{ownerSession.SessionToken, driverSession.SessionToken} {
 			w := request("GET", "/api/v1/me/notifications", token, nil)
-			if w.Code != 200 || !strings.Contains(w.Body.String(), "Обновление рейса") {
+			if w.Code != 200 || !strings.Contains(w.Body.String(), "Назначение рейса") {
 				t.Fatalf("inbox: %d %s", w.Code, w.Body.String())
 			}
 		}

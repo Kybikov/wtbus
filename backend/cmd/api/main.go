@@ -165,6 +165,11 @@ func (app *application) routes() http.Handler {
 		mux.HandleFunc(method+" /api/v1/me/notifications", staff(app.notifications))
 		mux.HandleFunc(method+" /api/v1/me/push", staff(app.pushSettings))
 	}
+	for _, method := range []string{"GET", "POST", "DELETE"} {
+		mux.HandleFunc(method+" /api/v1/me/telegram", staff(app.staffTelegramSettings))
+	}
+	mux.HandleFunc("GET /api/v1/me/notification-preferences", staff(app.notificationDeliverySettings))
+	mux.HandleFunc("PATCH /api/v1/me/notification-preferences", staff(app.notificationDeliverySettings))
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
 	owners := app.requireRoles("owner")
