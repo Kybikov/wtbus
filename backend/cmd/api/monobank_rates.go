@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sort"
 	"time"
 )
 
@@ -142,7 +143,15 @@ func (app *application) storeMonobankRates(ctx context.Context, tenantID, base s
 		return err
 	}
 	defer tx.Rollback(ctx)
-	for code, rate := range rates {
+	// The worker and settings reads can refresh one company concurrently.
+	// Lock rows in the same order in every transaction to avoid a deadlock.
+	codesToStore := make([]string, 0, len(rates))
+	for code := range rates {
+		codesToStore = append(codesToStore, code)
+	}
+	sort.Strings(codesToStore)
+	for _, code := range codesToStore {
+		rate := rates[code]
 		_, err = tx.Exec(ctx, `INSERT INTO tenant_exchange_rates(tenant_id,currency,rate_to_base) VALUES($1,$2,$3) ON CONFLICT(tenant_id,currency) DO UPDATE SET rate_to_base=EXCLUDED.rate_to_base,updated_at=now() WHERE tenant_exchange_rates.rate_to_base IS DISTINCT FROM EXCLUDED.rate_to_base`, tenantID, code, rate)
 		if err != nil {
 			return err

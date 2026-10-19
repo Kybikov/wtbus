@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -6685,7 +6686,13 @@ func (app *application) updateExchangeRates(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer tx.Rollback(r.Context())
-	for currency, rate := range input.Rates {
+	currencies := make([]string, 0, len(input.Rates))
+	for code := range input.Rates {
+		currencies = append(currencies, code)
+	}
+	sort.Strings(currencies)
+	for _, currency := range currencies {
+		rate := input.Rates[currency]
 		if _, err = tx.Exec(r.Context(), `INSERT INTO tenant_exchange_rates(tenant_id,currency,rate_to_base) VALUES($1,$2,$3) ON CONFLICT(tenant_id,currency) DO UPDATE SET rate_to_base=EXCLUDED.rate_to_base,updated_at=now()`, tenant.ID, currency, rate); err != nil {
 			app.publicFailure(w, err)
 			return

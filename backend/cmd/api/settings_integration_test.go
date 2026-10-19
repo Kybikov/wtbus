@@ -195,6 +195,23 @@ func TestSettingsPostgres(t *testing.T) {
 			t.Fatal("outage rewrote report rates")
 		}
 	})
+	t.Run("concurrent currency refreshes cannot deadlock", func(t *testing.T) {
+		cycle, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
+		results := make(chan error, 16)
+		for n := range 16 {
+			go func(n int) {
+				offset := float64(n) / 100
+				items := []monobankRate{{A: 978, B: 980, Buy: 44 + offset, Sell: 46 + offset, Date: time.Now().Unix()}, {A: 840, B: 980, Buy: 40 + offset, Sell: 42 + offset, Date: time.Now().Unix()}, {A: 985, B: 980, Cross: 10 + offset, Date: time.Now().Unix()}}
+				results <- app.storeMonobankRates(cycle, company, "EUR", items)
+			}(n)
+		}
+		for range 16 {
+			if err := <-results; err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
 	t.Run("dispatcher cannot view keys or test providers", func(t *testing.T) {
 		m := row(`INSERT INTO memberships(tenant_id,user_id,role) SELECT $1,id,'dispatcher' FROM users WHERE email='taken@test.invalid' RETURNING id::text`, company)
 		u := row(`SELECT user_id::text FROM memberships WHERE id=$1`, m)
