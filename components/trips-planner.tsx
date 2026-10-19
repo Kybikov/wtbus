@@ -37,6 +37,7 @@ import {
 import { usePageSearch } from "@/hooks/use-page-search"
 import { useEntitySelection } from "@/hooks/use-entity-selection"
 import { useWorkflowStatuses } from "@/components/route-status-field"
+import { canMoveTripStatus } from "@/lib/kanban-workflow"
 
 type APITrip = {
   id: string
@@ -738,6 +739,50 @@ export function TripsPlanner() {
     }
   }
 
+  async function moveTripStatus(trip: CalendarTrip, status: string) {
+    if (!canMoveTripStatus(workflowStatuses, trip.status, status)) return false
+    if (
+      workflowStatuses.find((item) => item.key === status)?.semanticPhase ===
+        "cancelled" &&
+      !window.confirm(`Отменить рейс «${trip.title}»?`)
+    )
+      return false
+    setLoadError(null)
+    try {
+      const response = await sessionFetch(
+        `/api/trips?id=${encodeURIComponent(trip.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        }
+      )
+      const payload: unknown = await response.json()
+      if (!response.ok)
+        throw new Error(
+          typeof payload === "object" &&
+            payload !== null &&
+            "error" in payload &&
+            typeof payload.error === "string"
+            ? payload.error
+            : "Не удалось изменить статус рейса."
+        )
+      setTrips((current) =>
+        current.map((item) =>
+          item.id === trip.id ? { ...item, status } : item
+        )
+      )
+      return true
+    } catch (reason) {
+      setLoadError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось изменить статус рейса."
+      )
+      return false
+    }
+  }
+
   async function changeSelectedTripStatus(status: string) {
     if (!selectedTrip) return
 
@@ -900,7 +945,6 @@ export function TripsPlanner() {
         createDisabled={isLoading || isResourcesLoading}
         pageDescription="Транспорт, водители и расписание без накладок"
         pageTitle="Планирование рейсов"
-
       >
         <div className="w-full min-w-0 space-y-5">
           <AdminNotice message={notice} />
@@ -942,7 +986,17 @@ export function TripsPlanner() {
             kanbanGroups={tripOptions.map((option) => ({
               id: option.value,
               label: option.label,
+              tone: option.tone,
             }))}
+            canMoveInKanban={(trip) =>
+              workflowStatuses.some(
+                (status) => status.key === trip.status && !status.isTerminal
+              )
+            }
+            canMoveToKanbanGroup={(trip, group) =>
+              canMoveTripStatus(workflowStatuses, trip.status, group)
+            }
+            onKanbanGroupChange={moveTripStatus}
             dateValue={(item) =>
               new Intl.DateTimeFormat("en-CA", {
                 timeZone: scheduleTimeZone,

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { EntityFilters } from "@/components/entity-filters"
 import { useFieldAutosave } from "@/components/use-field-autosave"
 import { sessionFetch } from "@/lib/session-navigation"
 import { adminControlClassName } from "@/lib/admin-ui"
@@ -17,7 +18,6 @@ import {
   Rows3,
   Table2,
   Columns3,
-  Filter,
   Plus,
   Settings2,
   Users,
@@ -27,7 +27,6 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { FieldSelect } from "@/components/ui/field-select"
-import { DatePicker } from "@/components/ui/date-picker"
 import {
   Dialog,
   DialogContent,
@@ -140,7 +139,13 @@ function BoardSettings({
   })
   const visibleCount = groups.filter((group) => !hidden.has(group.id)).length
   function update(next: BoardLayout) {
-    onChange({ ...config, board: next })
+    onChange({
+      ...config,
+      board: {
+        ...next,
+        ...(board?.cardOrder ? { cardOrder: board.cardOrder } : {}),
+      },
+    })
   }
   return (
     <Popover>
@@ -322,6 +327,8 @@ type Props<T> = {
   columns: { id: string; label: string }[]
   filters: EntityFilter<T>[]
   ready: boolean
+  resultCount: number
+  loading?: boolean
   bulkActions?: React.ReactNode
   selectedCount?: number
   onClearSelection?: () => void
@@ -341,6 +348,8 @@ export function EntityViewToolbar<T>({
   columns,
   filters,
   ready,
+  resultCount,
+  loading,
   bulkActions,
   selectedCount = 0,
   onClearSelection,
@@ -519,7 +528,6 @@ export function EntityViewToolbar<T>({
       setBusy(false)
     }
   }
-  const filterCount = Object.values(config.filters).filter(Boolean).length
   const activeFilters = filters.filter((filter) => config.filters[filter.id])
   const clearFilter = (id: string) => {
     const next = { ...config.filters }
@@ -544,13 +552,13 @@ export function EntityViewToolbar<T>({
         className="workspace-panel flex min-h-[50px] flex-col gap-2 p-2"
         aria-label="Виды и настройки отображения"
       >
-        <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:flex-1 sm:flex-wrap">
             {extras}
             <div
               role="group"
               aria-label="Сохранённые виды"
-              className="flex min-w-0 flex-wrap items-center gap-1.5"
+              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-initial sm:flex-wrap sm:overflow-visible sm:pb-0"
             >
               <ViewChip
                 label="По умолчанию"
@@ -627,7 +635,7 @@ export function EntityViewToolbar<T>({
               </DropdownMenu>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
             {selectedCount ? (
               <Popover>
                 <PopoverTrigger
@@ -749,116 +757,22 @@ export function EntityViewToolbar<T>({
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-            {filters.length ? (
-              <Popover
+            {filters.length > 0 && (
+              <EntityFilters
+                collection={collection}
+                filters={filters}
+                values={config.filters}
                 open={filtersOpen || Boolean(filterRequest)}
                 onOpenChange={(open) => {
                   setFiltersOpen(open)
                   if (!open) onFilterRequestHandled?.()
                 }}
-              >
-                <PopoverTrigger
-                  render={
-                    <Button variant="outline" size="sm" className={control} />
-                  }
-                >
-                  <Filter />
-                  <span className="sr-only sm:not-sr-only">Фильтры</span>
-                  {filterCount ? ` · ${filterCount}` : null}
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="w-80 max-w-[calc(100vw-2rem)] space-y-4 rounded-xl p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">Фильтры</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs"
-                      disabled={!filterCount}
-                      onClick={() => onChange({ ...config, filters: {} })}
-                    >
-                      Сбросить
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Условия применяются одновременно. Пустое поле не
-                    ограничивает данные.
-                  </p>
-                  <div className="space-y-3">
-                    {filters.map((filter) => (
-                      <div
-                        key={filter.id}
-                        className="space-y-1.5"
-                        ref={(node) => {
-                          if (!node || filterRequest !== filter.id) return
-                          queueMicrotask(() =>
-                            node
-                              .querySelector<HTMLElement>("button,input")
-                              ?.focus()
-                          )
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <label
-                            className="text-xs font-medium text-muted-foreground"
-                            htmlFor={`${collection}-filter-${filter.id}`}
-                          >
-                            {filter.label}
-                          </label>
-                          {config.filters[filter.id] ? (
-                            <Button
-                              aria-label={`Сбросить фильтр ${filter.label}`}
-                              className="size-6 text-muted-foreground"
-                              onClick={() => clearFilter(filter.id)}
-                              size="icon"
-                              variant="ghost"
-                            >
-                              <X className="size-3.5" />
-                            </Button>
-                          ) : null}
-                        </div>
-                        {filter.type === "date" ? (
-                          <DatePicker
-                            label={filter.label}
-                            id={`${collection}-filter-${filter.id}`}
-                            value={config.filters[filter.id] ?? ""}
-                            onValueChange={(value) =>
-                              onChange({
-                                ...config,
-                                filters: {
-                                  ...config.filters,
-                                  [filter.id]: value,
-                                },
-                              })
-                            }
-                          />
-                        ) : (
-                          <FieldSelect
-                            aria-label={filter.label}
-                            value={config.filters[filter.id] ?? ""}
-                            onValueChange={(value) =>
-                              onChange({
-                                ...config,
-                                filters: {
-                                  ...config.filters,
-                                  [filter.id]: value,
-                                },
-                              })
-                            }
-                            options={[
-                              { value: "", label: "Все" },
-                              ...(filter.options ?? []),
-                            ]}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            ) : null}
+                onChange={(filters) => onChange({ ...config, filters })}
+                filterRequest={filterRequest}
+                resultCount={resultCount}
+                loading={loading}
+              />
+            )}
           </div>
         </div>
         {activeFilters.length ? (

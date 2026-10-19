@@ -18,7 +18,7 @@ async function forward(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Некоректні дані." }, { status: 400 })
     }
-    if (body.length > 32768)
+    if (new TextEncoder().encode(body).byteLength > 1_048_576)
       return NextResponse.json({ error: "Забагато даних." }, { status: 413 })
   }
   try {

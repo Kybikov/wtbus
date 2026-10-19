@@ -245,6 +245,54 @@ export function FleetOperations() {
     }
   }
 
+  async function moveVehicleStatus(vehicle: Vehicle, status: string) {
+    if (!canManage || !statuses.some((item) => item.key === status))
+      return false
+    setError(null)
+    try {
+      const response = await sessionFetch(
+        `/api/fleet?id=${encodeURIComponent(vehicle.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: vehicle.name,
+            registrationNumber: vehicle.registrationNumber,
+            vehicleClass: vehicle.vehicleClass,
+            capacity: vehicle.capacity,
+            status,
+          }),
+        }
+      )
+      const payload: unknown = await response.json()
+      if (!response.ok)
+        throw new Error(
+          errorFrom(payload, "Не удалось изменить статус автомобиля.")
+        )
+      setFleet((current) =>
+        current.map((item) =>
+          item.id === vehicle.id
+            ? {
+                ...item,
+                status,
+                isActive:
+                  statuses.find((option) => option.key === status)
+                    ?.isAvailable ?? item.isActive,
+              }
+            : item
+        )
+      )
+      return true
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось изменить статус автомобиля."
+      )
+      return false
+    }
+  }
+
   async function toggleVehicle(vehicle: Vehicle) {
     setSaving(true)
     setError(null)
@@ -408,7 +456,6 @@ export function FleetOperations() {
       createDisabled={saving || !canManage}
       pageDescription="Последняя GPS-точка каждого автомобиля · обновление раз в 30 секунд"
       pageTitle="Транспорт и геолокация"
-
     >
       <div className="w-full min-w-0 space-y-5">
         <div className="grid gap-3 sm:grid-cols-3">
@@ -581,7 +628,17 @@ export function FleetOperations() {
           kanbanGroups={statuses.map((status) => ({
             id: status.key,
             label: status.label,
+            tone: status.tone,
           }))}
+          canMoveInKanban={() => canManage && !selection.pending}
+          canMoveToKanbanGroup={(vehicle, group) =>
+            statuses.some(
+              (status) =>
+                status.key === group &&
+                (!vehicle.activeTrip || status.isAvailable)
+            )
+          }
+          onKanbanGroupChange={moveVehicleStatus}
           actions={
             canManage
               ? [

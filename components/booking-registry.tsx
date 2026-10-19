@@ -1,4 +1,5 @@
 "use client"
+import { canMoveBookingStatus } from "@/lib/kanban-workflow"
 import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
@@ -240,6 +241,62 @@ export function BookingRegistry() {
         label: statusLabels[value],
         tone: "neutral" as const,
       }))
+  const canMoveBooking = (booking: Booking, target: string) =>
+    canMoveBookingStatus(
+      bookingStatuses,
+      booking.status,
+      target,
+      tripStatuses.find((item) => item.key === booking.tripStatus)
+        ?.semanticPhase ?? booking.tripStatus
+    )
+  async function moveBookingStatus(booking: Booking, target: string) {
+    if (!canMoveBooking(booking, target)) return false
+    const cancelling =
+      bookingStatuses.find((item) => item.key === target)?.semanticPhase ===
+      "cancelled"
+    if (
+      cancelling &&
+      !window.confirm(
+        `Отменить бронирование ${booking.customerName ?? booking.customerPhone}?`
+      )
+    )
+      return false
+    setError(null)
+    try {
+      const response = await sessionFetch(
+        `/api/bookings?id=${encodeURIComponent(booking.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: target }),
+        }
+      )
+      const payload: unknown = await response.json()
+      if (!response.ok)
+        throw new Error(
+          errorFrom(payload, "Не удалось изменить статус бронирования.")
+        )
+      setItems((current) =>
+        current.flatMap((item) =>
+          item.id !== booking.id
+            ? [item]
+            : status && status !== target
+              ? []
+              : [{ ...item, status: target }]
+        )
+      )
+      if (status && status !== target)
+        setTotal((current) => Math.max(0, current - 1))
+      return true
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось изменить статус бронирования."
+      )
+      return false
+    }
+  }
   const bookingStatusLabel = (value: string) =>
     bookingStatusOptions.find((option) => option.value === value)?.label ??
     value
@@ -878,7 +935,6 @@ export function BookingRegistry() {
         onCreate={openCreateBooking}
         pageDescription="Пассажиры из Telegram и ручные брони"
         pageTitle="Журнал бронирований"
-
       >
         <div className="w-full min-w-0 space-y-5">
           <AdminNotice message={error} variant="error" />
@@ -954,6 +1010,15 @@ export function BookingRegistry() {
               label: status.label,
               tone: status.tone,
             }))}
+            canMoveInKanban={(booking) =>
+              cancellingID !== booking.id &&
+              confirmingID !== booking.id &&
+              bookingStatuses.some(
+                (status) => status.key === booking.status && !status.isTerminal
+              )
+            }
+            canMoveToKanbanGroup={canMoveBooking}
+            onKanbanGroupChange={moveBookingStatus}
             loading={loading}
             loadingText="Загружаем бронирования…"
             modes={["table", "list", "kanban", "calendar", "gallery"]}

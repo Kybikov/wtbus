@@ -40,7 +40,14 @@ type Route = {
   vehicleClassRates: Record<string, number>
 }
 
-type RouteForm = Omit<Route, "id" | "defaultPriceMinor" | "driverPayMinor" | "distanceKm" | "vehicleClassRates"> & {
+type RouteForm = Omit<
+  Route,
+  | "id"
+  | "defaultPriceMinor"
+  | "driverPayMinor"
+  | "distanceKm"
+  | "vehicleClassRates"
+> & {
   price: string
   driverPay: string
   distance: string
@@ -143,7 +150,11 @@ export function RouteCatalog() {
     textColumn<Route>("pricing", "Модель цены", (item) =>
       item.defaultPricingMode === "per_booking" ? "За бронь" : "За пассажира"
     ),
-    textColumn<Route>("tariff", "Тариф", (item) => item.tariffMode === "per_km" ? `${item.distanceKm} км · по классу` : "Фиксированный"),
+    textColumn<Route>("tariff", "Тариф", (item) =>
+      item.tariffMode === "per_km"
+        ? `${item.distanceKm} км · по классу`
+        : "Фиксированный"
+    ),
     textColumn<Route>("currency", "Валюта", (item) => item.currency, false),
     textColumn<Route>("id", "ID", (item) => item.id, false),
   ]
@@ -235,9 +246,23 @@ export function RouteCatalog() {
     setError(null)
     const defaultPriceMinor = parsePriceMinor(form.price)
     const driverPayMinor = parsePriceMinor(form.driverPay)
-    const distanceKm = form.distance.trim() ? Number(form.distance.replace(",", ".")) : 0
-    const vehicleClassRates = Object.fromEntries(Object.entries(form.classRates).filter(([, value]) => value.trim()).map(([key, value]) => [key, parsePriceMinor(value)]))
-    if (defaultPriceMinor === null || driverPayMinor === null || !Number.isFinite(distanceKm) || distanceKm < 0 || Object.values(vehicleClassRates).some((value) => value === null) || (form.tariffMode === "per_km" && (distanceKm <= 0 || Object.keys(vehicleClassRates).length === 0))) {
+    const distanceKm = form.distance.trim()
+      ? Number(form.distance.replace(",", "."))
+      : 0
+    const vehicleClassRates = Object.fromEntries(
+      Object.entries(form.classRates)
+        .filter(([, value]) => value.trim())
+        .map(([key, value]) => [key, parsePriceMinor(value)])
+    )
+    if (
+      defaultPriceMinor === null ||
+      driverPayMinor === null ||
+      !Number.isFinite(distanceKm) ||
+      distanceKm < 0 ||
+      Object.values(vehicleClassRates).some((value) => value === null) ||
+      (form.tariffMode === "per_km" &&
+        (distanceKm <= 0 || Object.keys(vehicleClassRates).length === 0))
+    ) {
       setError("Укажите цену и зарплату числом с точностью до двух знаков.")
       return
     }
@@ -286,10 +311,17 @@ export function RouteCatalog() {
 
   async function moveStatus(route: Route, status: string) {
     if (route.status === status) return false
-    const previous = routes
     setRoutes((current) =>
       current.map((item) =>
-        item.id === route.id ? { ...item, status } : item
+        item.id === route.id
+          ? {
+              ...item,
+              status,
+              isActive:
+                statuses.find((option) => option.key === status)?.isAvailable ??
+                item.isActive,
+            }
+          : item
       )
     )
     setSaving(true)
@@ -321,7 +353,13 @@ export function RouteCatalog() {
       }
       return true
     } catch (reason) {
-      setRoutes(previous)
+      setRoutes((current) =>
+        current.map((item) =>
+          item.id === route.id && item.status === status
+            ? { ...item, status: route.status, isActive: route.isActive }
+            : item
+        )
+      )
       setError(
         reason instanceof Error
           ? reason.message
@@ -390,7 +428,6 @@ export function RouteCatalog() {
       onCreate={startCreate}
       pageDescription="Регулярные направления, цены и активность"
       pageTitle="Каталог маршрутов"
-
     >
       <section className="space-y-4">
         <AdminNotice
@@ -472,17 +509,58 @@ export function RouteCatalog() {
             <label className="grid gap-2 text-sm font-semibold">
               Конструктор тарифа
               <FieldSelect
-                onValueChange={(value) => updateForm("tariffMode", value as RouteForm["tariffMode"])}
-                options={[{ value: "fixed", label: "Фиксированная цена" }, { value: "per_km", label: "За километр по классу авто" }]}
+                onValueChange={(value) =>
+                  updateForm("tariffMode", value as RouteForm["tariffMode"])
+                }
+                options={[
+                  { value: "fixed", label: "Фиксированная цена" },
+                  { value: "per_km", label: "За километр по классу авто" },
+                ]}
                 value={form.tariffMode}
               />
             </label>
-            {form.tariffMode === "per_km" ? <>
-              <label className="grid gap-2 text-sm font-semibold">Расстояние, км<Input inputMode="decimal" min="0.01" onChange={(event) => updateForm("distance", event.target.value)} step="0.01" type="number" value={form.distance} /></label>
-              <div className="grid gap-3 rounded-xl border border-border p-4 md:col-span-2 sm:grid-cols-3">
-                {(["minivan", "microbus", "bus"] as const).map((vehicleClass) => <label className="grid gap-2 text-sm font-semibold" key={vehicleClass}>Цена за км · {vehicleClass}<Input inputMode="decimal" min="0" onChange={(event) => updateForm("classRates", { ...form.classRates, [vehicleClass]: event.target.value })} step="0.01" type="number" value={form.classRates[vehicleClass] ?? ""} /></label>)}
-              </div>
-            </> : null}
+            {form.tariffMode === "per_km" ? (
+              <>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Расстояние, км
+                  <Input
+                    inputMode="decimal"
+                    min="0.01"
+                    onChange={(event) =>
+                      updateForm("distance", event.target.value)
+                    }
+                    step="0.01"
+                    type="number"
+                    value={form.distance}
+                  />
+                </label>
+                <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-3 md:col-span-2">
+                  {(["minivan", "microbus", "bus"] as const).map(
+                    (vehicleClass) => (
+                      <label
+                        className="grid gap-2 text-sm font-semibold"
+                        key={vehicleClass}
+                      >
+                        Цена за км · {vehicleClass}
+                        <Input
+                          inputMode="decimal"
+                          min="0"
+                          onChange={(event) =>
+                            updateForm("classRates", {
+                              ...form.classRates,
+                              [vehicleClass]: event.target.value,
+                            })
+                          }
+                          step="0.01"
+                          type="number"
+                          value={form.classRates[vehicleClass] ?? ""}
+                        />
+                      </label>
+                    )
+                  )}
+                </div>
+              </>
+            ) : null}
             <div className="grid gap-2 text-sm font-semibold">
               <span>Статус</span>
               <RouteStatusField
@@ -568,18 +646,19 @@ export function RouteCatalog() {
           onSelectedChange={selection.setSelected}
           modes={["table", "list", "kanban", "gallery"]}
           groupBy={(item) => item.status}
-          kanbanGroups={(statuses.length
-            ? statuses.map((status) => ({
-                id: status.key,
-                label: status.label,
-                tone: status.tone,
-              }))
-            : activeOptions.map((status) => ({
-                id: status.value,
-                label: status.label,
-                tone: status.tone,
-              }))
-          )}
+          kanbanGroups={
+            statuses.length
+              ? statuses.map((status) => ({
+                  id: status.key,
+                  label: status.label,
+                  tone: status.tone,
+                }))
+              : activeOptions.map((status) => ({
+                  id: status.value,
+                  label: status.label,
+                  tone: status.tone,
+                }))
+          }
           onKanbanGroupChange={(item, status) => moveStatus(item, status)}
           filters={[
             {

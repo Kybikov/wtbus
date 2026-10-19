@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -130,4 +131,37 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 	}
 	request("DELETE", "customers", shared.ID, nil, manager, 200)
 	request("DELETE", "customers", private.ID, nil, author, 200)
+	// Larger boards cross the old 32 KiB body limit and must survive a DB roundtrip.
+	large := entityViewInput{Name: "Large board", Visibility: "private", Config: entityViewConfig{
+		Mode: "kanban", Columns: []string{"name"}, Board: &entityViewBoard{OrderBy: "manual", CardOrder: make([]string, 1200)},
+	}}
+	for i := range large.Config.Board.CardOrder {
+		large.Config.Board.CardOrder[i] = fmt.Sprintf("%08d-0000-0000-0000-000000000000", i)
+	}
+	created := decode(request("POST", "routes", "", large, manager, 201))
+	large.Version = created.Version
+	large.Config.Board.CardOrder[0], large.Config.Board.CardOrder[1] = large.Config.Board.CardOrder[1], large.Config.Board.CardOrder[0]
+	request("PATCH", "routes", created.ID, large, manager, 200)
+	var boards struct{ Items []savedEntityView }
+	json.Unmarshal(request("GET", "routes", "", nil, manager, 200).Body.Bytes(), &boards)
+	if len(boards.Items) != 1 || boards.Items[0].Config.Board == nil || !slices.Equal(boards.Items[0].Config.Board.CardOrder, large.Config.Board.CardOrder) {
+		t.Fatal("large board order lost after reload")
+	}
+	request("DELETE", "routes", created.ID, nil, manager, 200)
+	for entity, filter := range map[string]string{"routes": "status", "fleet": "status", "requests": "status", "trips": "status", "bookings": "tripStatus"} {
+		workflow := entityViewWorkflowEntity(entity, filter)
+		key := "custom_qa_view_status"
+		if _, err := db.Exec(ctx, `INSERT INTO workflow_statuses(tenant_id,entity_type,key,label,tone,semantic_phase) VALUES($1,$2,$3,'QA','neutral','active') ON CONFLICT DO NOTHING`, company, workflow, key); err != nil {
+			t.Fatal(err)
+		}
+		view := entityViewInput{Name: "Custom status", Visibility: "private", Config: entityViewConfig{Mode: "kanban", Columns: []string{"name"}, Filters: map[string]string{filter: key}}}
+		created := decode(request("POST", entity, "", view, manager, 201))
+		if created.Config.Filters[filter] != key {
+			t.Fatal("custom status filter lost")
+		}
+		request("POST", entity, "", view, outsider, 400)
+		view.Config.Filters[filter] = "unknown"
+		request("POST", entity, "", view, manager, 400)
+		request("DELETE", entity, created.ID, nil, manager, 200)
+	}
 }

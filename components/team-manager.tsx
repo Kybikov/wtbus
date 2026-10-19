@@ -538,7 +538,6 @@ export function TeamManager() {
       createDisabled={loading || !me}
       pageDescription="Сотрудники, роли доступа и системная автоматизация"
       pageTitle="Команда"
-
     >
       <div className="space-y-4">
         <AdminNotice
@@ -621,7 +620,14 @@ export function TeamManager() {
           onKanbanGroupChange={async (member, group) => {
             if (!isRole(group)) return false
             const updated = await updateMember(member, { role: group })
-            if (updated) await load()
+            if (updated)
+              setMembers((current) =>
+                current.map((item) =>
+                  item.membershipId === member.membershipId
+                    ? { ...item, role: group }
+                    : item
+                )
+              )
             return updated
           }}
           onSelectedChange={setSelected}

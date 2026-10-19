@@ -1,6 +1,31 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
+
+func TestEntityViewCardOrder(t *testing.T) {
+	input := entityViewInput{Name: "Board", Visibility: "private", Config: entityViewConfig{
+		Mode: "kanban", Columns: []string{"name"}, Board: &entityViewBoard{OrderBy: "manual", CardOrder: []string{"a", "b"}},
+	}}
+	if !validateEntityView("routes", &input) {
+		t.Fatal("valid card order rejected")
+	}
+	for _, ids := range [][]string{{"a", "a"}, {"bad\nvalue"}, {""}} {
+		input.Config.Board.CardOrder = ids
+		if validateEntityView("routes", &input) {
+			t.Fatal("invalid card order accepted")
+		}
+	}
+	input.Config.Board.CardOrder = make([]string, 5001)
+	for i := range input.Config.Board.CardOrder {
+		input.Config.Board.CardOrder[i] = fmt.Sprint(i)
+	}
+	if validateEntityView("routes", &input) {
+		t.Fatal("excessive card order accepted")
+	}
+}
 
 func TestEntityViewNewCollections(t *testing.T) {
 	for entity, config := range map[string]entityViewConfig{
@@ -49,7 +74,7 @@ func TestEntityViewValidation(t *testing.T) {
 		t.Fatal("valid board rejected")
 	}
 	for _, change := range []func(*entityViewInput){
-		func(v *entityViewInput) { v.Name = " " }, func(v *entityViewInput) { v.Visibility = "public" }, func(v *entityViewInput) { v.Config.Columns = []string{"name", "name"} }, func(v *entityViewInput) { v.Config.Columns = nil }, func(v *entityViewInput) { v.Config.Filters["date"] = "2026-02-30" }, func(v *entityViewInput) { v.Config.Filters["status"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["source"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["tripStatus"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["paymentMethod"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["unknown"] = "yes" }, func(v *entityViewInput) { v.Config.ColumnWidths["name"] = 20 }, func(v *entityViewInput) { v.Config.ColumnWidths["missing"] = 200 }, func(v *entityViewInput) { v.Config.PinnedColumns.Right = []string{"name"} }, func(v *entityViewInput) { v.Config.Sort.Direction = "sideways" }, func(v *entityViewInput) {
+		func(v *entityViewInput) { v.Name = " " }, func(v *entityViewInput) { v.Visibility = "public" }, func(v *entityViewInput) { v.Config.Columns = []string{"name", "name"} }, func(v *entityViewInput) { v.Config.Columns = nil }, func(v *entityViewInput) { v.Config.Filters["date"] = "2026-02-30" }, func(v *entityViewInput) { v.Config.Filters["status"] = "bad status!" }, func(v *entityViewInput) { v.Config.Filters["source"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["tripStatus"] = "bad status!" }, func(v *entityViewInput) { v.Config.Filters["paymentMethod"] = "unknown" }, func(v *entityViewInput) { v.Config.Filters["unknown"] = "yes" }, func(v *entityViewInput) { v.Config.ColumnWidths["name"] = 20 }, func(v *entityViewInput) { v.Config.ColumnWidths["missing"] = 200 }, func(v *entityViewInput) { v.Config.PinnedColumns.Right = []string{"name"} }, func(v *entityViewInput) { v.Config.Sort.Direction = "sideways" }, func(v *entityViewInput) {
 			v.Config.Card = &entityViewCard{Size: "huge", Rows: []entityViewCardRow{{Fields: []string{"name"}, Layout: "one"}}}
 		},
 		func(v *entityViewInput) { v.Config.Board = &entityViewBoard{OrderBy: "magic"} },

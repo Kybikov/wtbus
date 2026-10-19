@@ -22,6 +22,7 @@ export type BoardLayout = {
   hidden: string[]
   order: string[]
   orderBy: BoardOrderBy
+  cardOrder?: string[]
 }
 export type EntityViewConfig = {
   mode: EntityViewMode
@@ -68,18 +69,26 @@ export function cleanBoard(board?: BoardLayout): BoardLayout | undefined {
     order.push(id)
     if (order.length === 40) break
   }
+  const cardOrder = [...new Set(board?.cardOrder ?? [])]
+    .filter((id) => boardId.test(id))
+    .slice(0, 5000)
   const orderBy: BoardOrderBy =
     board?.orderBy === "name" || board?.orderBy === "count"
       ? board.orderBy
       : "manual"
-  if (!hidden.length && !order.length && orderBy === "manual") return undefined
-  return { hidden, order, orderBy }
+  if (
+    !hidden.length &&
+    !order.length &&
+    !cardOrder.length &&
+    orderBy === "manual"
+  )
+    return undefined
+  return { hidden, order, orderBy, ...(cardOrder.length ? { cardOrder } : {}) }
 }
 
-export function arrangeBoardGroups<T extends { id: string; label: string; count: number }>(
-  groups: T[],
-  board?: BoardLayout
-): T[] {
+export function arrangeBoardGroups<
+  T extends { id: string; label: string; count: number },
+>(groups: T[], board?: BoardLayout): T[] {
   const hidden = new Set(board?.hidden ?? [])
   const visible = groups.filter((group) => !hidden.has(group.id))
   if (board?.orderBy === "name") {
@@ -104,7 +113,9 @@ export function defaultCardLayout(columnIds: string[]): CardLayout {
     size: "sm",
     rows: [
       ...(title ? [{ fields: [title], layout: "title" as const }] : []),
-      ...rest.slice(0, 4).map((id) => ({ fields: [id], layout: "one" as const })),
+      ...rest
+        .slice(0, 4)
+        .map((id) => ({ fields: [id], layout: "one" as const })),
     ],
   }
 }
@@ -140,7 +151,8 @@ export function normalizeViewConfig(
   const sort =
     config.sort && visible.has(config.sort.columnId) ? config.sort : null
   const known = new Set(columnIds)
-  const rows: CardRow[] = (config.card?.rows ?? []).flatMap((row): CardRow[] => {
+  const rows: CardRow[] = (config.card?.rows ?? [])
+    .flatMap((row): CardRow[] => {
       const fields = row.fields.filter((id) => known.has(id))
       if (row.layout === "two") {
         const unique = [...new Set(fields)]
@@ -151,7 +163,8 @@ export function normalizeViewConfig(
       if (!fields.length) return []
       return [
         {
-          layout: row.layout === "title" ? ("title" as const) : ("one" as const),
+          layout:
+            row.layout === "title" ? ("title" as const) : ("one" as const),
           fields: [fields[0]],
         },
       ]
@@ -202,9 +215,10 @@ export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
       card: value.card ?? null,
       board: value.board
         ? {
-            hidden: [...value.board.hidden].sort(),
-            order: value.board.order,
-            orderBy: value.board.orderBy,
+            hidden: [...(value.board.hidden ?? [])].sort(),
+            order: value.board.order ?? [],
+            orderBy: value.board.orderBy ?? "manual",
+            cardOrder: value.board.cardOrder ?? [],
           }
         : null,
     })

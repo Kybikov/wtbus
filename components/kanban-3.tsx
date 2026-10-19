@@ -1,24 +1,36 @@
 "use client"
-import { Badge } from "@/components/ui/badge"
 
+// Adapted from the live React Bits Pro kanban-3 source (motion layout +
+// pointer/keyboard board), retaining our tenant workflows and shared controls.
 import * as React from "react"
 import { createPortal } from "react-dom"
-
+import {
+  AnimatePresence,
+  LayoutGroup,
+  motion,
+  useReducedMotion,
+} from "motion/react"
+import { GripVertical, LoaderCircle } from "lucide-react"
+import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { statusToneClass } from "@/lib/entity-columns"
+import {
+  kanbanScrollSpeed,
+  mergeCardOrder,
+  placeKanbanCard,
+  restoreKanbanCard,
+} from "@/lib/kanban"
 
-// Adapted from React Bits Pro App UI / Kanban 3.
-// Drag position stays on the DOM. React state changes only when the card
-// is dropped, so a full column does not re-render on every pointer move.
 export type ReactBitsKanbanTone =
   "neutral" | "info" | "warning" | "success" | "danger" | "violet"
-
 export type ReactBitsKanbanColumn = {
   id: string
   label: string
   description?: string
   tone?: ReactBitsKanbanTone
 }
-
 type Props<T> = {
   items: T[]
   columns: ReactBitsKanbanColumn[]
@@ -29,46 +41,50 @@ type Props<T> = {
   canMove?: (item: T) => boolean
   canMoveTo?: (item: T, group: string) => boolean
   onMove?: (item: T, group: string) => boolean | void | Promise<boolean | void>
+  onOrderChange?: (order: string[]) => void
+  cardOrder?: string[]
   onOpen?: (item: T) => void
   emptyText?: string
 }
-
+type Slot = { group: string; index: number }
+type Grab = {
+  id: string
+  origin: string
+  group: string
+  previous: string[]
+  order: string[]
+}
+type PointerDrag = {
+  id: string
+  origin: string
+  previous: string[]
+  dx: number
+  dy: number
+  width: number
+  startX: number
+  startY: number
+  x: number
+  y: number
+  pointerId: number
+  active: boolean
+  openOnClick: boolean
+}
 const PAGE = 40
-
-const toneStyles: Record<
-  ReactBitsKanbanTone,
-  { column: string; dot: string; count: string }
-> = {
-  neutral: {
-    column: "border-border bg-muted/30",
-    dot: "bg-muted-foreground",
-    count: "bg-muted text-muted-foreground",
-  },
-  info: {
-    column: "border-sky-500/20 bg-sky-500/[0.045]",
-    dot: "bg-sky-400",
-    count: "bg-sky-500/12 text-sky-300",
-  },
-  warning: {
-    column: "border-amber-500/20 bg-amber-500/[0.045]",
-    dot: "bg-amber-400",
-    count: "bg-amber-500/12 text-amber-300",
-  },
-  success: {
-    column: "border-emerald-500/20 bg-emerald-500/[0.045]",
-    dot: "bg-emerald-400",
-    count: "bg-emerald-500/12 text-emerald-300",
-  },
-  danger: {
-    column: "border-red-500/20 bg-red-500/[0.04]",
-    dot: "bg-red-400",
-    count: "bg-red-500/12 text-red-300",
-  },
-  violet: {
-    column: "border-violet-500/20 bg-violet-500/[0.045]",
-    dot: "bg-violet-400",
-    count: "bg-violet-500/12 text-violet-300",
-  },
+const columnTones: Record<ReactBitsKanbanTone, string> = {
+  neutral: "border-border bg-muted/30",
+  info: "border-sky-500/20 bg-sky-500/[0.045]",
+  warning: "border-amber-500/20 bg-amber-500/[0.045]",
+  success: "border-emerald-500/20 bg-emerald-500/[0.045]",
+  danger: "border-red-500/20 bg-red-500/[0.045]",
+  violet: "border-violet-500/20 bg-violet-500/[0.045]",
+}
+const dots: Record<ReactBitsKanbanTone, string> = {
+  neutral: "bg-muted-foreground",
+  info: "bg-sky-500",
+  warning: "bg-amber-500",
+  success: "bg-emerald-500",
+  danger: "bg-red-500",
+  violet: "bg-violet-500",
 }
 
 export default function ReactBitsKanban<T>({
@@ -81,492 +97,638 @@ export default function ReactBitsKanban<T>({
   canMove = () => true,
   canMoveTo = () => true,
   onMove,
+  onOrderChange,
+  cardOrder,
   onOpen,
-  emptyText = "Здесь пока ничего нет",
+  emptyText = "Нет записей",
 }: Props<T>) {
+  const uid = React.useId(),
+    reduce = useReducedMotion()
+  const instructions = React.useId()
   const itemById = React.useMemo(
     () => new Map(items.map((item) => [getId(item), item])),
-    [getId, items]
+    [items, getId]
   )
-  const itemIds = React.useMemo(() => items.map(getId), [getId, items])
-  const [order, setOrder] = React.useState(() => itemIds)
-  const [groups, setGroups] = React.useState<Record<string, string>>({})
+  const [localOrder, setLocalOrder] = React.useState<string[]>([])
+  const order = mergeCardOrder(cardOrder ?? localOrder, items.map(getId))
+  const [overrides, setOverrides] = React.useState<
+    Record<string, { from: string; to: string }>
+  >({})
+  const [pending, setPending] = React.useState<Set<string>>(() => new Set())
+  const busy = React.useRef(new Set<string>())
   const [dragId, setDragId] = React.useState<string | null>(null)
-  const [grabbedId, setGrabbedId] = React.useState<string | null>(null)
+  const [grab, setGrab] = React.useState<Grab | null>(null)
+  const [slot, setSlot] = React.useState<Slot | null>(null)
   const [shown, setShown] = React.useState<Record<string, number>>({})
   const [announcement, setAnnouncement] = React.useState("")
-  const [dropSlot, setDropSlot] = React.useState<{
-    group: string
-    index: number
-  } | null>(null)
+  const root = React.useRef<HTMLDivElement>(null),
+    viewport = React.useRef<HTMLDivElement>(null),
+    ghost = React.useRef<HTMLDivElement>(null)
+  const colRefs = React.useRef(new Map<string, HTMLElement>())
+  const drag = React.useRef<PointerDrag | null>(null),
+    drop = React.useRef<Slot | null>(null),
+    frame = React.useRef<number | null>(null)
+  const skipClick = React.useRef(false)
+  const model = React.useRef({ order, itemById, getGroup, onOrderChange })
+  React.useLayoutEffect(() => {
+    model.current = { order, itemById, getGroup, onOrderChange }
+  }, [order, itemById, getGroup, onOrderChange])
   const mounted = React.useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   )
-  const rootRef = React.useRef<HTMLDivElement>(null)
-  const ghostRef = React.useRef<HTMLDivElement>(null)
-  const columnRefs = React.useRef(new Map<string, HTMLElement>())
-  const dragRef = React.useRef<{
-    id: string
-    origin: string
-    dx: number
-    dy: number
-    width: number
-    active: boolean
-    startX: number
-    startY: number
-    pointerId: number
-    pointerType: string
-    hold: boolean
-    travel: number
-  } | null>(null)
-  const dropRef = React.useRef<{ group: string; index: number } | null>(null)
-  const keyboardOrigin = React.useRef<string | null>(null)
-  const skipClick = React.useRef(false)
-  const holdTimer = React.useRef<number | null>(null)
-
-  const effectiveOrder = React.useMemo(() => {
-    const seen = new Set(order)
-    return [
-      ...order.filter((id) => itemById.has(id)),
-      ...itemIds.filter((id) => !seen.has(id)),
-    ]
-  }, [itemById, itemIds, order])
-
-  const currentGroup = React.useCallback(
-    (id: string) => {
-      const item = itemById.get(id)
-      return groups[id] ?? (item ? getGroup(item) : "")
-    },
-    [getGroup, groups, itemById]
-  )
-
-  const cardsByColumn = React.useMemo(() => {
-    const result = new Map(columns.map((column) => [column.id, [] as string[]]))
-    for (const id of effectiveOrder) {
-      const group = currentGroup(id)
-      if (!result.has(group)) result.set(group, [])
-      result.get(group)?.push(id)
+  const groupOf = (id: string) => {
+    const item = itemById.get(id),
+      source = item ? getGroup(item) : ""
+    return overrides[id]?.from === source ? overrides[id].to : source
+  }
+  const displayedGroup = (id: string) =>
+    grab?.id === id ? grab.group : groupOf(id)
+  const displayedOrder = grab?.order ?? order
+  const groups = new Map(columns.map((column) => [column.id, [] as string[]]))
+  for (const id of displayedOrder) {
+    const group = displayedGroup(id)
+    if (!groups.has(group)) groups.set(group, [])
+    groups.get(group)!.push(id)
+  }
+  const visibleColumns: ReactBitsKanbanColumn[] = [
+    ...columns,
+    ...[...groups.keys()]
+      .filter((group) => !columns.some((c) => c.id === group))
+      .map((id) => ({ id, label: id })),
+  ]
+  const movable = (item: T) =>
+    Boolean(
+      (onMove || onOrderChange) && canMove(item) && !pending.has(getId(item))
+    )
+  const allowed = (item: T, group: string) =>
+    group === groupOf(getId(item)) || Boolean(onMove && canMoveTo(item, group))
+  const remember = (next: string[]) => {
+    setLocalOrder(next)
+    onOrderChange?.(next)
+  }
+  const focusHandle = (id: string) =>
+    requestAnimationFrame(() => {
+      const handle = root.current?.querySelector<HTMLElement>(
+        `[data-kanban-handle="${CSS.escape(id)}"]`
+      )
+      handle?.focus({ preventScroll: true })
+      handle?.scrollIntoView({ block: "nearest", inline: "nearest" })
+    })
+  async function commit(
+    id: string,
+    origin: string,
+    target: string,
+    next: string[],
+    previous: string[],
+    restoreFocus = false
+  ) {
+    const item = itemById.get(id)
+    if (!item || busy.current.has(id) || !allowed(item, target)) return
+    remember(next)
+    if (target === origin) {
+      setAnnouncement(`${getLabel(item)}: порядок изменён.`)
+      if (restoreFocus) focusHandle(id)
+      return
     }
-    return result
-  }, [columns, currentGroup, effectiveOrder])
-
-  const visibleColumns = React.useMemo(() => {
-    const result = [...columns]
-    for (const group of cardsByColumn.keys()) {
-      if (!result.some((column) => column.id === group)) {
-        result.push({ id: group, label: group })
-      }
-    }
-    return result
-  }, [cardsByColumn, columns])
-
-  const place = React.useCallback(
-    (id: string, group: string, index: number) => {
-      const item = itemById.get(id)
-      if (!item || !canMoveTo(item, group)) return false
-      setGroups((current) => ({ ...current, [id]: group }))
-      setOrder((current) => {
-        const seen = new Set(current)
-        const base = [
-          ...current.filter((candidate) => itemById.has(candidate)),
-          ...itemIds.filter((candidate) => !seen.has(candidate)),
-        ]
-        const without = base.filter((candidate) => candidate !== id)
-        const members = without.filter(
-          (candidate) =>
-            (groups[candidate] ??
-              (itemById.get(candidate)
-                ? getGroup(itemById.get(candidate)!)
-                : "")) === group
+    busy.current.add(id)
+    setPending((current) => new Set(current).add(id))
+    setOverrides((current) => ({
+      ...current,
+      [id]: { from: getGroup(item), to: target },
+    }))
+    let accepted = false
+    try {
+      accepted = (await onMove?.(item, target)) !== false
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Не удалось изменить статус."
+      )
+    } finally {
+      if (!accepted) {
+        const current = model.current
+        const restored = restoreKanbanCard(
+          mergeCardOrder(current.order, [...current.itemById.keys()]),
+          id,
+          previous
         )
-        const anchor = members[index]
-        const next = [...without]
-        if (anchor) next.splice(next.indexOf(anchor), 0, id)
-        else {
-          const last = members.at(-1)
-          next.splice(last ? next.indexOf(last) + 1 : next.length, 0, id)
-        }
+        setLocalOrder(restored)
+        current.onOrderChange?.(restored)
+      }
+      setOverrides((current) => {
+        const next = { ...current }
+        delete next[id]
         return next
       })
-      return true
-    },
-    [canMoveTo, getGroup, groups, itemById, itemIds]
-  )
-
-  const commitMove = React.useCallback(
-    async (id: string, origin: string, target = currentGroup(id)) => {
-      const item = itemById.get(id)
-      if (!item || target === origin || !onMove) return
-      const accepted = await onMove(item, target)
-      if (accepted === false) {
-        setGroups((current) => ({ ...current, [id]: origin }))
-        setAnnouncement(`${getLabel(item)} возвращён в колонку.`)
-      } else {
-        setAnnouncement(`${getLabel(item)} перемещён.`)
-      }
-    },
-    [currentGroup, getLabel, itemById, onMove]
-  )
-
-  const paintDrop = (group: string | null) => {
-    for (const [id, element] of columnRefs.current) {
-      element.dataset.drop = id === group ? "true" : "false"
+      busy.current.delete(id)
+      setPending((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+      setAnnouncement(
+        accepted
+          ? `${getLabel(item)} перемещён: ${visibleColumns.find((c) => c.id === target)?.label ?? target}.`
+          : `${getLabel(item)} возвращён в исходную колонку.`
+      )
+      if (restoreFocus) focusHandle(id)
     }
   }
-
-  const hideGhost = () => {
-    const ghost = ghostRef.current
-    if (!ghost) return
-    ghost.hidden = true
+  const paint = (group: string | null, valid = true) => {
+    for (const [id, element] of colRefs.current)
+      element.dataset.drop =
+        id === group ? (valid ? "allowed" : "blocked") : "none"
   }
-
-  const targetFromPoint = (clientX: number, clientY: number, id: string) => {
-    for (const [group, element] of columnRefs.current) {
-      const bounds = element.getBoundingClientRect()
-      if (
-        clientX < bounds.left ||
-        clientX > bounds.right ||
-        clientY < bounds.top ||
-        clientY > bounds.bottom
-      ) {
+  function targetAt(x: number, y: number, id: string): Slot | null {
+    const viewportBounds = viewport.current?.getBoundingClientRect()
+    if (
+      !viewportBounds ||
+      x < viewportBounds.left ||
+      x > viewportBounds.right ||
+      y < viewportBounds.top ||
+      y > viewportBounds.bottom
+    )
+      return null
+    for (const [group, element] of colRefs.current) {
+      const rect = element.getBoundingClientRect()
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
         continue
-      }
-      const cards = Array.from(
-        element.querySelectorAll<HTMLElement>("[data-kanban-card]")
-      ).filter((card) => card.dataset.kanbanCard !== id)
-      let index = cards.length
-      for (let position = 0; position < cards.length; position += 1) {
-        const cardBounds = cards[position].getBoundingClientRect()
-        if (clientY < cardBounds.top + cardBounds.height / 2) {
-          index = position
-          break
-        }
-      }
-      return { group, index }
+      const cards = [
+        ...element.querySelectorAll<HTMLElement>("[data-kanban-card]"),
+      ].filter((card) => card.dataset.kanbanCard !== id)
+      const index = cards.findIndex((card) => {
+        const r = card.getBoundingClientRect()
+        return y < r.top + r.height / 2
+      })
+      return { group, index: index < 0 ? cards.length : index }
     }
     return null
   }
-
-  const startPointerDrag = (
+  function updateDrop(d: PointerDrag) {
+    const target = targetAt(d.x, d.y, d.id),
+      item = itemById.get(d.id)
+    const valid = !!target && !!item && allowed(item, target.group)
+    paint(target?.group ?? null, valid)
+    drop.current = valid ? target : null
+    setSlot((current) =>
+      valid && target
+        ? current?.group === target.group && current.index === target.index
+          ? current
+          : target
+        : current === null
+          ? current
+          : null
+    )
+  }
+  function tick() {
+    const d = drag.current
+    if (!d?.active) return
+    if (ghost.current) {
+      ghost.current.style.width = `${d.width}px`
+      ghost.current.style.transform = `translate3d(${d.x - d.dx}px,${d.y - d.dy}px,0)`
+    }
+    const rail = viewport.current
+    if (rail) {
+      const r = rail.getBoundingClientRect()
+      rail.scrollLeft += kanbanScrollSpeed(d.x, r.left, r.right)
+    }
+    const target = targetAt(d.x, d.y, d.id)
+    const body =
+      target &&
+      colRefs.current
+        .get(target.group)
+        ?.querySelector<HTMLElement>("[data-kanban-body]")
+    if (body) {
+      const r = body.getBoundingClientRect()
+      body.scrollTop += kanbanScrollSpeed(d.y, r.top, r.bottom)
+      if (body.scrollTop + body.clientHeight >= body.scrollHeight - 30) {
+        const count = groups.get(target!.group)?.length ?? 0
+        setShown((current) => {
+          const limit = current[target!.group] ?? PAGE
+          return limit < count
+            ? { ...current, [target!.group]: Math.min(count, limit + PAGE) }
+            : current
+        })
+      }
+    }
+    updateDrop(d)
+    frame.current = requestAnimationFrame(tick)
+  }
+  function begin(
     event: React.PointerEvent<HTMLElement>,
-    id: string
-  ) => {
+    id: string,
+    handle = false
+  ) {
+    if (event.button !== 0 || drag.current || grab || busy.current.has(id))
+      return
     if (
-      (event.target as HTMLElement).closest(
-        "button,input,textarea,select,a,[data-no-drag]"
-      )
+      !handle &&
+      (event.pointerType !== "mouse" ||
+        (event.target as HTMLElement).closest(
+          "button,input,textarea,select,a,[role=checkbox],[data-no-drag]"
+        ))
     )
       return
-    const item = itemById.get(id)
-    if (!onMove || !item || !canMove(item) || event.button !== 0) return
-    const card = event.currentTarget.closest<HTMLElement>("[data-kanban-card]")
-    const root = rootRef.current
-    if (!card || !root) return
-    const bounds = card.getBoundingClientRect()
-    dragRef.current = {
+    const item = itemById.get(id),
+      card = event.currentTarget.closest<HTMLElement>("[data-kanban-card]")
+    if (!item || !movable(item) || !card) return
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = card.getBoundingClientRect()
+    drag.current = {
       id,
-      origin: currentGroup(id),
-      dx: event.clientX - bounds.left,
-      dy: event.clientY - bounds.top,
-      width: bounds.width,
-      active: false,
+      origin: groupOf(id),
+      previous: [...order],
+      dx: event.clientX - rect.left,
+      dy: event.clientY - rect.top,
+      width: rect.width,
       startX: event.clientX,
       startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
       pointerId: event.pointerId,
-      pointerType: event.pointerType,
-      hold: event.pointerType !== "touch",
-      travel: 0,
+      active: false,
+      openOnClick: !handle,
     }
-    if (holdTimer.current != null) window.clearTimeout(holdTimer.current)
-    if (event.pointerType === "touch") {
-      holdTimer.current = window.setTimeout(() => {
-        const drag = dragRef.current
-        if (drag?.id === id) drag.hold = true
-      }, 220)
+    root.current?.setPointerCapture(event.pointerId)
+    card
+      .querySelector<HTMLElement>("[data-kanban-handle]")
+      ?.focus({ preventScroll: true })
+  }
+  function move(event: React.PointerEvent) {
+    const d = drag.current
+    if (!d) return
+    d.x = event.clientX
+    d.y = event.clientY
+    if (!d.active && Math.hypot(d.x - d.startX, d.y - d.startY) >= 5) {
+      d.active = true
+      setDragId(d.id)
+      setAnnouncement("Карточка выбрана для перемещения.")
+      frame.current = requestAnimationFrame(tick)
     }
   }
-
-  const movePointer = (event: React.PointerEvent<HTMLElement>) => {
-    const drag = dragRef.current
-    const root = rootRef.current
-    const ghost = ghostRef.current
-    if (!drag || !root) return
-    const distance = Math.hypot(
-      event.clientX - drag.startX,
-      event.clientY - drag.startY
-    )
-    drag.travel = Math.max(drag.travel, distance)
-    if (!drag.hold) {
-      if (drag.pointerType === "touch" && distance > 8) {
-        skipClick.current = true
-        dragRef.current = null
-        if (holdTimer.current != null) window.clearTimeout(holdTimer.current)
-      }
-      return
-    }
-    if (!drag.active) {
-      if (distance < 5) return
-      drag.active = true
-      const ids = cardsByColumn.get(drag.origin) ?? []
-      setDropSlot({
-        group: drag.origin,
-        index: Math.max(0, ids.indexOf(drag.id)),
-      })
-      setDragId(drag.id)
-      root.setPointerCapture(event.pointerId)
-    }
-    if (!ghost) return
-    ghost.style.width = `${drag.width}px`
-    ghost.style.transform = `translate3d(${event.clientX - drag.dx}px, ${event.clientY - drag.dy}px, 0) rotate(-1.5deg) scale(1.02)`
-    const target = targetFromPoint(event.clientX, event.clientY, drag.id)
-    dropRef.current = target
-    paintDrop(target?.group ?? null)
-    if (!target) return
-    setDropSlot((current) =>
-      current?.group === target.group && current.index === target.index
-        ? current
-        : target
-    )
-  }
-
-  const endPointerDrag = () => {
-    const drag = dragRef.current
-    if (!drag) return
-    const target = dropRef.current
-    const moved = drag.active
-    dragRef.current = null
-    dropRef.current = null
-    if (holdTimer.current != null) window.clearTimeout(holdTimer.current)
-    if (moved || drag.travel > 5) skipClick.current = true
-    const root = rootRef.current
-    if (root?.hasPointerCapture(drag.pointerId)) {
-      root.releasePointerCapture(drag.pointerId)
-    }
-    hideGhost()
-    paintDrop(null)
-    if (moved && target) {
-      const accepted = place(drag.id, target.group, target.index)
-      if (accepted) void commitMove(drag.id, drag.origin, target.group)
+  function finish(cancel = false) {
+    const d = drag.current
+    if (!d) return
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    frame.current = null
+    if (d.active) updateDrop(d)
+    const target = drop.current
+    drag.current = null
+    drop.current = null
+    paint(null)
+    if (root.current?.hasPointerCapture(d.pointerId))
+      root.current.releasePointerCapture(d.pointerId)
+    if (d.active || d.openOnClick) {
+      skipClick.current = true
+      window.setTimeout(() => {
+        skipClick.current = false
+      }, 0)
     }
     setDragId(null)
-    setDropSlot(null)
+    setSlot(null)
+    if (!cancel && !d.active && d.openOnClick) {
+      const item = itemById.get(d.id)
+      if (item) onOpen?.(item)
+    } else if (!cancel && d.active && target) {
+      const next = placeKanbanCard(
+        order,
+        d.id,
+        target.group,
+        target.index,
+        groupOf
+      )
+      void commit(d.id, d.origin, target.group, next, d.previous)
+    } else if (d.active) setAnnouncement("Перемещение отменено.")
   }
-
-  const moveWithKeyboard = (
-    event: React.KeyboardEvent<HTMLElement>,
-    id: string
-  ) => {
-    const item = itemById.get(id)
-    if (!onMove || !item || !canMove(item)) return
-    const group = currentGroup(id)
-    const cardIds = cardsByColumn.get(group) ?? []
-    const cardIndex = cardIds.indexOf(id)
-    const columnIndex = visibleColumns.findIndex(
-      (column) => column.id === group
+  React.useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+    },
+    []
+  )
+  React.useLayoutEffect(() => {
+    if (!grab) return
+    const handle = root.current?.querySelector<HTMLElement>(
+      `[data-kanban-handle="${CSS.escape(grab.id)}"]`
     )
-
-    if (event.key === " " || event.key === "Enter") {
+    handle?.focus({ preventScroll: true })
+    handle?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  }, [grab])
+  function keyboard(event: React.KeyboardEvent, id: string) {
+    const item = itemById.get(id)
+    if (!item || !movable(item)) return
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
-      if (grabbedId === id) {
-        setGrabbedId(null)
-        void commitMove(id, keyboardOrigin.current ?? group)
-        keyboardOrigin.current = null
+      event.stopPropagation()
+      if (grab?.id === id) {
+        setGrab(null)
+        void commit(
+          id,
+          grab.origin,
+          grab.group,
+          grab.order,
+          grab.previous,
+          true
+        )
       } else {
-        keyboardOrigin.current = group
-        setGrabbedId(id)
-        setAnnouncement(`${getLabel(item)} выбран для перемещения.`)
+        setGrab({
+          id,
+          origin: groupOf(id),
+          group: groupOf(id),
+          previous: [...order],
+          order: [...order],
+        })
+        setAnnouncement(
+          "Используйте стрелки для перемещения. Enter — подтвердить, Escape — отменить."
+        )
       }
       return
     }
-    if (event.key === "Escape" && grabbedId === id) {
+    if (grab?.id !== id) return
+    if (event.key === "Escape") {
       event.preventDefault()
-      const origin = keyboardOrigin.current
-      if (origin) setGroups((current) => ({ ...current, [id]: origin }))
-      keyboardOrigin.current = null
-      setGrabbedId(null)
+      event.stopPropagation()
+      setGrab(null)
       setAnnouncement("Перемещение отменено.")
+      focusHandle(id)
       return
     }
-    if (grabbedId !== id) return
-
-    let handled = true
-    if (event.key === "ArrowLeft" && columnIndex > 0) {
-      const next = visibleColumns[columnIndex - 1].id
-      place(id, next, (cardsByColumn.get(next) ?? []).length)
-    } else if (
-      event.key === "ArrowRight" &&
-      columnIndex < visibleColumns.length - 1
-    ) {
-      const next = visibleColumns[columnIndex + 1].id
-      place(id, next, (cardsByColumn.get(next) ?? []).length)
-    } else if (event.key === "ArrowUp" && cardIndex > 0) {
-      place(id, group, cardIndex - 1)
-    } else if (event.key === "ArrowDown" && cardIndex < cardIds.length - 1) {
-      place(id, group, cardIndex + 1)
-    } else handled = false
-    if (handled) event.preventDefault()
+    const columnIndex = visibleColumns.findIndex((c) => c.id === grab.group)
+    const members = grab.order.filter(
+      (candidate) =>
+        (candidate === id ? grab.group : groupOf(candidate)) === grab.group
+    )
+    const index = members.indexOf(id)
+    let group = grab.group,
+      position = index
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const direction = event.key === "ArrowLeft" ? -1 : 1
+      let nextIndex = columnIndex + direction
+      while (
+        visibleColumns[nextIndex] &&
+        !allowed(item, visibleColumns[nextIndex].id)
+      )
+        nextIndex += direction
+      const column = visibleColumns[nextIndex]
+      if (!column) {
+        event.preventDefault()
+        return
+      }
+      group = column.id
+      position =
+        groups.get(group)?.filter((candidate) => candidate !== id).length ?? 0
+    } else if (event.key === "ArrowUp") position = Math.max(0, index - 1)
+    else if (event.key === "ArrowDown")
+      position = Math.min(members.length - 1, index + 1)
+    else return
+    event.preventDefault()
+    event.stopPropagation()
+    setGrab({
+      ...grab,
+      group,
+      order: placeKanbanCard(grab.order, id, group, position, groupOf),
+    })
+    setAnnouncement(
+      `${getLabel(item)}: ${visibleColumns.find((c) => c.id === group)?.label ?? group}, позиция ${position + 1}.`
+    )
   }
-
   return (
     <div
-      className={cn(
-        "relative min-h-[28rem] w-full overflow-hidden",
-        dragId && "touch-none select-none"
-      )}
-      onLostPointerCapture={endPointerDrag}
-      onPointerCancel={endPointerDrag}
-      onPointerMove={movePointer}
-      onPointerUp={endPointerDrag}
-      ref={rootRef}
+      ref={root}
+      className="relative w-full min-w-0"
+      data-kanban-board
+      onPointerMove={move}
+      onPointerUp={() => finish()}
+      onPointerCancel={() => finish(true)}
+      onLostPointerCapture={() => finish(true)}
+      onKeyDownCapture={(event) => {
+        if (event.key === "Escape" && drag.current) {
+          event.preventDefault()
+          event.stopPropagation()
+          finish(true)
+        }
+      }}
     >
-      <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-2">
-        {visibleColumns.map((column) => {
-          const ids = cardsByColumn.get(column.id) ?? []
-          const ordered =
-            dragId && dropSlot
-              ? (() => {
-                  const rest = ids.filter((id) => id !== dragId)
-                  if (dropSlot.group !== column.id) return rest
-                  const next = [...rest]
-                  next.splice(
-                    Math.max(0, Math.min(dropSlot.index, next.length)),
-                    0,
-                    dragId
-                  )
-                  return next
-                })()
-              : ids
-          const limit = Math.max(
-            shown[column.id] ?? PAGE,
-            dragId && dropSlot && dropSlot.group === column.id
-              ? dropSlot.index + 1
-              : 0
-          )
-          const visibleIds = ordered.slice(0, limit)
-          const tone = toneStyles[column.tone ?? "neutral"]
-          return (
-            <section
-              aria-label={column.label}
-              className={cn(
-                "flex min-h-[26rem] w-[min(20rem,calc(100vw-3rem))] shrink-0 snap-start flex-col rounded-[var(--rb-r-2xl)] border p-1.5 data-[drop=true]:ring-2 data-[drop=true]:ring-primary/40",
-                tone.column
-              )}
-              data-drop="false"
-              key={column.id}
-              ref={(element) => {
-                if (element) columnRefs.current.set(column.id, element)
-                else columnRefs.current.delete(column.id)
-              }}
-            >
-              <div className="flex min-h-12 shrink-0 items-center gap-2 px-2 py-1.5">
-                <span className={cn("h-2 w-2 rounded-full", tone.dot)} />
-                <span className="truncate text-sm font-semibold">
-                  {column.label}
-                </span>
-                <Badge
-                  variant="secondary"
-                  className={cn("ml-auto tabular-nums", tone.count)}
+      <p id={instructions} className="sr-only">
+        Перетащите карточку за ручку. С клавиатуры: пробел, стрелки, Enter.
+        Escape отменяет перемещение.
+      </p>
+      <div
+        ref={viewport}
+        className={cn(
+          "flex h-[clamp(22rem,calc(100dvh-16rem),64rem)] w-full gap-3 overflow-x-auto overflow-y-hidden pb-2",
+          !dragId && "snap-x snap-proximity"
+        )}
+        data-kanban-viewport
+      >
+        <LayoutGroup id={uid}>
+          {visibleColumns.map((column) => {
+            const ids = groups.get(column.id) ?? [],
+              tone = column.tone ?? "neutral"
+            let ordered = ids
+            if (dragId && slot) {
+              ordered = ids.filter((id) => id !== dragId)
+              if (slot.group === column.id)
+                ordered = [
+                  ...ordered.slice(0, slot.index),
+                  dragId,
+                  ...ordered.slice(slot.index),
+                ]
+            }
+            const limit = Math.max(
+              shown[column.id] ?? PAGE,
+              slot?.group === column.id ? slot.index + 1 : 0
+            )
+            return (
+              <section
+                key={column.id}
+                aria-label={column.label}
+                data-kanban-column={column.id}
+                data-drop="none"
+                ref={(el) => {
+                  if (el) colRefs.current.set(column.id, el)
+                  else colRefs.current.delete(column.id)
+                }}
+                className={cn(
+                  "flex h-full w-[min(20rem,calc(100vw-3rem))] shrink-0 snap-start flex-col overflow-hidden rounded-[var(--rb-r-xl)] border transition-[border-color,box-shadow] data-[drop=allowed]:ring-2 data-[drop=allowed]:ring-primary/40 data-[drop=blocked]:ring-2 data-[drop=blocked]:ring-destructive/40 motion-reduce:transition-none",
+                  columnTones[tone]
+                )}
+              >
+                <header className="flex min-h-12 shrink-0 items-center gap-2 px-3">
+                  <span className={cn("size-2 rounded-full", dots[tone])} />
+                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
+                    {column.label}
+                  </h3>
+                  <Badge
+                    variant="secondary"
+                    className={cn("tabular-nums", statusToneClass(tone))}
+                  >
+                    {ordered.length}
+                  </Badge>
+                </header>
+                <div
+                  data-kanban-body
+                  className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2 pb-2"
                 >
-                  {ordered.length}
-                </Badge>
-                {column.description ? (
-                  <span className="sr-only">{column.description}</span>
-                ) : null}
-              </div>
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-1 pt-0">
-                {visibleIds.map((id) => {
-                  const item = itemById.get(id)
-                  if (!item) return null
-                  const movable = Boolean(onMove && canMove(item))
-                  const dragging = dragId === id
-                  const grabbed = grabbedId === id
-                  return (
-                    <div
-                      className={cn(
-                        "rounded-[var(--rb-r-lg)] border border-border/80 bg-card text-left shadow-sm transition-[border-color,background-color,box-shadow] duration-200 ease-out",
-                        (movable || onOpen) &&
-                          "cursor-pointer select-none hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-primary",
-                        grabbed && "border-primary ring-2 ring-primary/20",
-                        dragging &&
-                          "border-dashed border-primary/50 bg-primary/10 shadow-none"
-                      )}
-                      data-kanban-card={id}
-                      key={id}
-                      onClick={(event) => {
-                        if (skipClick.current) {
-                          skipClick.current = false
-                          return
-                        }
-                        if (
-                          (event.target as HTMLElement).closest(
-                            "button,a,input,textarea,select,[role=checkbox],[data-no-drag]"
+                  {ordered.slice(0, limit).map((id) => {
+                    const item = itemById.get(id)
+                    if (!item) return null
+                    const enabled = movable(item),
+                      dragging = dragId === id,
+                      isGrabbed = grab?.id === id
+                    return (
+                      <motion.article
+                        key={id}
+                        layout={reduce ? false : "position"}
+                        layoutId={reduce ? undefined : `${uid}-${id}`}
+                        transition={{
+                          type: "spring",
+                          bounce: 0,
+                          duration: 0.3,
+                        }}
+                        data-kanban-card={id}
+                        aria-busy={pending.has(id) || undefined}
+                        tabIndex={onOpen ? 0 : undefined}
+                        aria-label={getLabel(item)}
+                        onPointerDown={(event) => begin(event, id)}
+                        onKeyDown={(event) => {
+                          if (
+                            event.target === event.currentTarget &&
+                            event.key === "Enter"
+                          ) {
+                            event.preventDefault()
+                            onOpen?.(item)
+                          }
+                        }}
+                        onClick={(event) => {
+                          if (skipClick.current) return
+                          if (
+                            !(event.target as HTMLElement).closest(
+                              "button,a,input,textarea,select,[role=checkbox],[data-no-drag]"
+                            )
                           )
-                        )
-                          return
-                        onOpen?.(item)
-                      }}
-                      onKeyDown={(event) => moveWithKeyboard(event, id)}
-                      onKeyUp={(event) => {
-                        if (event.key === " " || event.key === "Enter") {
-                          event.preventDefault()
-                        }
-                      }}
-                      onPointerDown={(event) => startPointerDrag(event, id)}
-                      role={movable || onOpen ? "button" : undefined}
-                      tabIndex={movable || onOpen ? 0 : undefined}
-                    >
-                      <div
+                            onOpen?.(item)
+                        }}
                         className={cn(
-                          dragging && "pointer-events-none opacity-40"
+                          "relative rounded-[var(--rb-r-lg)] border border-border/80 bg-card shadow-sm transition-[border-color,box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                          onOpen && "cursor-pointer hover:border-primary/35",
+                          dragging &&
+                            "border-dashed border-primary/60 bg-primary/10 shadow-none",
+                          isGrabbed && "ring-2 ring-primary/40"
                         )}
                       >
-                        {renderCard(item)}
-                      </div>
+                        <div
+                          className={cn(
+                            "flex min-h-7 items-center justify-end px-1.5 pt-1",
+                            dragging && "opacity-0"
+                          )}
+                        >
+                          {pending.has(id) ? (
+                            <span className="mr-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <LoaderCircle className="size-3 animate-spin" />
+                              Сохраняем…
+                            </span>
+                          ) : enabled ? (
+                            <button
+                              type="button"
+                              data-kanban-handle={id}
+                              aria-label={`Переместить ${getLabel(item)}`}
+                              aria-describedby={instructions}
+                              aria-pressed={isGrabbed}
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(event) => begin(event, id, true)}
+                              onKeyDown={(event) => keyboard(event, id)}
+                              className="grid size-10 cursor-grab touch-none place-items-center rounded-md text-muted-foreground outline-none hover:bg-control-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing sm:size-7"
+                            >
+                              <GripVertical className="size-4" />
+                            </button>
+                          ) : null}
+                        </div>
+                        <div
+                          className={cn(
+                            dragging && "pointer-events-none opacity-25"
+                          )}
+                        >
+                          {renderCard(item)}
+                        </div>
+                      </motion.article>
+                    )
+                  })}
+                  {ordered.length > limit && (
+                    <Button
+                      className="w-full"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setShown((current) => ({
+                          ...current,
+                          [column.id]: limit + PAGE,
+                        }))
+                      }
+                    >
+                      Ещё {ordered.length - limit}
+                    </Button>
+                  )}
+                  {!ordered.length && (
+                    <div className="grid min-h-28 place-items-center rounded-xl border border-dashed border-border/80 px-3 text-center text-xs text-muted-foreground">
+                      {dragId ? "Перетащите карточку сюда" : emptyText}
                     </div>
-                  )
-                })}
-                {ordered.length > visibleIds.length ? (
-                  <button
-                    className="w-full rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-muted"
-                    onClick={() =>
-                      setShown((current) => ({
-                        ...current,
-                        [column.id]: (current[column.id] ?? PAGE) + PAGE,
-                      }))
-                    }
-                    type="button"
-                  >
-                    Ещё {ordered.length - visibleIds.length}
-                  </button>
-                ) : null}
-                {ordered.length === 0 ? (
-                  <p className="px-3 py-8 text-center text-xs text-muted-foreground">
-                    {emptyText}
-                  </p>
-                ) : null}
-              </div>
-            </section>
-          )
-        })}
+                  )}
+                </div>
+              </section>
+            )
+          })}
+        </LayoutGroup>
       </div>
-      {mounted
-        ? createPortal(
-            <div
-              aria-hidden
-              className="pointer-events-none fixed top-0 left-0 z-[80] rounded-[var(--rb-r-lg)] border border-primary/40 bg-card shadow-2xl will-change-transform"
-              hidden={!dragId}
-              ref={ghostRef}
-            >
-              {dragId && itemById.get(dragId)
-                ? renderCard(itemById.get(dragId)!)
-                : null}
-            </div>,
-            document.body
-          )
-        : null}
-      <p aria-live="polite" className="sr-only">
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {dragId && itemById.has(dragId) && (
+              <motion.div
+                key="ghost"
+                ref={(element) => {
+                  ghost.current = element
+                  const d = drag.current
+                  if (element && d) {
+                    element.style.width = `${d.width}px`
+                    element.style.transform = `translate3d(${d.x - d.dx}px,${d.y - d.dy}px,0)`
+                  }
+                }}
+                aria-hidden
+                inert
+                data-kanban-overlay
+                initial={{ opacity: 0.8 }}
+                animate={{ opacity: 1 }}
+                exit={{
+                  opacity: 0,
+                  transition: { duration: reduce ? 0 : 0.12 },
+                }}
+                className="pointer-events-none fixed top-0 left-0 z-[80] will-change-transform"
+              >
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-[var(--rb-r-lg)] border border-primary/40 bg-card shadow-2xl",
+                    !reduce && "scale-[1.02] rotate-[-1.5deg]"
+                  )}
+                >
+                  <div className="flex h-8 items-center justify-end px-3 text-muted-foreground">
+                    <GripVertical className="size-4" />
+                  </div>
+                  {renderCard(itemById.get(dragId)!)}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+      <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
         {announcement}
       </p>
     </div>

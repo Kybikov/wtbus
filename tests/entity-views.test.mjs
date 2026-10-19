@@ -6,6 +6,40 @@ import {
   sameViewConfig,
 } from "../lib/entity-views.ts"
 
+test("saved kanban views preserve and compare card order independently of column order", () => {
+  const config = {
+    mode: "kanban",
+    columns: ["name"],
+    filters: {},
+    board: {
+      hidden: [],
+      order: ["new"],
+      orderBy: "manual",
+      cardOrder: ["b", "a", "b", "bad\nvalue"],
+    },
+  }
+  const clean = normalizeViewConfig(config, ["kanban"], ["name"], ["name"], [])
+  assert.deepEqual(clean.board.cardOrder, ["b", "a"])
+  assert.equal(
+    sameViewConfig(clean, {
+      ...clean,
+      board: { ...clean.board, cardOrder: ["a", "b"] },
+    }),
+    false
+  )
+  assert.equal(
+    sameViewConfig(clean, { ...clean, board: { ...clean.board } }),
+    true
+  )
+  assert.equal(
+    sameViewConfig(clean, {
+      ...clean,
+      board: { order: ["new"], orderBy: "manual", cardOrder: ["b", "a"] },
+    }),
+    true
+  )
+})
+
 test("saved views survive removed columns, modes and filters without an empty table", () => {
   const saved = {
     mode: "kanban",

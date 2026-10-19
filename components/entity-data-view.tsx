@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { entityDetailHref } from "@/lib/entity-details"
+import { mergeVisibleCardOrder } from "@/lib/kanban"
 import { createPortal } from "react-dom"
 import { serializeViewCsv } from "@/lib/admin-actions"
 import { EntityExportContext } from "@/components/entity-export-context"
@@ -563,41 +564,46 @@ export function EntityDataView<T>({
         {!cardLayout && renderCard
           ? renderCard(item)
           : activeCard.rows.map((row, index) => {
-            const fields = row.fields
-              .map((id) => columnById.get(id))
-              .filter((column) => column != null)
-            if (!fields.length) return null
-            if (row.layout === "title") {
-              return (
-                <p className="truncate font-semibold" key={index}>
-                  {fields[0].value(item)}
-                </p>
-              )
-            }
-            if (row.layout === "two") {
-              return (
-                <div className="grid grid-cols-2 gap-2" key={index}>
-                  {fields.slice(0, 2).map((column) => (
-                    <div className="min-w-0" key={column.id}>
-                      <div className="truncate text-muted-foreground">
-                        {column.label}
+              const fields = row.fields
+                .map((id) => columnById.get(id))
+                .filter((column) => column != null)
+              if (!fields.length) return null
+              if (row.layout === "title") {
+                return (
+                  <p className="truncate font-semibold" key={index}>
+                    {fields[0].value(item)}
+                  </p>
+                )
+              }
+              if (row.layout === "two") {
+                return (
+                  <div className="grid grid-cols-2 gap-2" key={index}>
+                    {fields.slice(0, 2).map((column) => (
+                      <div className="min-w-0" key={column.id}>
+                        <div className="truncate text-muted-foreground">
+                          {column.label}
+                        </div>
+                        <div className="truncate">{column.value(item)}</div>
                       </div>
-                      <div className="truncate">{column.value(item)}</div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )
+              }
+              const column = fields[0]
+              return (
+                <div
+                  className="flex items-baseline justify-between gap-3"
+                  key={index}
+                >
+                  <span className="truncate text-muted-foreground">
+                    {column.label}
+                  </span>
+                  <span className="truncate text-right">
+                    {column.value(item)}
+                  </span>
                 </div>
               )
-            }
-            const column = fields[0]
-            return (
-              <div className="flex items-baseline justify-between gap-3" key={index}>
-                <span className="truncate text-muted-foreground">
-                  {column.label}
-                </span>
-                <span className="truncate text-right">{column.value(item)}</span>
-              </div>
-            )
-          })}
+            })}
       </div>
     </div>
   )
@@ -635,6 +641,8 @@ export function EntityDataView<T>({
         onChange={applyConfig}
         modes={modes}
         columns={columns}
+        resultCount={items.length}
+        loading={loading}
         filters={filters}
         extras={toolbarExtras}
         bulkActions={bulkActions}
@@ -672,9 +680,23 @@ export function EntityDataView<T>({
           </div>
         ) : mode === "schedule" && renderSchedule ? (
           renderSchedule(items)
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && mode !== "kanban" ? (
           <div className="surface-card p-8 text-center text-sm text-muted-foreground">
-            {emptyText}
+            <p>
+              {Object.values(values).some(Boolean)
+                ? "Нет записей по выбранным фильтрам."
+                : emptyText}
+            </p>
+            {Object.values(values).some(Boolean) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => applyConfig({ ...config, filters: {} })}
+              >
+                Сбросить фильтры
+              </Button>
+            )}
           </div>
         ) : mode === "table" ? (
           <>
@@ -1082,7 +1104,6 @@ export function EntityDataView<T>({
           </div>
         ) : mode === "kanban" ? (
           <ReactBitsKanban
-            key={`${sort?.columnId ?? ""}:${sort?.direction ?? ""}`}
             canMove={canMoveInKanban}
             canMoveTo={canMoveToKanbanGroup}
             columns={visibleBoardGroups}
@@ -1090,7 +1111,23 @@ export function EntityDataView<T>({
             getGroup={groupOf}
             getId={getId}
             getLabel={getLabel}
-            items={items.filter((item) => !hiddenBoardGroups.has(groupOf(item)))}
+            items={items.filter(
+              (item) => !hiddenBoardGroups.has(groupOf(item))
+            )}
+            cardOrder={sort ? items.map(getId) : (board?.cardOrder ?? [])}
+            onOrderChange={(cardOrder) => {
+              setSort(null)
+              setBoard((current) => ({
+                ...current,
+                hidden: current?.hidden ?? [],
+                order: current?.order ?? [],
+                orderBy: current?.orderBy ?? "manual",
+                cardOrder: mergeVisibleCardOrder(
+                  current?.cardOrder ?? [],
+                  cardOrder
+                ),
+              }))
+            }}
             onMove={onKanbanGroupChange}
             onOpen={
               detailEnabled

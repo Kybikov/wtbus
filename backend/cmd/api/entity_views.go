@@ -25,9 +25,10 @@ type entityViewConfig struct {
 }
 
 type entityViewBoard struct {
-	Hidden  []string `json:"hidden,omitempty"`
-	Order   []string `json:"order,omitempty"`
-	OrderBy string   `json:"orderBy,omitempty"`
+	CardOrder []string `json:"cardOrder,omitempty"`
+	Hidden    []string `json:"hidden,omitempty"`
+	Order     []string `json:"order,omitempty"`
+	OrderBy   string   `json:"orderBy,omitempty"`
 }
 
 type entityViewCard struct {
@@ -71,6 +72,23 @@ type entityViewInput struct {
 }
 
 var entityColumnID = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,100}$`)
+var entityViewStatusKey = regexp.MustCompile(`^[a-z][a-z0-9_]{0,79}$`)
+
+func entityViewWorkflowEntity(entity, filter string) string {
+	if entity == "bookings" && filter == "tripStatus" {
+		return "trips"
+	}
+	if filter != "status" {
+		return ""
+	}
+	switch entity {
+	case "routes", "trips", "bookings", "requests":
+		return entity
+	case "fleet":
+		return "vehicles"
+	}
+	return ""
+}
 
 func validBoardIDs(ids []string) bool {
 	seen := map[string]bool{}
@@ -146,10 +164,10 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 		if board.OrderBy != "" && board.OrderBy != "manual" && board.OrderBy != "name" && board.OrderBy != "count" {
 			return false
 		}
-		if len(board.Hidden) > 40 || len(board.Order) > 40 {
+		if len(board.Hidden) > 40 || len(board.Order) > 40 || len(board.CardOrder) > 5000 {
 			return false
 		}
-		if !validBoardIDs(board.Hidden) || !validBoardIDs(board.Order) {
+		if !validBoardIDs(board.Hidden) || !validBoardIDs(board.Order) || !validBoardIDs(board.CardOrder) {
 			return false
 		}
 	}
@@ -194,28 +212,23 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 				_, err := time.Parse("2006-01-02", value)
 				valid = err == nil
 			}
-			if key == "status" {
-				valid = value == "pending" || value == "awaiting_payment" || value == "cash_on_boarding" || value == "confirmed" || value == "cancelled" || value == "completed" || value == "expired"
-			}
 			if key == "source" {
 				valid = value == "telegram" || value == "dispatcher" || value == "import" || value == "web"
-			}
-			if key == "tripStatus" {
-				valid = value == "draft" || value == "new" || value == "assigned" || value == "in_progress" || value == "completed" || value == "cancelled"
 			}
 			if key == "paymentMethod" {
 				valid = value == "cash_on_boarding" || value == "cash" || value == "bank_transfer" || value == "none"
 			}
 		case "routes", "fleet":
 			valid = key == "active" && (value == "active" || value == "inactive")
-		case "requests":
-			valid = key == "status" && (value == "new" || value == "in_progress" || value == "awaiting_trip" || value == "booking_created" || value == "closed" || value == "cancelled")
 		case "availability":
 			valid = key == "scope" && (value == "all" || value == "route")
 		case "trips":
-			valid = (key == "kind" && (value == "regular" || value == "individual")) || (key == "status" && (value == "draft" || value == "new" || value == "assigned" || value == "in_progress" || value == "completed" || value == "cancelled"))
+			valid = key == "kind" && (value == "regular" || value == "individual")
 		case "cash-balances":
 			valid = key == "currency" && (value == "EUR" || value == "UAH" || value == "USD" || value == "PLN")
+		}
+		if entityViewWorkflowEntity(entity, key) != "" {
+			valid = entityViewStatusKey.MatchString(value)
 		}
 		if !valid {
 			return false
@@ -284,11 +297,27 @@ func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
 	}
 	var input entityViewInput
 	if r.Method != "DELETE" {
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
+		// A saved board may include up to 5,000 card IDs alongside its layout.
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&input); err != nil || !validateEntityView(entity, &input) {
 			writeJSON(w, 400, map[string]string{"error": "Перевірте назву та параметри виду."})
 			return
+		}
+		for key, value := range input.Config.Filters {
+			workflow := entityViewWorkflowEntity(entity, key)
+			if workflow == "" {
+				continue
+			}
+			_, exists, err := app.workflowStatus(r.Context(), company.ID, workflow, value)
+			if err != nil {
+				app.publicFailure(w, err)
+				return
+			}
+			if !exists {
+				writeJSON(w, 400, map[string]string{"error": "Выберите существующий статус."})
+				return
+			}
 		}
 	}
 	tx, err := app.db.Begin(r.Context())
