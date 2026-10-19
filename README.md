@@ -101,6 +101,11 @@ layers. Keep build cache enabled and avoid **Force rebuild** for normal releases
 The first build warms the npm, Next.js and Go caches; subsequent source changes
 reuse them while keeping TypeScript validation in the production build.
 
+Coolify's Compose deployment checks the API's `/readyz` before starting web and
+checks web's local `/api/health` endpoint. These checks need no staff session or
+Telegram connection. Startup probes run every two seconds; after startup, probes
+run every thirty seconds to avoid adding idle load.
+
 Inspect cache with `docker buildx du --builder vivatbus`. If the builder needs to
 be recreated, use `docker buildx rm --keep-state vivatbus` to retain its cache.
 For a new application UUID, adjust `--project-name` in the command above.
