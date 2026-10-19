@@ -7,7 +7,6 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Calendar01Icon, Wallet01Icon } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -265,7 +264,7 @@ export function FinanceDashboard() {
       refreshing={loading}
       pageDescription="Выручка, касса водителей и расходы"
       pageTitle="Деньги в работе"
-      utilities={<ThemeCustomizer />}
+
     >
       <div className="w-full min-w-0 space-y-5">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">

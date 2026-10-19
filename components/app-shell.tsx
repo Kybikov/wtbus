@@ -24,7 +24,8 @@ import {
   UserGroupIcon,
   Wallet01Icon,
 } from "@hugeicons/core-free-icons"
-import { MoreHorizontal } from "lucide-react"
+import { MoreHorizontal, Sun, Moon } from "lucide-react"
+import { useTheme } from "next-themes"
 import {
   Popover,
   PopoverContent,
@@ -399,6 +400,7 @@ export function AppShell({
   collectionFooter = false,
 }: AppShellProps) {
   const pathname = usePathname()
+  const { resolvedTheme, setTheme } = useTheme()
   const router = useRouter()
   const [footerHost, setFooterHost] = React.useState<HTMLDivElement | null>(
     null
@@ -645,7 +647,9 @@ export function AppShell({
         if (
           realtimeRefresh.current &&
           pathname !== "/profile" &&
-          pathname !== "/settings"
+          !pathname.startsWith("/profile/") &&
+          pathname !== "/settings" &&
+          !pathname.startsWith("/settings/")
         )
           await realtimeRefresh.current()
       } catch {
@@ -687,9 +691,6 @@ export function AppShell({
         new URLSearchParams(href.split("?")[1]).get("q") ?? ""
       )
     router.push(href)
-  }
-  const openInterfaceSettings = () => {
-    window.dispatchEvent(new Event("vivat-open-interface-settings"))
   }
   const signOut = async () => {
     await sessionFetch("/api/auth/logout", { method: "POST" }).catch(
@@ -1021,8 +1022,22 @@ export function AppShell({
                   >
                     Страница бронирования
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={openInterfaceSettings}>
-                    Интерфейс
+                  <DropdownMenuItem
+                    render={<Link href="/profile/personalization" />}
+                  >
+                    Персонализация
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      setTheme(resolvedTheme === "dark" ? "light" : "dark")
+                    }
+                  >
+                    {resolvedTheme === "dark" ? (
+                      <Sun className="size-4" />
+                    ) : (
+                      <Moon className="size-4" />
+                    )}
+                    {resolvedTheme === "dark" ? "Светлая тема" : "Тёмная тема"}
                   </DropdownMenuItem>
                   {managementRoles.includes(brand.role) ? (
                     <DropdownMenuItem render={<Link href="/settings" />}>

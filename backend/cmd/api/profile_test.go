@@ -10,6 +10,8 @@ func TestProfileValidation(t *testing.T) {
 	empty := "  "
 	long := strings.Repeat("І", 101)
 	newline := "Name\nadmin"
+	email := "new@example.com"
+	badEmail := "Name <new@example.com>"
 	for _, tc := range []struct {
 		name  string
 		input profileUpdate
@@ -24,6 +26,9 @@ func TestProfileValidation(t *testing.T) {
 		{"no reauthentication", profileUpdate{NewPassword: "new-password-123"}, false},
 		{"bcrypt byte limit", profileUpdate{CurrentPassword: "old", NewPassword: strings.Repeat("І", 37)}, false},
 		{"valid password", profileUpdate{CurrentPassword: "old", NewPassword: "new-password-123"}, true},
+		{"email needs password", profileUpdate{Email: &email}, false},
+		{"email with password", profileUpdate{Email: &email, CurrentPassword: "old-password"}, true},
+		{"email display name rejected", profileUpdate{Email: &badEmail, CurrentPassword: "old-password"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := validProfileUpdate(tc.input); got != tc.want {

@@ -9,7 +9,6 @@ import { useRouter } from "next/navigation"
 import { CalendarDays, MapPin, TicketCheck, Users } from "lucide-react"
 import { AdminNotice } from "@/components/admin-notice"
 import { AppShell } from "@/components/app-shell"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { EntityDataView } from "@/components/entity-data-view"
@@ -422,7 +421,7 @@ export function IndividualTransferRequests() {
       }}
       pageDescription="Запросы из Telegram на индивидуальный маршрут"
       pageTitle="Индивидуальные заявки"
-      utilities={<ThemeCustomizer />}
+
     >
       <div className="w-full min-w-0 space-y-5">
         <AdminNotice message={error} variant="error" />

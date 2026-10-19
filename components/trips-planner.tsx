@@ -16,7 +16,6 @@ import {
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import {
   CustomDataFields,
   serializeCustomData,
@@ -901,7 +900,7 @@ export function TripsPlanner() {
         createDisabled={isLoading || isResourcesLoading}
         pageDescription="Транспорт, водители и расписание без накладок"
         pageTitle="Планирование рейсов"
-        utilities={<ThemeCustomizer />}
+
       >
         <div className="w-full min-w-0 space-y-5">
           <AdminNotice message={notice} />

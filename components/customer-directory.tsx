@@ -11,7 +11,6 @@ import {
   EntityDataView,
   type EntityColumn,
 } from "@/components/entity-data-view"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -556,7 +555,7 @@ export function CustomerDirectory() {
         }}
         pageDescription="Контакты, поездки и история обращений"
         pageTitle="Клиенты"
-        utilities={<ThemeCustomizer />}
+
       >
         <input
           accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

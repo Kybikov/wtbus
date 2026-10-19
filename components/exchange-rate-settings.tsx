@@ -1,14 +1,29 @@
 "use client"
 
 import * as React from "react"
-import { CircleDollarSign, Save, LoaderCircle } from "lucide-react"
+import {
+  CircleDollarSign,
+  Save,
+  LoaderCircle,
+  Download,
+  ArrowRight,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import { sessionFetch } from "@/lib/session-navigation"
 
-type ExchangeRates = { baseCurrency: string; rates: Record<string, number> }
+type ExchangeRates = {
+  updatedAt?: string
+  baseCurrency: string
+  rates: Record<string, number>
+}
 const currencies = ["EUR", "USD", "PLN", "UAH"]
 
 function isExchangeRates(value: unknown): value is ExchangeRates {
@@ -28,6 +43,11 @@ export function ExchangeRateSettings({ disabled }: { disabled: boolean }) {
   const [values, setValues] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [pulling, setPulling] = React.useState(false)
+  const [source, setSource] = React.useState<{
+    updatedAt: string
+    currencies: string[]
+  } | null>(null)
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -105,51 +125,162 @@ export function ExchangeRateSettings({ disabled }: { disabled: boolean }) {
     }
   }
 
+  async function pull() {
+    setPulling(true)
+    try {
+      const r = await sessionFetch("/api/exchange-rates?source=monobank", {
+        signal: AbortSignal.timeout(10_000),
+      })
+      const p = await r.json()
+      if (!r.ok || !isExchangeRates(p))
+        throw Error(p.error ?? "Не удалось получить курсы")
+      setValues((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          Object.entries(p.rates).map(([code, rate]) => [code, String(rate)])
+        ),
+      }))
+      setSource({
+        updatedAt: p.updatedAt ?? new Date().toISOString(),
+        currencies: Object.keys(p.rates),
+      })
+      toast.success("Курсы Monobank получены. Проверьте и сохраните их.")
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Не удалось получить курсы"
+      )
+    } finally {
+      setPulling(false)
+    }
+  }
+  const labels: Record<string, string> = {
+    EUR: "Евро",
+    USD: "Доллар США",
+    PLN: "Польский злотый",
+    UAH: "Украинская гривна",
+  }
+  const dirty =
+    !!state &&
+    currencies.some(
+      (code) =>
+        code !== state.baseCurrency &&
+        Number(values[code] ?? 0) !== (state.rates[code] ?? 0)
+    )
   return (
     <form className="settings-panel" onSubmit={save}>
-      <h2 className="flex items-center gap-2 font-bold">
-        <CircleDollarSign className="size-4 text-primary" />
-        Курсы для финансового отчёта
-      </h2>
-      <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        Задайте, сколько единиц базовой валюты равно одной единице исходной.
-        Итоги по EUR, USD, PLN и UAH будут автоматически сведены в{" "}
-        {state?.baseCurrency ?? "базовую валюту"}.
-      </p>
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {currencies.map((currency) => (
-          <label className="text-sm font-semibold" key={currency}>
-            {currency} → {state?.baseCurrency ?? "—"}
-            <Input
-              className="mt-2"
-              disabled={
-                disabled ||
-                loading ||
-                saving ||
-                currency === state?.baseCurrency
-              }
-              inputMode="decimal"
-              min="0.00000001"
-              onChange={(event) =>
-                setValues((current) => ({
-                  ...current,
-                  [currency]: event.target.value,
-                }))
-              }
-              step="0.00000001"
-              type="number"
-              value={
-                currency === state?.baseCurrency
-                  ? "1"
-                  : (values[currency] ?? "")
-              }
-            />
-          </label>
-        ))}
-      </div>
-      <div className="settings-footer sm:justify-end">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 font-semibold">
+            <CircleDollarSign className="size-4 text-primary" />
+            Курсы валют
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Пересчёт финансовых отчётов в{" "}
+            {state?.baseCurrency ?? "базовую валюту"}.
+          </p>
+        </div>
         <Button
-          disabled={disabled || loading || saving || !state}
+          type="button"
+          variant="outline"
+          disabled={disabled || loading || saving || pulling}
+          onClick={() => void pull()}
+        >
+          {pulling ? <LoaderCircle className="animate-spin" /> : <Download />}
+          {pulling ? "Получаем…" : "Получить из Monobank"}
+        </Button>
+      </div>
+      <div className="mt-5 overflow-hidden rounded-xl border border-border">
+        <div className="hidden grid-cols-[minmax(0,1fr)_minmax(10rem,16rem)_7rem] gap-4 bg-accent/40 px-4 py-3 text-xs text-muted-foreground sm:grid">
+          <span>Валюта</span>
+          <span>Курс за 1 единицу</span>
+          <span>Источник</span>
+        </div>
+        <ul className="divide-y divide-border">
+          {currencies.map((currency) => (
+            <li
+              key={currency}
+              className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,16rem)_7rem] sm:items-center sm:gap-4"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-control text-xs font-semibold">
+                  {currency}
+                </span>
+                <div>
+                  <p className="text-sm font-medium">{labels[currency]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    1 {currency} <ArrowRight className="inline size-3" />{" "}
+                    {state?.baseCurrency ?? "—"}
+                  </p>
+                </div>
+              </div>
+              <InputGroup>
+                <InputGroupInput
+                  aria-label={`Курс ${currency}`}
+                  disabled={
+                    disabled ||
+                    loading ||
+                    saving ||
+                    pulling ||
+                    currency === state?.baseCurrency
+                  }
+                  type="number"
+                  step="0.00000001"
+                  min="0.00000001"
+                  inputMode="decimal"
+                  value={
+                    currency === state?.baseCurrency
+                      ? "1"
+                      : (values[currency] ?? "")
+                  }
+                  placeholder="Укажите курс"
+                  onChange={(event) => {
+                    setValues((v) => ({ ...v, [currency]: event.target.value }))
+                    setSource((v) =>
+                      v
+                        ? {
+                            ...v,
+                            currencies: v.currencies.filter(
+                              (c) => c !== currency
+                            ),
+                          }
+                        : v
+                    )
+                  }}
+                />
+                <InputGroupAddon align="inline-end">
+                  {state?.baseCurrency ?? "—"}
+                </InputGroupAddon>
+              </InputGroup>
+              <div>
+                <Badge variant="secondary">
+                  {currency === state?.baseCurrency
+                    ? "Базовая"
+                    : source?.currencies.includes(currency)
+                      ? "Monobank"
+                      : state?.rates[currency]
+                        ? "Сохранён"
+                        : "Вручную"}
+                </Badge>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {source ? (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          Средний курс Monobank на{" "}
+          {new Date(source.updatedAt).toLocaleString("ru-RU")}. Для валют без
+          опубликованного курса сохранены ваши значения.
+        </p>
+      ) : null}
+      <div className="settings-footer">
+        <p className="text-xs text-muted-foreground">
+          {dirty ? "Есть несохранённые изменения" : "Курсы сохранены"}
+        </p>
+        <Button
+          disabled={
+            disabled || loading || saving || pulling || !state || !dirty
+          }
           type="submit"
         >
           {saving ? <LoaderCircle className="animate-spin" /> : <Save />}

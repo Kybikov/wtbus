@@ -6,12 +6,16 @@ export const dynamic = "force-dynamic"
 
 const apiBaseURL = process.env.API_INTERNAL_URL ?? "http://localhost:8080"
 
-async function forward(method: "GET" | "PATCH", body?: unknown) {
+async function forward(
+  method: "GET" | "PATCH",
+  body?: unknown,
+  monobank = false
+) {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 5_000)
+  const timer = setTimeout(() => controller.abort(), 8_000)
   try {
     const response = await apiFetch(
-      `${apiBaseURL}/api/v1/tenants/vivat-bus/finance/exchange-rates`,
+      `${apiBaseURL}/api/v1/tenants/vivat-bus/finance/exchange-rates${monobank ? "/monobank" : ""}`,
       {
         method,
         cache: "no-store",
@@ -33,7 +37,11 @@ async function forward(method: "GET" | "PATCH", body?: unknown) {
           : "Не удалось сохранить курсы валют."
       return NextResponse.json(
         { error },
-        { status: [400, 401, 402, 403].includes(response.status) ? response.status : 502 }
+        {
+          status: [400, 401, 402, 403].includes(response.status)
+            ? response.status
+            : 502,
+        }
       )
     }
     return NextResponse.json(payload)
@@ -47,8 +55,12 @@ async function forward(method: "GET" | "PATCH", body?: unknown) {
   }
 }
 
-export async function GET() {
-  return forward("GET")
+export async function GET(request: NextRequest) {
+  return forward(
+    "GET",
+    undefined,
+    request.nextUrl.searchParams.get("source") === "monobank"
+  )
 }
 
 export async function PATCH(request: NextRequest) {
@@ -57,6 +69,9 @@ export async function PATCH(request: NextRequest) {
   try {
     return forward("PATCH", await request.json())
   } catch {
-    return NextResponse.json({ error: "Не удалось прочитать курсы." }, { status: 400 })
+    return NextResponse.json(
+      { error: "Не удалось прочитать курсы." },
+      { status: 400 }
+    )
   }
 }

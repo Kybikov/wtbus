@@ -17,6 +17,8 @@ import {
   Unplug,
 } from "lucide-react"
 import { toast } from "sonner"
+import { ProviderLogo } from "@/components/provider-logo"
+import { ConnectionTestButton } from "@/components/connection-test-button"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -234,7 +236,7 @@ export function NotificationPreferences({
   const groups = [...new Set(data?.events.map((e) => e.group) ?? [])]
   return (
     <div className="min-w-0 space-y-4">
-      <section className="settings-panel">
+      <section className="settings-panel @container">
         <div className="flex items-start gap-3">
           <Bell className="mt-0.5 size-5 shrink-0 text-primary" />
           <div>
@@ -245,172 +247,101 @@ export function NotificationPreferences({
             </p>
           </div>
         </div>
-        <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-2">
-          <div className="min-w-0 rounded-xl border border-border p-4">
-            <div className="flex items-center gap-2">
-              <Smartphone className="size-4" />
-              <h3 className="text-sm font-medium">Push на этом устройстве</h3>
-            </div>
-            <div className="mt-3">
+
+        <div className="mt-5 grid min-w-0 gap-4 @3xl:grid-cols-2">
+          <div className="flex min-w-0 flex-col rounded-xl border border-border p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <ProviderLogo provider="push" />
+              <h3 className="min-w-0 flex-1 text-sm font-medium">
+                Push на этом устройстве
+              </h3>
               <Badge variant="secondary" className="max-w-full">
                 {!supported
-                  ? "Недоступен в этом браузере"
+                  ? "Недоступен"
                   : permission === "denied"
-                    ? "Заблокирован браузером"
+                    ? "Заблокирован"
                     : pushEnabled
                       ? "Включён"
                       : "Выключен"}
               </Badge>
             </div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            <p className="mt-3 flex-1 text-xs leading-5 text-muted-foreground">
               {!supported
                 ? "На iPhone установите приложение через Safari и откройте с главного экрана."
                 : permission === "denied"
                   ? "Разрешите уведомления в настройках браузера или телефона."
-                  : "Уведомления приходят и при закрытом приложении. Разрешение включается отдельно на каждом устройстве."}
+                  : "Уведомления приходят и при закрытом приложении. Включите их на каждом нужном устройстве."}
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {supported ? (
-                <Button
-                  variant="outline"
-                  disabled={!!busy || loading || permission === "denied"}
-                  onClick={() =>
-                    void perform("push", async () => {
-                      if (pushEnabled) {
-                        await disablePush()
-                        setPushEnabled(false)
-                      } else {
-                        await enablePush()
-                        setPushEnabled(true)
-                      }
-                      toast.success(
-                        pushEnabled ? "Push отключён" : "Push включён"
-                      )
-                    })
-                  }
-                >
-                  {busy === "push" ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <Smartphone />
-                  )}
-                  {pushEnabled ? "Отключить" : "Включить Push"}
-                </Button>
-              ) : null}
-              {pushEnabled ? (
-                <Button
-                  variant="ghost"
-                  disabled={!!busy}
-                  onClick={() =>
-                    void perform("pushTest", async () => {
-                      const subscription = await currentPushSubscription()
-                      if (!subscription)
-                        throw new Error("Сначала включите Push.")
-                      await pushRequest("POST", {
-                        test: true,
-                        subscription: subscription.toJSON(),
-                      })
-                      toast.success("Проверка Push поставлена в очередь")
-                    })
-                  }
-                >
-                  Проверить
-                </Button>
-              ) : null}
+            <div className="mt-auto grid grid-cols-1 items-center gap-2 pt-5 sm:grid-cols-2 [&_.call-chip]:w-full [&_.call-chip]:justify-center [&>button]:w-full">
+              <Button
+                variant="outline"
+                disabled={
+                  !supported || !!busy || loading || permission === "denied"
+                }
+                onClick={() =>
+                  void perform("push", async () => {
+                    if (pushEnabled) {
+                      await disablePush()
+                      setPushEnabled(false)
+                    } else {
+                      await enablePush()
+                      setPushEnabled(true)
+                    }
+                    toast.success(
+                      pushEnabled ? "Push отключён" : "Push включён"
+                    )
+                  })
+                }
+              >
+                {busy === "push" ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Smartphone />
+                )}
+                {pushEnabled ? "Отключить" : "Включить Push"}
+              </Button>
+              <ConnectionTestButton
+                name="Push"
+                disabled={!pushEnabled || !!busy || loading}
+                hint={
+                  !pushEnabled
+                    ? "Сначала включите Push на этом устройстве"
+                    : undefined
+                }
+                onTest={async () => {
+                  const subscription = await currentPushSubscription()
+                  if (!subscription) throw Error("Сначала включите Push.")
+                  await pushRequest("POST", {
+                    test: true,
+                    subscription: subscription.toJSON(),
+                  })
+                  return "Проверьте уведомления на устройстве"
+                }}
+              />
             </div>
           </div>
-          <div className="min-w-0 rounded-xl border border-border p-4">
-            <div className="flex items-center gap-2">
-              <Send className="size-4" />
-              <h3 className="text-sm font-medium">Telegram</h3>
-            </div>
-            <div className="mt-3">
-              <Badge variant="secondary" className="max-w-full">
+          <div className="flex min-w-0 flex-col rounded-xl border border-border p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <ProviderLogo provider="telegram" />
+              <h3 className="min-w-0 flex-1 text-sm font-medium">Telegram</h3>
+              <Badge variant="secondary">
                 {telegram?.connected ? (
                   <>
                     <Check />
                     Подключён
-                    {telegram.username ? ` · @${telegram.username}` : ""}
                   </>
                 ) : (
                   "Не подключён"
                 )}
               </Badge>
             </div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            <p className="mt-3 flex-1 text-xs leading-5 break-words text-muted-foreground">
               {telegram?.connected && telegram.botConfigured
-                ? "События приходят в ваш личный чат с ботом компании."
+                ? `События приходят в личный чат с ботом компании${telegram.username ? ` · @${telegram.username}` : ""}.`
                 : telegram?.botConfigured
-                  ? "Откройте одноразовую ссылку и нажмите «Старт» в боте. Ссылка действует 10 минут."
-                  : "Для подключения владелец или разработчик должен добавить токен бота в интеграциях компании."}
+                  ? "Откройте ссылку и нажмите «Старт» в боте. Ссылка действует 10 минут."
+                  : "Сначала подключите бота компании в настройках интеграций."}
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {telegram?.connected ? (
-                <>
-                  <Button
-                    variant="outline"
-                    disabled={!!busy || !telegram.botConfigured}
-                    onClick={() =>
-                      void perform("telegramTest", async () => {
-                        await request("telegram", "POST", { action: "test" })
-                        toast.success("Проверка Telegram поставлена в очередь")
-                      })
-                    }
-                  >
-                    <Send />
-                    Проверить
-                  </Button>
-                  <Button
-                    aria-label="Отключить Telegram"
-                    size="icon"
-                    variant="ghost"
-                    disabled={!!busy}
-                    onClick={() => setDisconnect(true)}
-                  >
-                    <Unplug />
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  disabled={!!busy || loading || !telegram?.botConfigured}
-                  variant="outline"
-                  onClick={() =>
-                    void perform("link", async () => {
-                      const result = await request("telegram", "POST", {
-                        action: "link",
-                      })
-                      if (
-                        typeof result.url !== "string" ||
-                        !/^https:\/\/t\.me\/[A-Za-z0-9_]+\?start=staff_[A-Za-z0-9_-]+$/.test(
-                          result.url
-                        )
-                      )
-                        throw new Error("Не удалось создать ссылку.")
-                      setLink({
-                        url: result.url,
-                        expiresAt: Date.now() + 600000,
-                      })
-                    })
-                  }
-                >
-                  {busy === "link" ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <Send />
-                  )}
-                  Подключить Telegram
-                </Button>
-              )}
-              <Button
-                aria-label="Обновить подключение Telegram"
-                size="icon"
-                variant="ghost"
-                disabled={!!busy}
-                onClick={() => void refreshTelegram()}
-              >
-                <RefreshCw />
-              </Button>
-            </div>
             {link ? (
               <div className="mt-3 space-y-2 rounded-xl bg-accent p-3">
                 <Button
@@ -431,12 +362,74 @@ export function NotificationPreferences({
             {!telegram?.botConfigured &&
             ["owner", "developer"].includes(identity.role) ? (
               <Link
-                className="mt-3 inline-flex text-xs text-primary underline-offset-4 hover:underline"
+                className="mt-3 text-xs text-primary hover:underline"
                 href="/settings/integrations"
               >
                 Перейти к интеграциям
               </Link>
             ) : null}
+            <div className="mt-auto grid grid-cols-1 items-center gap-2 pt-5 sm:grid-cols-2 [&_.call-chip]:w-full [&_.call-chip]:justify-center [&>button]:w-full">
+              {telegram?.connected ? (
+                <Button
+                  aria-label="Отключить Telegram"
+                  variant="outline"
+                  disabled={!!busy}
+                  onClick={() => setDisconnect(true)}
+                >
+                  <Unplug />
+                  Отключить
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  aria-label="Подключить Telegram"
+                  disabled={!!busy || loading || !telegram?.botConfigured}
+                  onClick={() =>
+                    void perform("link", async () => {
+                      const result = await request("telegram", "POST", {
+                        action: "link",
+                      })
+                      if (
+                        typeof result.url !== "string" ||
+                        !/^https:\/\/t\.me\/[A-Za-z0-9_]+\?start=staff_[A-Za-z0-9_-]+$/.test(
+                          result.url
+                        )
+                      )
+                        throw Error("Не удалось создать ссылку.")
+                      setLink({
+                        url: result.url,
+                        expiresAt: Date.now() + 600000,
+                      })
+                    })
+                  }
+                >
+                  {busy === "link" ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Send />
+                  )}
+                  Подключить
+                </Button>
+              )}
+              <ConnectionTestButton
+                name="Telegram"
+                disabled={
+                  !telegram?.connected ||
+                  !telegram.botConfigured ||
+                  !!busy ||
+                  loading
+                }
+                hint={
+                  !telegram?.connected
+                    ? "Сначала подключите Telegram"
+                    : undefined
+                }
+                onTest={async () => {
+                  await request("telegram", "POST", { action: "test" })
+                  return "Проверьте сообщение в Telegram"
+                }}
+              />
+            </div>
           </div>
         </div>
       </section>

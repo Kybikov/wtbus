@@ -9,7 +9,6 @@ import {
   type EntityAction,
   type EntityColumn,
 } from "@/components/entity-data-view"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -539,7 +538,7 @@ export function TeamManager() {
       createDisabled={loading || !me}
       pageDescription="Сотрудники, роли доступа и системная автоматизация"
       pageTitle="Команда"
-      utilities={<ThemeCustomizer />}
+
     >
       <div className="space-y-4">
         <AdminNotice

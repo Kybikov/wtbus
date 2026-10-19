@@ -4,7 +4,7 @@ import Link from "next/link"
 import {
   UserRound,
   Bell,
-  Shield,
+  Palette,
   Smartphone,
   Building2,
   CreditCard,
@@ -28,9 +28,9 @@ const sections = [
   },
   {
     group: "Личные настройки",
-    href: "/profile/security",
-    label: "Безопасность",
-    icon: Shield,
+    href: "/profile/personalization",
+    label: "Персонализация",
+    icon: Palette,
   },
   {
     group: "Личные настройки",

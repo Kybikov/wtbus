@@ -18,14 +18,16 @@ export type LayoutSnapshot = {
 
 export const layoutCookieName = "vivat_layout"
 export const defaultLayoutPreferences: LayoutPreferences = {
-  sidebarMode: "default",
-  sidebarVariant: "default",
+  sidebarMode: "full",
+  sidebarVariant: "floating",
   scale: "md",
   radius: "lg",
   density: "comfortable",
 }
 
-export function parseLayoutPreferences(value: unknown): LayoutPreferences | null {
+export function parseLayoutPreferences(
+  value: unknown
+): LayoutPreferences | null {
   if (typeof value !== "object" || value === null) return null
   const data = value as Record<string, unknown>
   if (
@@ -34,14 +36,16 @@ export function parseLayoutPreferences(value: unknown): LayoutPreferences | null
     typeof data.scale !== "string" ||
     typeof data.radius !== "string" ||
     typeof data.density !== "string"
-  ) return null
+  )
+    return null
   if (
     !["default", "icon", "full"].includes(data.sidebarMode) ||
     !["default", "inset", "floating"].includes(data.sidebarVariant) ||
     !["sm", "md", "lg"].includes(data.scale) ||
     !["sm", "md", "lg"].includes(data.radius) ||
     !["comfortable", "compact"].includes(data.density)
-  ) return null
+  )
+    return null
   return {
     sidebarMode: data.sidebarMode as LayoutPreferences["sidebarMode"],
     sidebarVariant: data.sidebarVariant as LayoutPreferences["sidebarVariant"],
@@ -51,17 +55,23 @@ export function parseLayoutPreferences(value: unknown): LayoutPreferences | null
   }
 }
 
-export function parseLayoutCookie(value: string | undefined): LayoutSnapshot | null {
+export function parseLayoutCookie(
+  value: string | undefined
+): LayoutSnapshot | null {
   if (!value) return null
   try {
-    const data = JSON.parse(decodeURIComponent(value)) as Record<string, unknown>
+    const data = JSON.parse(decodeURIComponent(value)) as Record<
+      string,
+      unknown
+    >
     const preferences = parseLayoutPreferences(data.preferences)
     if (!preferences) return null
     const override = data.override as Partial<SidebarOverride> | null
     return {
       preferences,
       override:
-        override && override.mode === preferences.sidebarMode &&
+        override &&
+        override.mode === preferences.sidebarMode &&
         typeof override.open === "boolean"
           ? { mode: override.mode, open: override.open }
           : null,

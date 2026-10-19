@@ -16,7 +16,6 @@ import {
   type EntityAction,
   type EntityColumn,
 } from "@/components/entity-data-view"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import {
   CustomDataFields,
   serializeCustomData,
@@ -879,7 +878,7 @@ export function BookingRegistry() {
         onCreate={openCreateBooking}
         pageDescription="Пассажиры из Telegram и ручные брони"
         pageTitle="Журнал бронирований"
-        utilities={<ThemeCustomizer />}
+
       >
         <div className="w-full min-w-0 space-y-5">
           <AdminNotice message={error} variant="error" />

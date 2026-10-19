@@ -6,7 +6,6 @@ import { AdminNotice } from "@/components/admin-notice"
 import * as React from "react"
 
 import { AppShell } from "@/components/app-shell"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EntityDataView } from "@/components/entity-data-view"
@@ -391,7 +390,7 @@ export function RouteCatalog() {
       onCreate={startCreate}
       pageDescription="Регулярные направления, цены и активность"
       pageTitle="Каталог маршрутов"
-      utilities={<ThemeCustomizer />}
+
     >
       <section className="space-y-4">
         <AdminNotice

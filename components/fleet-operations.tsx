@@ -6,7 +6,6 @@ import * as React from "react"
 
 import { AppShell } from "@/components/app-shell"
 import { FleetLocationMap } from "@/components/fleet-location-map"
-import { ThemeCustomizer } from "@/components/operations-dashboard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EntityDataView } from "@/components/entity-data-view"
@@ -409,7 +408,7 @@ export function FleetOperations() {
       createDisabled={saving || !canManage}
       pageDescription="Последняя GPS-точка каждого автомобиля · обновление раз в 30 секунд"
       pageTitle="Транспорт и геолокация"
-      utilities={<ThemeCustomizer />}
+
     >
       <div className="w-full min-w-0 space-y-5">
         <div className="grid gap-3 sm:grid-cols-3">

@@ -224,6 +224,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", drivers(app.driverPassengers))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/cash-received", drivers(app.confirmDriverCashReceived))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/summary", finance(app.financeSummary))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates/monobank", owners(app.monobankExchangeRates))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.getExchangeRates))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.requireActiveSubscription(app.updateExchangeRates)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/driver-cash", finance(app.requireActiveSubscription(app.recordDriverCash)))
@@ -233,6 +234,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/payment-config", owners(app.getPaymentConfig))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/payment-config", owners(app.requireActiveSubscription(app.updatePaymentConfig)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/integration-secrets", owners(app.getIntegrationSecrets))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/integration-secrets/test", owners(app.testIntegration))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.requireActiveSubscription(app.updateIntegrationSecrets)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.requireActiveSubscription(app.createTeamMember)))
@@ -337,6 +339,17 @@ func (app *application) ensureBootstrapOwner(ctx context.Context) error {
 	var tenantID string
 	if err := tx.QueryRow(ctx, `SELECT id::text FROM tenants WHERE slug = $1`, strings.ToLower(strings.TrimSpace(app.bootstrapTenant))).Scan(&tenantID); err != nil {
 		return fmt.Errorf("load bootstrap tenant: %w", err)
+	}
+	// Bootstrap is initial setup. A later email/role change must survive restart;
+	// only the explicit recovery flag may recreate/reset a configured owner.
+	if !app.bootstrapReset {
+		var initialized bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1 AND m.is_active AND m.role IN ('owner','developer') AND NOT u.is_system)`, tenantID).Scan(&initialized); err != nil {
+			return err
+		}
+		if initialized {
+			return nil
+		}
 	}
 	var userID string
 	if err := tx.QueryRow(ctx, `
@@ -882,8 +895,8 @@ func defaultUserPreferences() userPreferencesResponse {
 		Density:        "comfortable",
 		Radius:         "lg",
 		Scale:          "md",
-		SidebarVariant: "default",
-		SidebarMode:    "default",
+		SidebarVariant: "floating",
+		SidebarMode:    "full",
 	}
 }
 
@@ -5898,6 +5911,8 @@ func (app *application) updatePaymentConfig(w http.ResponseWriter, r *http.Reque
 type integrationSecretsResponse struct {
 	MonobankConfigured    bool       `json:"monobankConfigured"`
 	TelegramBotConfigured bool       `json:"telegramBotConfigured"`
+	MonobankPreview       string     `json:"monobankPreview,omitempty"`
+	TelegramBotPreview    string     `json:"telegramBotPreview,omitempty"`
 	MonobankLastAttemptAt *time.Time `json:"monobankLastAttemptAt,omitempty"`
 	MonobankLastSuccessAt *time.Time `json:"monobankLastSuccessAt,omitempty"`
 	MonobankLastError     string     `json:"monobankLastError,omitempty"`
@@ -5915,14 +5930,16 @@ func (app *application) getIntegrationSecrets(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	var mono, telegram string
 	var response integrationSecretsResponse
 	err := app.db.QueryRow(r.Context(), `
-		SELECT COALESCE(secret.monobank_token,'')<>'', COALESCE(secret.telegram_bot_token,'')<>'',
+		SELECT COALESCE(secret.monobank_token,''), COALESCE(secret.telegram_bot_token,''),
 			state.last_attempt_at,state.last_success_at,COALESCE(state.last_error,'')
 		FROM tenant_integration_secrets secret
 		LEFT JOIN payment_reconciliation_state state ON state.tenant_id=secret.tenant_id
 		WHERE secret.tenant_id=$1
-	`, tenant.ID).Scan(&response.MonobankConfigured, &response.TelegramBotConfigured, &response.MonobankLastAttemptAt, &response.MonobankLastSuccessAt, &response.MonobankLastError)
+	`, tenant.ID).Scan(&mono, &telegram, &response.MonobankLastAttemptAt, &response.MonobankLastSuccessAt, &response.MonobankLastError)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -5931,6 +5948,10 @@ func (app *application) getIntegrationSecrets(w http.ResponseWriter, r *http.Req
 		app.publicFailure(w, err)
 		return
 	}
+	response.MonobankConfigured = mono != ""
+	response.TelegramBotConfigured = telegram != ""
+	response.MonobankPreview = maskedIntegrationSecret(mono)
+	response.TelegramBotPreview = maskedIntegrationSecret(telegram)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -5977,7 +5998,7 @@ func (app *application) updateIntegrationSecrets(w http.ResponseWriter, r *http.
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	app.getIntegrationSecrets(w, r)
 }
 
 type financeSummaryResponse struct {

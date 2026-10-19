@@ -2,6 +2,7 @@ import { Geist_Mono, Inter } from "next/font/google"
 import type { Metadata, Viewport } from "next"
 
 import "./globals.css"
+import { InterfacePreferencesProvider } from "@/components/interface-preferences"
 import { PWARegistrar } from "@/components/pwa-registrar"
 import { DeviceNotificationMonitor } from "@/components/device-notification-monitor"
 import { LayoutPreferencesProvider } from "@/components/layout-preferences-provider"
@@ -71,7 +72,9 @@ export default async function RootLayout({
               <PWARegistrar />
               <DeviceNotificationMonitor />
               <SessionMonitor />
-              <MobileNavigationProvider>{children}</MobileNavigationProvider>
+              <InterfacePreferencesProvider>
+                <MobileNavigationProvider>{children}</MobileNavigationProvider>
+              </InterfacePreferencesProvider>
               <Toaster />
             </TooltipProvider>
           </LayoutPreferencesProvider>

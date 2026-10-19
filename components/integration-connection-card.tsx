@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   Check,
   Eye,
@@ -37,7 +36,13 @@ export function IntegrationConnectionCard({
   saving,
   onSave,
   onRemove,
+  preview,
+  test,
+  children,
 }: {
+  preview?: string
+  test: React.ReactNode
+  children?: React.ReactNode
   name: string
   description: string
   icon: React.ReactNode
@@ -48,7 +53,6 @@ export function IntegrationConnectionCard({
   onRemove: () => Promise<boolean>
 }) {
   const id = React.useId()
-  const reduce = useReducedMotion()
   const [token, setToken] = React.useState("")
   const [revealed, setRevealed] = React.useState(false)
   const [confirmRemove, setConfirmRemove] = React.useState(false)
@@ -61,46 +65,32 @@ export function IntegrationConnectionCard({
   }
   return (
     <div className="flex min-w-0 flex-col rounded-2xl border border-border bg-background/30 p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-control text-foreground">
-          {icon}
-        </span>
+      <div className="flex items-center gap-3">
+        {icon}
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold">{name}</h3>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {description}
-          </p>
+          <h3 className="truncate font-semibold">{name}</h3>
         </div>
+        <Badge
+          variant="secondary"
+          className={
+            configured
+              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
+              : ""
+          }
+        >
+          {configured ? <Check /> : <KeyRound />}
+          {configured ? "Подключено" : "Не настроено"}
+        </Badge>
       </div>
-      <div className="mt-4" aria-live="polite">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={String(configured)}
-            initial={reduce ? false : { opacity: 0, y: 3 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reduce ? 0 : 0.15 }}
-          >
-            <Badge
-              variant="secondary"
-              className={
-                configured
-                  ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
-                  : ""
-              }
-            >
-              {configured ? <Check /> : <KeyRound />}
-              {configured ? "Ключ сохранён" : "Не настроено"}
-            </Badge>
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      <p className="mt-3 min-h-10 text-sm leading-5 text-muted-foreground">
+        {description}
+      </p>
       <form
         onSubmit={(event) => void submit(event)}
         className="mt-5 flex flex-1 flex-col"
       >
         <label htmlFor={id} className="mb-2 text-sm font-medium">
-          {configured ? "Новый API-токен" : "API-токен"}
+          API-токен
         </label>
         <InputGroup>
           <InputGroupInput
@@ -112,7 +102,7 @@ export function IntegrationConnectionCard({
             onChange={(event) => setToken(event.target.value)}
             type={revealed ? "text" : "password"}
             placeholder={
-              configured ? "Вставьте токен для замены" : "Вставьте токен"
+              configured ? (preview ?? "••••••••") : "Вставьте токен"
             }
           />
           <InputGroupAddon align="inline-end">
@@ -132,31 +122,41 @@ export function IntegrationConnectionCard({
           </InputGroupAddon>
         </InputGroup>
         <p className="mt-2 text-xs leading-5 text-muted-foreground">
-          Сохранённый ключ скрыт. Пустое поле сохраняет текущий ключ.
+          {configured
+            ? "Для замены введите новый ключ."
+            : "Добавьте ключ для подключения."}
         </p>
+        {children}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-          {configured ? (
+          {test}
+          <div className="flex items-center gap-2">
+            {configured ? (
+              <Button
+                type="button"
+                aria-label={`Удалить ключ ${name}`}
+                size="icon"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                disabled={disabled || saving}
+                onClick={() => setConfirmRemove(true)}
+              >
+                <Trash2 />
+              </Button>
+            ) : (
+              <span />
+            )}
             <Button
-              type="button"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              disabled={disabled || saving}
-              onClick={() => setConfirmRemove(true)}
+              type="submit"
+              disabled={disabled || saving || !token.trim()}
             >
-              <Trash2 />
-              Удалить
+              {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+              {saving
+                ? "Сохраняем…"
+                : configured
+                  ? "Заменить ключ"
+                  : "Сохранить ключ"}
             </Button>
-          ) : (
-            <span />
-          )}
-          <Button type="submit" disabled={disabled || saving || !token.trim()}>
-            {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-            {saving
-              ? "Сохраняем…"
-              : configured
-                ? "Заменить ключ"
-                : "Сохранить ключ"}
-          </Button>
+          </div>
         </div>
       </form>
       <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>

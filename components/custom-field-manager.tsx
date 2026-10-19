@@ -9,6 +9,22 @@ import { Add01Icon, Edit02Icon } from "@hugeicons/core-free-icons"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
+import {
+  Type,
+  Hash,
+  CalendarDays,
+  ToggleLeft,
+  List,
+  SlidersHorizontal,
+} from "lucide-react"
 import { FieldSelect } from "@/components/ui/field-select"
 
 type FieldType = "text" | "number" | "date" | "boolean" | "select"
@@ -262,12 +278,7 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
             Настройте данные отдельно для клиентов, рейсов и бронирований.
           </p>
         </div>
-        <Button
-          disabled={disabled}
-          onClick={startCreate}
-          size="sm"
-          variant="outline"
-        >
+        <Button disabled={disabled} onClick={startCreate} variant="outline">
           <HugeiconsIcon icon={Add01Icon} size={16} />
           Добавить поле {entityMeta(entity).singular}
         </Button>
@@ -294,180 +305,209 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
         {entityMeta(entity).description}
       </p>
 
-      {error ? (
+      {error && !open ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
           {error}
         </p>
       ) : null}
 
-      {open ? (
-        <form
-          className="mt-5 grid gap-3 border-t border-border pt-5 sm:grid-cols-2"
-          onSubmit={submit}
-        >
-          <div className="sm:col-span-2">
-            <h3 className="font-semibold">
-              {editingID ? "Изменить поле" : "Новое поле"}
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Ключ используется для надёжного хранения данных и после создания
-              не меняется.
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!value && !saving) close()
+        }}
+      >
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingID ? "Изменить поле" : "Добавить поле"}
+            </DialogTitle>
+            <DialogDescription>
+              Выберите название и формат данных.
+            </DialogDescription>
+          </DialogHeader>
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
             </p>
-          </div>
-          <label className="grid gap-2 text-sm font-semibold">
-            Название
-            <Input
-              className="font-normal"
-              disabled={saving}
-              maxLength={120}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  label: event.target.value,
-                  key: editingID ? current.key : slugifyKey(event.target.value),
-                }))
-              }
-              required
-              value={form.label}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold">
-            Ключ
-            <Input
-              className="font-normal"
-              disabled={saving || editingID !== null}
-              maxLength={63}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  key: event.target.value
-                    .toLowerCase()
-                    .replace(/[^a-z0-9_]/g, ""),
-                }))
-              }
-              pattern="[a-z][a-z0-9_]{1,62}"
-              required
-              value={form.key}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold">
-            Тип
-            <FieldSelect
-              disabled={saving || editingID !== null}
-              onValueChange={(value) =>
-                setForm((current) => ({
-                  ...current,
-                  fieldType: value as FieldType,
-                  optionsText: value === "select" ? current.optionsText : "",
-                }))
-              }
-              options={(Object.keys(fieldTypeLabels) as FieldType[]).map(
-                (type) => ({ value: type, label: fieldTypeLabels[type] })
-              )}
-              value={form.fieldType}
-            />
-          </label>
-          <label className="flex items-center gap-3 self-end pb-3 text-sm font-semibold">
-            <Checkbox
-              checked={form.isRequired}
-              disabled={saving}
-              onCheckedChange={(checked) =>
-                setForm((current) => ({
-                  ...current,
-                  isRequired: checked,
-                }))
-              }
-            />
-            Обязательное поле
-          </label>
-          {form.fieldType === "select" ? (
-            <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
-              Варианты через запятую
+          ) : null}
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+            <label className="grid gap-2 text-sm font-semibold">
+              Название
               <Input
                 className="font-normal"
                 disabled={saving}
+                maxLength={120}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    optionsText: event.target.value,
+                    label: event.target.value,
+                    key: editingID
+                      ? current.key
+                      : `field_${slugifyKey(event.target.value)}`.slice(0, 63),
                   }))
                 }
-                placeholder="Например, Новый, Постоянный, VIP"
                 required
-                value={form.optionsText}
+                value={form.label}
               />
             </label>
-          ) : null}
-          {editingID ? (
-            <label className="flex items-center gap-3 text-sm font-semibold sm:col-span-2">
+            <label className="grid gap-2 text-sm font-semibold">
+              Тип
+              <FieldSelect
+                disabled={saving || editingID !== null}
+                onValueChange={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    fieldType: value as FieldType,
+                    optionsText: value === "select" ? current.optionsText : "",
+                  }))
+                }
+                options={(Object.keys(fieldTypeLabels) as FieldType[]).map(
+                  (type) => ({ value: type, label: fieldTypeLabels[type] })
+                )}
+                value={form.fieldType}
+              />
+            </label>
+            <label className="flex items-center gap-3 self-end pb-3 text-sm font-semibold">
               <Checkbox
-                checked={form.isActive}
+                checked={form.isRequired}
                 disabled={saving}
                 onCheckedChange={(checked) =>
                   setForm((current) => ({
                     ...current,
-                    isActive: checked,
+                    isRequired: checked,
                   }))
                 }
               />
-              Показывать это поле сотрудникам
+              Обязательное поле
             </label>
-          ) : null}
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button
-              disabled={saving}
-              onClick={close}
-              type="button"
-              variant="ghost"
-            >
-              Отмена
-            </Button>
-            <Button disabled={saving} type="submit">
-              {saving ? "Сохраняем…" : editingID ? "Сохранить" : "Создать поле"}
-            </Button>
-          </div>
-        </form>
-      ) : null}
-
-      <div className="mt-5 divide-y divide-border border-t border-border">
-        {loading ? (
-          <p className="py-4 text-sm text-muted-foreground">Загружаем поля…</p>
-        ) : null}
-        {!loading && fields.length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">
-            Дополнительных полей для этой сущности пока нет.
-          </p>
-        ) : null}
-        {!loading
-          ? fields.map((field) => (
-              <div
-                className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-                key={field.id}
+            {form.fieldType === "select" ? (
+              <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
+                Варианты через запятую
+                <Input
+                  className="font-normal"
+                  disabled={saving}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      optionsText: event.target.value,
+                    }))
+                  }
+                  placeholder="Например, Новый, Постоянный, VIP"
+                  required
+                  value={form.optionsText}
+                />
+              </label>
+            ) : null}
+            {editingID ? (
+              <label className="flex items-center gap-3 text-sm font-semibold sm:col-span-2">
+                <Checkbox
+                  checked={form.isActive}
+                  disabled={saving}
+                  onCheckedChange={(checked) =>
+                    setForm((current) => ({
+                      ...current,
+                      isActive: checked,
+                    }))
+                  }
+                />
+                Показывать это поле сотрудникам
+              </label>
+            ) : null}
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <Button
+                disabled={saving}
+                onClick={close}
+                type="button"
+                variant="ghost"
               >
-                <div>
-                  <p className="font-semibold">
-                    {field.label}
-                    {field.isRequired ? (
-                      <span className="text-primary"> *</span>
-                    ) : null}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {field.key} · {fieldTypeLabels[field.fieldType]}
-                    {!field.isActive ? " · скрыто" : ""}
-                  </p>
-                </div>
-                <Button
-                  disabled={disabled}
-                  onClick={() => startEdit(field)}
-                  size="sm"
-                  variant="ghost"
+                Отмена
+              </Button>
+              <Button disabled={saving} type="submit">
+                {saving
+                  ? "Сохраняем…"
+                  : editingID
+                    ? "Сохранить"
+                    : "Создать поле"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <div className="mt-5 overflow-hidden rounded-xl border border-border">
+        <div className="hidden grid-cols-[minmax(0,1fr)_8rem_8rem_6rem_2.5rem] gap-3 bg-accent/40 px-4 py-3 text-xs text-muted-foreground lg:grid">
+          <span>Название</span>
+          <span>Формат</span>
+          <span>Заполнение</span>
+          <span>Видимость</span>
+          <span />
+        </div>
+        {loading ? (
+          <p className="p-5 text-sm text-muted-foreground">Загружаем поля…</p>
+        ) : !fields.length ? (
+          <div className="grid justify-items-center gap-3 p-8 text-center">
+            <SlidersHorizontal className="size-6 text-muted-foreground" />
+            <p className="text-sm font-medium">Пока нет дополнительных полей</p>
+            <p className="text-xs text-muted-foreground">
+              Добавьте, например, номер документа или примечание к поездке.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {fields.map((field) => {
+              const Icon = {
+                text: Type,
+                number: Hash,
+                date: CalendarDays,
+                boolean: ToggleLeft,
+                select: List,
+              }[field.fieldType]
+              return (
+                <li
+                  key={field.id}
+                  className="flex items-center gap-3 px-4 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_8rem_8rem_6rem_2.5rem]"
                 >
-                  <HugeiconsIcon icon={Edit02Icon} size={16} />
-                  Изменить
-                </Button>
-              </div>
-            ))
-          : null}
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-control">
+                      <Icon className="size-4 text-muted-foreground" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {field.label}
+                      </p>
+                      <p className="text-xs text-muted-foreground lg:hidden">
+                        {fieldTypeLabels[field.fieldType]} ·{" "}
+                        {field.isRequired ? "Обязательное" : "Необязательное"}
+                        {!field.isActive ? " · Скрыто" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="hidden text-sm lg:block">
+                    {fieldTypeLabels[field.fieldType]}
+                  </span>
+                  <span className="hidden text-xs text-muted-foreground lg:block">
+                    {field.isRequired ? "Обязательное" : "Необязательное"}
+                  </span>
+                  <span className="hidden lg:block">
+                    <Badge variant="secondary">
+                      {field.isActive ? "Видно" : "Скрыто"}
+                    </Badge>
+                  </span>
+                  <Button
+                    aria-label={`Изменить поле ${field.label}`}
+                    size="icon"
+                    variant="ghost"
+                    disabled={disabled}
+                    onClick={() => startEdit(field)}
+                  >
+                    <HugeiconsIcon icon={Edit02Icon} size={16} />
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
     </section>
   )
