@@ -3,6 +3,7 @@
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon, Edit02Icon } from "@hugeicons/core-free-icons"
 
@@ -173,6 +174,33 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
   const [editingID, setEditingID] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState(false)
 
+  const autosave = useFieldAutosave<FieldForm>(async (next) => {
+    if (!editingID || !next.label.trim()) throw Error("Укажите название поля.")
+    const { optionsText, ...field } = next
+    const options =
+      next.fieldType === "select"
+        ? optionsText
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : []
+    const response = await sessionFetch(
+      `/api/custom-fields?id=${encodeURIComponent(editingID)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...field, options }),
+      }
+    )
+    const body = await response.json().catch(() => null)
+    if (!response.ok) throw Error(errorFrom(body, "Не удалось сохранить поле."))
+    setFields((current) =>
+      current.map((item) =>
+        item.id === editingID ? { ...item, ...field, options } : item
+      )
+    )
+    return next
+  })
   const load = React.useCallback(async () => {
     setLoading(true)
     try {
@@ -216,7 +244,18 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
   function startEdit(field: CustomField) {
     setError(null)
     setEditingID(field.id)
-    setForm({ ...field, optionsText: field.options.join(", ") })
+    const next: FieldForm = {
+      entityType: field.entityType,
+      key: field.key,
+      label: field.label,
+      fieldType: field.fieldType,
+      options: field.options,
+      isRequired: field.isRequired,
+      isActive: field.isActive,
+      optionsText: field.options.join(", "),
+    }
+    setForm(next)
+    autosave.initialize(next)
     setOpen(true)
   }
 
@@ -331,7 +370,13 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
               {error}
             </p>
           ) : null}
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+          <form
+            className="grid gap-4 sm:grid-cols-2"
+            onSubmit={(event) => {
+              if (editingID) event.preventDefault()
+              else void submit(event)
+            }}
+          >
             <label className="grid gap-2 text-sm font-semibold">
               Название
               <Input
@@ -348,6 +393,9 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
                   }))
                 }
                 required
+                onBlur={() => {
+                  if (editingID) autosave.commit({ label: form.label })
+                }}
                 value={form.label}
               />
             </label>
@@ -372,12 +420,13 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
               <Checkbox
                 checked={form.isRequired}
                 disabled={saving}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked) => {
+                  if (editingID) autosave.commit({ isRequired: checked })
                   setForm((current) => ({
                     ...current,
                     isRequired: checked,
                   }))
-                }
+                }}
               />
               Обязательное поле
             </label>
@@ -395,6 +444,10 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
                   }
                   placeholder="Например, Новый, Постоянный, VIP"
                   required
+                  onBlur={() => {
+                    if (editingID)
+                      autosave.commit({ optionsText: form.optionsText })
+                  }}
                   value={form.optionsText}
                 />
               </label>
@@ -404,12 +457,13 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
                 <Checkbox
                   checked={form.isActive}
                   disabled={saving}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked) => {
+                    autosave.commit({ isActive: checked })
                     setForm((current) => ({
                       ...current,
                       isActive: checked,
                     }))
-                  }
+                  }}
                 />
                 Показывать это поле сотрудникам
               </label>
@@ -421,15 +475,17 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
                 type="button"
                 variant="ghost"
               >
-                Отмена
+                {editingID ? "Готово" : "Отмена"}
               </Button>
-              <Button disabled={saving} type="submit">
-                {saving
-                  ? "Сохраняем…"
-                  : editingID
-                    ? "Сохранить"
-                    : "Создать поле"}
-              </Button>
+              {!editingID && (
+                <Button disabled={saving} type="submit">
+                  {saving
+                    ? "Сохраняем…"
+                    : editingID
+                      ? "Сохранить"
+                      : "Создать поле"}
+                </Button>
+              )}
             </div>
           </form>
         </DialogContent>

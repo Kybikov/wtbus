@@ -1,4 +1,5 @@
 "use client"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import * as React from "react"
 import Link from "next/link"
 import { ArrowUpRight, Check, LoaderCircle } from "lucide-react"
@@ -257,8 +258,47 @@ export function EntityDetailPage({
   const [saveState, setSaveState] = React.useState<
     "idle" | "saving" | "saved" | "error"
   >("idle")
-  const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const saveController = React.useRef<AbortController | null>(null)
+  const persistedItem = React.useRef<Record<string, unknown> | null>(null)
+  const autosave = useFieldAutosave<Record<string, unknown>>(async (next) => {
+    if (!detail) throw Error("Запись ещё не загружена.")
+    setSaveState("saving")
+    setError(null)
+    try {
+      const send = async (url: string, method: string, body: unknown) => {
+        const response = await sessionFetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15000),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok)
+          throw Error(payload?.error ?? "Не удалось сохранить изменения.")
+      }
+      const previous = persistedItem.current
+      const statusChanged =
+        entity === "trips" && previous?.status !== next.status
+      if (statusChanged)
+        await send(`/api/trips?id=${encodeURIComponent(id)}`, "PATCH", {
+          status: next.status,
+        })
+      const otherChanges = Object.keys(next).some(
+        (key) =>
+          key !== "status" &&
+          JSON.stringify(next[key]) !== JSON.stringify(previous?.[key])
+      )
+      if (!statusChanged || otherChanges) {
+        const request = updateRequest(entity, id, next, detail.timezone)
+        if (request) await send(request.url, request.method, request.body)
+      }
+      persistedItem.current = next
+      setSaveState("saved")
+      return next
+    } catch (reason) {
+      setSaveState("error")
+      throw reason
+    }
+  })
   const load = React.useCallback(
     async (silent = false) => {
       requestController.current?.abort()
@@ -274,7 +314,11 @@ export function EntityDetailPage({
         const payload = await response.json()
         if (!response.ok || !isDetail(payload))
           throw new Error(payload.error ?? "Не удалось загрузить запись.")
-        if (!controller.signal.aborted) setDetail(payload)
+        if (!controller.signal.aborted) {
+          setDetail(payload)
+          persistedItem.current = payload.item
+          autosave.initialize(payload.item)
+        }
       } catch (reason) {
         if (controller.signal.aborted) return
         setError(
@@ -286,81 +330,19 @@ export function EntityDetailPage({
         if (!controller.signal.aborted && !silent) setLoading(false)
       }
     },
-    [entity, id]
+    [entity, id, autosave]
   )
   React.useEffect(() => {
     const timer = setTimeout(() => void load(), 0)
     return () => {
       clearTimeout(timer)
       requestController.current?.abort()
-      saveController.current?.abort()
-      if (saveTimer.current) clearTimeout(saveTimer.current)
     }
   }, [load])
-  const save = React.useCallback(
-    async (next: Record<string, unknown>) => {
-      if (!detail) return
-      const request = updateRequest(entity, id, next, detail.timezone)
-      if (!request) return
-      saveController.current?.abort()
-      const controller = new AbortController()
-      saveController.current = controller
-      setSaveState("saving")
-      setError(null)
-      try {
-        const response = await sessionFetch(request.url, {
-          method: request.method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(request.body),
-          signal: controller.signal,
-        })
-        const payload = await response.json().catch(() => null)
-        if (!response.ok)
-          throw new Error(payload?.error ?? "Не удалось сохранить изменения.")
-        if (controller.signal.aborted) return
-        setSaveState("saved")
-      } catch (reason) {
-        if (controller.signal.aborted) return
-        setSaveState("error")
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "Не удалось сохранить изменения."
-        )
-      }
-    },
-    [detail, entity, id]
-  )
-  const changeField = (key: string, value: unknown) => {
+  const changeField = (key: string, value: unknown, commit = true) => {
     if (!detail) return
-    const next = { ...detail.item, [key]: value }
-    setDetail({ ...detail, item: next })
-    setSaveState("idle")
-    if (entity === "trips" && key === "status") {
-      setSaveState("saving")
-      void sessionFetch(`/api/trips?id=${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: value }),
-      })
-        .then(async (response) => {
-          const payload = await response.json().catch(() => null)
-          if (!response.ok)
-            throw new Error(payload?.error ?? "Не удалось изменить статус.")
-          setSaveState("saved")
-        })
-        .catch((reason) => {
-          setSaveState("error")
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Не удалось изменить статус."
-          )
-        })
-      return
-    }
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => void save(next), 650)
+    setDetail({ ...detail, item: { ...detail.item, [key]: value } })
+    if (commit) autosave.commit({ [key]: value })
   }
   const item = detail?.item
   const title = item
@@ -429,7 +411,8 @@ export function EntityDetailPage({
           aria-label={entityFieldLabels[key] ?? key}
           className="min-h-20 max-w-2xl resize-y"
           value={String(value ?? "")}
-          onChange={(event) => changeField(key, event.target.value)}
+          onChange={(event) => changeField(key, event.target.value, false)}
+          onBlur={() => autosave.commit({ [key]: value })}
         />
       )
     const displayValue =
@@ -453,6 +436,7 @@ export function EntityDetailPage({
               ? "1"
               : undefined
         }
+        onBlur={() => autosave.commit({ [key]: value })}
         value={String(displayValue)}
         onChange={(event) =>
           changeField(
@@ -461,7 +445,8 @@ export function EntityDetailPage({
               ? Math.round(Number(event.target.value) * 100)
               : field.type === "number"
                 ? Number(event.target.value)
-                : event.target.value
+                : event.target.value,
+            false
           )
         }
       />
@@ -480,8 +465,14 @@ export function EntityDetailPage({
           onChange={(event) =>
             changeField(
               "default_price_minor",
-              Math.round(Number(event.target.value) * 100)
+              Math.round(Number(event.target.value) * 100),
+              false
             )
+          }
+          onBlur={() =>
+            autosave.commit({
+              default_price_minor: detail.item.default_price_minor,
+            })
           }
           step="0.01"
           type="number"

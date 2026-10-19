@@ -98,6 +98,22 @@ func TestSettingsPostgres(t *testing.T) {
 			t.Fatal("restart recreated the old email")
 		}
 	})
+	t.Run("payment fields save individually while incomplete configuration cannot accept payments", func(t *testing.T) {
+		path := "/api/v1/tenants/settings-qa/payment-config"
+		draft := map[string]any{"merchantName": "QA Recipient", "isEnabled": false}
+		if w := request("PATCH", path, current.SessionToken, draft); w.Code != 200 {
+			t.Fatal(w.Code, w.Body)
+		}
+		draft["isEnabled"] = true
+		if w := request("PATCH", path, current.SessionToken, draft); w.Code != 400 {
+			t.Fatal("incomplete payment enabled", w.Code, w.Body)
+		}
+		draft["isEnabled"] = false
+		draft["iban"] = "invalid"
+		if w := request("PATCH", path, current.SessionToken, draft); w.Code != 400 {
+			t.Fatal("invalid nonempty IBAN saved", w.Code, w.Body)
+		}
+	})
 	mono := "mono-secret-middle-5678"
 	telegram := "123456789:telegram-test-only-key"
 	base := "/api/v1/tenants/settings-qa/"
@@ -150,6 +166,33 @@ func TestSettingsPostgres(t *testing.T) {
 		}
 		if after := row(`SELECT count(*)::text FROM tenant_exchange_rates WHERE tenant_id=$1`, company); after != before {
 			t.Fatal("preview changed financial data")
+		}
+	})
+
+	t.Run("default currency list synchronizes reports and shows UAH buy sell", func(t *testing.T) {
+		w := request("GET", base+"finance/exchange-rates", current.SessionToken, nil)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `"quoteCurrency":"UAH"`) || !strings.Contains(w.Body.String(), `"buy":44,"sell":46`) {
+			t.Fatal(w.Code, w.Body)
+		}
+		if got := row(`SELECT rate_to_base::text FROM tenant_exchange_rates WHERE tenant_id=$1 AND currency='USD'`, company); got != "0.91111111" {
+			t.Fatal("report rate not synced", got)
+		}
+		before := row(`SELECT updated_at::text FROM tenant_exchange_rates WHERE tenant_id=$1 AND currency='USD'`, company)
+		w = request("GET", base+"finance/exchange-rates", current.SessionToken, nil)
+		if got := row(`SELECT updated_at::text FROM tenant_exchange_rates WHERE tenant_id=$1 AND currency='USD'`, company); got != before {
+			t.Fatal("unchanged quote rewritten")
+		}
+		// A provider failure preserves the last-good quote and all saved report rates.
+		_ = cache.Del(ctx, "public:monobank-currency").Err()
+		goodClient := integrationTestClient
+		integrationTestClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) { return nil, fmt.Errorf("offline") })}
+		defer func() { integrationTestClient = goodClient }()
+		w = request("GET", base+"finance/exchange-rates", current.SessionToken, nil)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `"stale":true`) || !strings.Contains(w.Body.String(), `"buy":44`) {
+			t.Fatal("last good fallback lost", w.Code, w.Body)
+		}
+		if got := row(`SELECT updated_at::text FROM tenant_exchange_rates WHERE tenant_id=$1 AND currency='USD'`, company); got != before {
+			t.Fatal("outage rewrote report rates")
 		}
 	})
 	t.Run("dispatcher cannot view keys or test providers", func(t *testing.T) {

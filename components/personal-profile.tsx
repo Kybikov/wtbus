@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import { AdminNotice } from "@/components/admin-notice"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -65,6 +66,22 @@ export function PersonalProfile({
   const [currentPassword, setCurrentPassword] = React.useState("")
   const [newPassword, setNewPassword] = React.useState("")
   const [confirmation, setConfirmation] = React.useState("")
+  const nameSave = useFieldAutosave<{ displayName: string }>(async (next) => {
+    if (!next.displayName.trim()) throw Error("Укажите имя.")
+    const response = await sessionFetch("/api/auth/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: next.displayName.trim() }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !isProfile(payload))
+      throw Error(errorMessage(payload, "Не удалось сохранить имя."))
+    setProfile(payload)
+    window.dispatchEvent(
+      new CustomEvent("vivat-profile-change", { detail: payload })
+    )
+    return { displayName: payload.displayName }
+  })
   const load = React.useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -78,6 +95,7 @@ export function PersonalProfile({
         throw new Error(errorMessage(payload, "Не удалось загрузить профиль."))
       setProfile(payload)
       setName(payload.displayName)
+      nameSave.initialize({ displayName: payload.displayName })
       setEmail(payload.email)
     } catch (reason) {
       setError(
@@ -88,7 +106,7 @@ export function PersonalProfile({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [nameSave])
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
     return () => window.clearTimeout(timer)
@@ -193,6 +211,7 @@ export function PersonalProfile({
                 <Input
                   id="profile-name"
                   autoComplete="name"
+                  onBlur={() => nameSave.commit({ displayName: name })}
                   disabled={loading || saving}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
@@ -241,18 +260,14 @@ export function PersonalProfile({
                     : "Загружаем…"}
                 </Badge>
               </div>
-              <Button
-                disabled={
-                  loading ||
-                  saving ||
-                  !name.trim() ||
-                  (name.trim() === profile?.displayName &&
-                    email.trim().toLowerCase() === profile?.email)
-                }
-                type="submit"
-              >
-                {saving ? "Сохраняем…" : "Сохранить данные"}
-              </Button>
+              {profile && email.trim().toLowerCase() !== profile.email && (
+                <Button
+                  disabled={loading || saving || !currentPassword}
+                  type="submit"
+                >
+                  Подтвердить смену email
+                </Button>
+              )}
             </form>
           </SettingsFormSection>
         ) : null}

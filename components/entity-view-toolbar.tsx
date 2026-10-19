@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import { sessionFetch } from "@/lib/session-navigation"
 import { adminControlClassName } from "@/lib/admin-ui"
 import { cn } from "@/lib/utils"
@@ -18,7 +19,6 @@ import {
   Columns3,
   Filter,
   Plus,
-  Save,
   Settings2,
   Users,
   X,
@@ -361,10 +361,45 @@ export function EntityViewToolbar<T>({
   const [name, setName] = React.useState("")
   const [visibility, setVisibility] = React.useState("private")
   const [filtersOpen, setFiltersOpen] = React.useState(false)
+  const autosave = useFieldAutosave<SavedEntityView>(async (next) => {
+    const response = await sessionFetch(
+      `/api/entity-views?entity=${collection}&id=${encodeURIComponent(next.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: next.name,
+          visibility: next.visibility,
+          config: next.config,
+          version: next.version,
+        }),
+        signal: AbortSignal.timeout(10000),
+      }
+    )
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.item) {
+      const message = payload?.error ?? "Не удалось сохранить вид."
+      setError(message)
+      throw Error(message)
+    }
+    setError("")
+    setViews((list) =>
+      list.map((view) => (view.id === payload.item.id ? payload.item : view))
+    )
+    return payload.item as SavedEntityView
+  })
   const applyRef = React.useRef(onChange)
   React.useEffect(() => {
     applyRef.current = onChange
   }, [onChange])
+  const defaultsRef = React.useRef(defaults)
+  React.useLayoutEffect(() => {
+    defaultsRef.current = defaults
+  }, [defaults])
+  const activeRef = React.useRef(active)
+  React.useLayoutEffect(() => {
+    activeRef.current = active
+  }, [active])
   const restored = React.useRef(false)
   const loadedRevision = React.useRef(-1)
   React.useEffect(() => {
@@ -383,6 +418,13 @@ export function EntityViewToolbar<T>({
         setViews(payload.items)
         setScope(payload.scopeKey)
         setError("")
+        if (restored.current) {
+          const selected = (payload.items as SavedEntityView[]).find(
+            (item) => item.id === activeRef.current
+          )
+          autosave.initialize(selected ?? null)
+          applyRef.current(selected?.config ?? defaultsRef.current)
+        }
         if (!restored.current) {
           restored.current = true
           let remembered: string | null = null
@@ -395,6 +437,7 @@ export function EntityViewToolbar<T>({
             (item) => item.id === remembered
           )
           if (view) {
+            autosave.initialize(view)
             setActive(view.id)
             applyRef.current(view.config)
           }
@@ -404,10 +447,16 @@ export function EntityViewToolbar<T>({
         if (!controller.signal.aborted) setError(reason.message)
       })
     return () => controller.abort()
-  }, [collection, revision, ready])
+  }, [collection, revision, ready, autosave])
   const current = views.find((view) => view.id === active)
   const dirty = !sameViewConfig(config, current?.config ?? defaults)
+  React.useEffect(() => {
+    if (!current?.canEdit || !dirty || !ready || dialog === "create") return
+    const timer = setTimeout(() => autosave.commit({ config }), 350)
+    return () => clearTimeout(timer)
+  }, [autosave, config, current?.canEdit, current?.id, dirty, ready, dialog])
   function select(view?: SavedEntityView) {
+    autosave.initialize(view ?? null)
     setActive(view?.id ?? "")
     onChange(view?.config ?? defaults)
     try {
@@ -517,9 +566,7 @@ export function EntityViewToolbar<T>({
                     <ViewChip
                       key={view.id}
                       label={view.name}
-                      mode={
-                        view.id === active ? config.mode : view.config.mode
-                      }
+                      mode={view.id === active ? config.mode : view.config.mode}
                       selected={view.id === active}
                       shared={view.visibility === "shared"}
                       dirty={dirty}
@@ -565,7 +612,7 @@ export function EntityViewToolbar<T>({
                     {current?.canEdit ? (
                       <>
                         <DropdownMenuItem onClick={() => open("edit")}>
-                          Настроить и сохранить вид
+                          Настройки вида
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
@@ -578,18 +625,6 @@ export function EntityViewToolbar<T>({
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : null}
-            {current?.canEdit && dirty ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className={control}
-                disabled={busy}
-                onClick={() => open("edit")}
-              >
-                <Save />
-                Сохранить
-              </Button>
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -895,6 +930,10 @@ export function EntityViewToolbar<T>({
                   id="entity-view-name"
                   value={name}
                   maxLength={80}
+                  onBlur={() => {
+                    if (dialog === "edit")
+                      autosave.commit({ name: name.trim() })
+                  }}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Название вида"
                 />
@@ -906,7 +945,13 @@ export function EntityViewToolbar<T>({
                 <FieldSelect
                   aria-label="Доступ"
                   value={visibility}
-                  onValueChange={setVisibility}
+                  onValueChange={(next) => {
+                    setVisibility(next)
+                    if (dialog === "edit")
+                      autosave.commit({
+                        visibility: next as SavedEntityView["visibility"],
+                      })
+                  }}
                   options={[
                     { value: "private", label: "Приватный — только для меня" },
                     { value: "shared", label: "Общий — для команды" },
@@ -941,19 +986,21 @@ export function EntityViewToolbar<T>({
               disabled={busy}
               onClick={() => setDialog(null)}
             >
-              Отмена
+              {dialog === "edit" ? "Готово" : "Отмена"}
             </Button>
-            <Button
-              variant={dialog === "delete" ? "destructive" : "default"}
-              disabled={busy}
-              onClick={() => dialog && void write(dialog)}
-            >
-              {busy
-                ? "Сохраняем…"
-                : dialog === "delete"
-                  ? "Удалить"
-                  : "Сохранить вид"}
-            </Button>
+            {dialog !== "edit" && (
+              <Button
+                variant={dialog === "delete" ? "destructive" : "default"}
+                disabled={busy}
+                onClick={() => dialog && void write(dialog)}
+              >
+                {busy
+                  ? "Сохраняем…"
+                  : dialog === "delete"
+                    ? "Удалить"
+                    : "Создать вид"}
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

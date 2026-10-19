@@ -9,8 +9,8 @@ import { CustomFieldManager } from "@/components/custom-field-manager"
 import { PaymentSettings } from "@/components/payment-settings"
 import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
 import { ExchangeRateSettings } from "@/components/exchange-rate-settings"
-import { Button } from "@/components/ui/button"
-import { Palette, Save, LoaderCircle } from "lucide-react"
+import { useFieldAutosave } from "@/components/use-field-autosave"
+import { Palette } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { LogoPicker } from "@/components/ui/logo-picker"
@@ -46,20 +46,6 @@ function isBranding(value: unknown): value is Branding {
   )
 }
 
-function applyBrandColor(color: string) {
-  const root = document.documentElement
-  root.style.setProperty("--primary", color)
-  root.style.setProperty("--sidebar-primary", color)
-  root.style.setProperty("--ring", color)
-  const red = Number.parseInt(color.slice(1, 3), 16)
-  const green = Number.parseInt(color.slice(3, 5), 16)
-  const blue = Number.parseInt(color.slice(5, 7), 16)
-  const ink =
-    (red * 299 + green * 587 + blue * 114) / 1000 > 150 ? "#191914" : "#FFFFFF"
-  root.style.setProperty("--primary-foreground", ink)
-  root.style.setProperty("--sidebar-primary-foreground", ink)
-}
-
 export type CompanySettingsSection =
   "company" | "payments" | "finance" | "fields" | "integrations"
 export function CompanySettings({
@@ -70,14 +56,42 @@ export function CompanySettings({
   const [branding, setBranding] = React.useState<Branding>(defaultBranding)
   const [loading, setLoading] = React.useState(true)
   const [refreshVersion, setRefreshVersion] = React.useState(0)
-  const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const [notice, setNotice] = React.useState<string | null>(null)
   const role = useSettingsRole()
   const canManageSecrets = role === "owner" || role === "developer"
   const isSubscriptionLocked =
     branding.subscriptionStatus === "past_due" ||
     branding.subscriptionStatus === "suspended"
+
+  const autosave = useFieldAutosave<Branding>(async (next) => {
+    if (!/^#[0-9a-f]{6}$/i.test(next.primaryColor))
+      throw Error("Выберите цвет в формате #RRGGBB.")
+    const response = await sessionFetch("/api/branding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logoUrl: next.logoUrl ?? null,
+        primaryColor: next.primaryColor,
+        defaultTheme: next.defaultTheme,
+        dispatcherContact: next.dispatcherContact,
+      }),
+    })
+    const payload: unknown = await response.json().catch(() => null)
+    if (!response.ok || !isBranding(payload)) {
+      const message =
+        typeof payload === "object" &&
+        payload !== null &&
+        "error" in payload &&
+        typeof payload.error === "string"
+          ? payload.error
+          : "Не удалось сохранить настройки компании."
+      throw new Error(message)
+    }
+    window.dispatchEvent(
+      new CustomEvent("vivat-branding-change", { detail: payload })
+    )
+    return payload
+  })
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -89,11 +103,11 @@ export function CompanySettings({
           const response = await sessionFetch("/api/branding", {
             signal: controller.signal,
           })
-          const payload: unknown = await response.json()
+          const payload: unknown = await response.json().catch(() => null)
           if (!response.ok || !isBranding(payload))
             throw new Error("Не удалось загрузить настройки компании.")
           setBranding(payload)
-          applyBrandColor(payload.primaryColor)
+          autosave.initialize(payload)
         } catch (reason) {
           if (!controller.signal.aborted)
             setError(
@@ -110,7 +124,7 @@ export function CompanySettings({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [refreshVersion])
+  }, [refreshVersion, autosave])
 
   React.useEffect(() => {
     const refresh = () => setRefreshVersion((v) => v + 1)
@@ -118,70 +132,11 @@ export function CompanySettings({
     return () => window.removeEventListener("vivat-settings-refresh", refresh)
   }, [])
 
-  async function save(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!/^#[0-9a-f]{6}$/i.test(branding.primaryColor)) {
-      setError("Выберите цвет в формате #RRGGBB.")
-      return
-    }
-    setSaving(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const response = await sessionFetch("/api/branding", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          logoUrl: branding.logoUrl ?? null,
-          primaryColor: branding.primaryColor,
-          defaultTheme: branding.defaultTheme,
-          dispatcherContact: branding.dispatcherContact,
-        }),
-      })
-      const payload: unknown = await response.json()
-      if (!response.ok || !isBranding(payload)) {
-        const message =
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof payload.error === "string"
-            ? payload.error
-            : "Не удалось сохранить настройки компании."
-        throw new Error(message)
-      }
-      setBranding(payload)
-      applyBrandColor(payload.primaryColor)
-      window.dispatchEvent(
-        new CustomEvent("vivat-branding-change", {
-          detail: {
-            primaryColor: payload.primaryColor,
-            defaultTheme: payload.defaultTheme,
-            logoUrl: payload.logoUrl ?? null,
-          },
-        })
-      )
-      setNotice("Бренд компании сохранён.")
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось сохранить настройки компании."
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <div className="company-settings w-full min-w-0 space-y-4">
       <AdminNotice message={error} variant="error" />
-      <AdminNotice message={notice} />
       {section === "company" ? (
-        <form
-          className="settings-panel"
-          onSubmit={save}
-          aria-label="Визуальный стиль"
-        >
+        <section className="settings-panel" aria-label="Визуальный стиль">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
               <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
@@ -199,7 +154,10 @@ export function CompanySettings({
             <div className="sm:col-span-2">
               <LogoPicker
                 value={branding.logoUrl ?? ""}
-                disabled={loading || saving || isSubscriptionLocked}
+                disabled={loading || !!error || isSubscriptionLocked}
+                onValueCommit={(logoUrl) =>
+                  autosave.commit({ logoUrl: logoUrl || undefined })
+                }
                 onValueChange={(logoUrl) =>
                   setBranding((current) => ({
                     ...current,
@@ -218,7 +176,10 @@ export function CompanySettings({
               <ColorPicker
                 id="brand-color"
                 value={branding.primaryColor}
-                disabled={loading || saving || isSubscriptionLocked}
+                disabled={loading || !!error || isSubscriptionLocked}
+                onValueCommit={(primaryColor) =>
+                  autosave.commit({ primaryColor })
+                }
                 onValueChange={(primaryColor) =>
                   setBranding((current) => ({ ...current, primaryColor }))
                 }
@@ -228,13 +189,16 @@ export function CompanySettings({
               <p className="text-sm font-medium">Тема по умолчанию</p>
               <FieldSelect
                 aria-label="Тема по умолчанию"
-                disabled={loading || saving || isSubscriptionLocked}
-                onValueChange={(value) =>
+                disabled={loading || !!error || isSubscriptionLocked}
+                onValueChange={(value) => {
+                  autosave.commit({
+                    defaultTheme: value as Branding["defaultTheme"],
+                  })
                   setBranding((current) => ({
                     ...current,
                     defaultTheme: value as Branding["defaultTheme"],
                   }))
-                }
+                }}
                 options={[
                   { value: "dark", label: "Тёмная" },
                   { value: "light", label: "Светлая" },
@@ -247,7 +211,10 @@ export function CompanySettings({
               Контакт диспетчера для Telegram-бота
               <Input
                 className="mt-2 font-normal"
-                disabled={loading || saving || isSubscriptionLocked}
+                disabled={loading || !!error || isSubscriptionLocked}
+                onBlur={(event) =>
+                  autosave.commit({ dispatcherContact: event.target.value })
+                }
                 maxLength={160}
                 onChange={(event) =>
                   setBranding((current) => ({
@@ -260,44 +227,32 @@ export function CompanySettings({
               />
             </label>
           </div>
-          <div className="settings-footer">
-            <p className="text-xs leading-5 text-muted-foreground">
-              {isSubscriptionLocked
-                ? "Рабочие операции приостановлены до продления подписки."
-                : "Изменения применятся ко всей компании после сохранения."}
+          {isSubscriptionLocked && (
+            <p className="mt-5 text-xs text-muted-foreground">
+              Рабочие операции приостановлены до продления подписки.
             </p>
-            <Button
-              disabled={loading || saving || isSubscriptionLocked}
-              type="submit"
-            >
-              {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-              {saving ? "Сохраняем…" : "Сохранить изменения"}
-            </Button>
-          </div>
-        </form>
+          )}
+        </section>
       ) : null}
       {canManageSecrets && section === "payments" ? (
         <PaymentSettings
           key={`payment-${refreshVersion}`}
-          disabled={loading || saving || isSubscriptionLocked}
+          disabled={loading || !!error || isSubscriptionLocked}
         />
       ) : null}
       {canManageSecrets && section === "integrations" ? (
         <IntegrationSecretsSettings
           key={`integrations-${refreshVersion}`}
-          disabled={loading || saving || isSubscriptionLocked}
+          disabled={loading || !!error || isSubscriptionLocked}
         />
       ) : null}
       {canManageSecrets && section === "finance" ? (
-        <ExchangeRateSettings
-          key={`finance-${refreshVersion}`}
-          disabled={loading || saving || isSubscriptionLocked}
-        />
+        <ExchangeRateSettings key={`finance-${refreshVersion}`} />
       ) : null}
       {section === "fields" ? (
         <CustomFieldManager
           key={`fields-${refreshVersion}`}
-          disabled={loading || saving || isSubscriptionLocked}
+          disabled={loading || !!error || isSubscriptionLocked}
         />
       ) : null}
     </div>

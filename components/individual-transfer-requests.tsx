@@ -83,7 +83,7 @@ const requestBadgeClasses: Record<string, string> = {
   new: "status-sky",
   in_progress: "status-gold",
   awaiting_trip: "status-violet",
-  booking_created: "bg-emerald-500/15 text-emerald-400",
+  booking_created: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   closed: "status-slate",
   cancelled: "bg-destructive/15 text-destructive",
 }
@@ -239,7 +239,8 @@ export function IndividualTransferRequests() {
         statuses.find((status) => status.key === nextStatus)?.label ??
         statusLabels[nextStatus] ??
         nextStatus
-      setNotice(`Статус заявки изменён: ${label.toLowerCase()}.`)
+      if (nextStatus !== item.status)
+        setNotice(`Статус заявки изменён: ${label.toLowerCase()}.`)
       return true
     } catch (reason) {
       setError(
@@ -366,6 +367,10 @@ export function IndividualTransferRequests() {
         <Textarea
           aria-label={`Комментарий: ${item.passengerName}`}
           className="min-h-16 min-w-48"
+          onBlur={() => {
+            if ((notes[item.id] ?? "") !== (item.operatorNote ?? ""))
+              void updateRequest(item, item.status)
+          }}
           maxLength={2000}
           value={notes[item.id] ?? ""}
           disabled={
@@ -421,7 +426,6 @@ export function IndividualTransferRequests() {
       }}
       pageDescription="Запросы из Telegram на индивидуальный маршрут"
       pageTitle="Индивидуальные заявки"
-
     >
       <div className="w-full min-w-0 space-y-5">
         <AdminNotice message={error} variant="error" />
@@ -502,16 +506,6 @@ export function IndividualTransferRequests() {
               disabled: (item) =>
                 !["in_progress", "awaiting_trip"].includes(item.status) ||
                 !!item.bookingId ||
-                !!updatingID ||
-                selection.pending,
-            },
-            {
-              label: "Сохранить комментарий",
-              onSelect: (item) => void updateRequest(item, item.status),
-              disabled: (item) =>
-                !["new", "in_progress", "awaiting_trip"].includes(
-                  item.status
-                ) ||
                 !!updatingID ||
                 selection.pending,
             },

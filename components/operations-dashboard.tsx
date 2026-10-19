@@ -174,7 +174,9 @@ function Metric({
         </p>
         <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
           {trend ? (
-            <span className="font-bold text-emerald-500">{trend}</span>
+            <span className="font-bold text-emerald-700 dark:text-emerald-500">
+              {trend}
+            </span>
           ) : null}
           {detail}
         </p>
@@ -437,8 +439,8 @@ export function OperationsDashboard() {
                           className={cn(
                             "font-semibold",
                             signalAge !== null && signalAge <= 2
-                              ? "text-emerald-500"
-                              : "text-amber-500"
+                              ? "text-emerald-700 dark:text-emerald-500"
+                              : "text-amber-700 dark:text-amber-500"
                           )}
                         >
                           {signalAge === null

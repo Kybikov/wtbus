@@ -97,11 +97,11 @@ export function statusColumn<T>(
 }
 export function statusToneClass(tone: StatusOption["tone"]) {
   return {
-    success: "bg-emerald-500/15 text-emerald-500",
-    warning: "bg-amber-500/15 text-amber-500",
-    danger: "bg-red-500/15 text-red-500",
-    info: "bg-sky-500/15 text-sky-500",
-    violet: "bg-violet-500/15 text-violet-500",
+    success: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-500",
+    warning: "bg-amber-500/15 text-amber-700 dark:text-amber-500",
+    danger: "bg-red-500/15 text-red-700 dark:text-red-500",
+    info: "bg-sky-500/15 text-sky-700 dark:text-sky-500",
+    violet: "bg-violet-500/15 text-violet-700 dark:text-violet-500",
     neutral: "bg-muted text-muted-foreground",
   }[tone ?? "neutral"]
 }

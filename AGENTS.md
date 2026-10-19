@@ -7,3 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Editing existing data
+
+Use blur-based autosave for existing records and settings throughout the product. Text and number fields commit when focus leaves the field; completed selects, switches and uploads commit immediately. Use the serialized field queue described in `docs/interface-settings.md`. Preserve newer drafts, report failed writes and never abort a previous mutation to replace it. New-record creation, deletion, credential confirmation and financial actions remain explicit. Do not add Save buttons to ordinary updates.

@@ -118,6 +118,8 @@ func main() {
 	app.notificationContext = signalContext
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); app.notificationWorker(signalContext) }()
+	currencyDone := make(chan struct{})
+	go func() { defer close(currencyDone); app.currencyWorker(signalContext) }()
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           app.routes(),
@@ -141,6 +143,10 @@ func main() {
 	}
 	select {
 	case <-workerDone:
+	case <-shutdownContext.Done():
+	}
+	select {
+	case <-currencyDone:
 	case <-shutdownContext.Done():
 	}
 }
@@ -5826,17 +5832,17 @@ func validatePaymentConfigInput(input *updatePaymentConfigRequest) error {
 	input.BankMFO = strings.TrimSpace(input.BankMFO)
 	input.BankEDRPOU = strings.TrimSpace(input.BankEDRPOU)
 	input.LogoURL = strings.TrimSpace(input.LogoURL)
-	if len([]rune(input.MerchantName)) < 2 || len([]rune(input.MerchantName)) > 160 {
-		return errors.New("merchant name must be between 2 and 160 characters")
+	if ((input.IsEnabled || input.MerchantName != "") && len([]rune(input.MerchantName)) < 2) || len([]rune(input.MerchantName)) > 160 {
+		return errors.New("Укажите имя получателя: от 2 до 160 символов.")
 	}
-	if !ibanpayment.ValidUAIBAN(input.IBAN) {
-		return errors.New("IBAN must use the Ukrainian UA format")
+	if (input.IsEnabled || input.IBAN != "") && !ibanpayment.ValidUAIBAN(input.IBAN) {
+		return errors.New("Укажите корректный украинский IBAN.")
 	}
-	if !regexp.MustCompile(`^[0-9]{8,10}$`).MatchString(input.EDRPOU) {
-		return errors.New("EDRPOU must contain 8 to 10 digits")
+	if (input.IsEnabled || input.EDRPOU != "") && !regexp.MustCompile(`^[0-9]{8,10}$`).MatchString(input.EDRPOU) {
+		return errors.New("ЕГРПОУ / ИНН должен содержать от 8 до 10 цифр.")
 	}
-	if len([]rune(input.BankName)) < 2 || len([]rune(input.BankName)) > 120 {
-		return errors.New("bank name must be between 2 and 120 characters")
+	if ((input.IsEnabled || input.BankName != "") && len([]rune(input.BankName)) < 2) || len([]rune(input.BankName)) > 120 {
+		return errors.New("Укажите название банка: от 2 до 120 символов.")
 	}
 	if input.BankMFO != "" && !regexp.MustCompile(`^[0-9]{6}$`).MatchString(input.BankMFO) {
 		return errors.New("bank MFO must contain 6 digits")
@@ -6596,8 +6602,12 @@ func normalizedFinanceCurrency(value, fallback string) string {
 }
 
 type exchangeRatesResponse struct {
-	BaseCurrency string             `json:"baseCurrency"`
-	Rates        map[string]float64 `json:"rates"`
+	BaseCurrency  string             `json:"baseCurrency"`
+	Rates         map[string]float64 `json:"rates"`
+	Quotes        []currencyQuote    `json:"quotes"`
+	QuoteCurrency string             `json:"quoteCurrency"`
+	Source        string             `json:"source"`
+	Stale         bool               `json:"stale"`
 }
 
 type updateExchangeRatesRequest struct {
@@ -6610,6 +6620,21 @@ func (app *application) getExchangeRates(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response := exchangeRatesResponse{BaseCurrency: tenant.BaseCurrency, Rates: map[string]float64{tenant.BaseCurrency: 1}}
+	response.QuoteCurrency = "UAH"
+	response.Source = "Monobank"
+	response.Quotes = make([]currencyQuote, 0)
+	items, stale, marketErr := app.loadMonobankRates(r.Context(), false)
+	response.Stale = stale || marketErr != nil
+	if marketErr == nil {
+		response.Quotes = monobankQuotes(items)
+		if !stale {
+			if err := app.storeMonobankRates(r.Context(), tenant.ID, tenant.BaseCurrency, items); err != nil {
+				app.publicFailure(w, err)
+				return
+			}
+		}
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
 	rows, err := app.db.Query(r.Context(), `SELECT currency,rate_to_base::float8 FROM tenant_exchange_rates WHERE tenant_id=$1 ORDER BY currency`, tenant.ID)
 	if err != nil {
 		app.publicFailure(w, err)

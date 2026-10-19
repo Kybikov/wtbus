@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import { Plus, Settings2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -211,6 +212,13 @@ export function WorkflowStatusField({
     const selected =
       statuses.find((status) => status.key === value) ?? statuses[0]
     if (selected) {
+      autosave.initialize({
+        label: selected.label,
+        tone: selected.tone,
+        semanticPhase: selected.semanticPhase,
+        isAvailable: selected.isAvailable,
+        isTerminal: selected.isTerminal,
+      })
       setSelectedKey(selected.key)
       setLabel(selected.label)
       setTone(selected.tone)
@@ -223,9 +231,43 @@ export function WorkflowStatusField({
     setOpen(true)
   }
 
+  type StatusForm = Pick<
+    WorkflowStatus,
+    "label" | "tone" | "semanticPhase" | "isAvailable" | "isTerminal"
+  >
+  const autosave = useFieldAutosave<StatusForm>(async (next) => {
+    if (!selectedKey || !next.label.trim())
+      throw Error("Укажите название статуса.")
+    const response = await sessionFetch(
+      `/api/workflow-statuses/${encodeURIComponent(selectedKey)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity, ...next }),
+      }
+    )
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.item)
+      throw Error(messageFrom(payload, "Не удалось сохранить статус."))
+    const item = payload.item as WorkflowStatus
+    setStatuses((current) =>
+      current.map((status) => (status.key === item.key ? item : status))
+    )
+    window.dispatchEvent(
+      new CustomEvent(`workflow-statuses-changed:${entity}`, { detail: item })
+    )
+    return next
+  })
   function selectStatus(key: string) {
     const selected = statuses.find((status) => status.key === key)
     if (!selected) return
+    autosave.initialize({
+      label: selected.label,
+      tone: selected.tone,
+      semanticPhase: selected.semanticPhase,
+      isAvailable: selected.isAvailable,
+      isTerminal: selected.isTerminal,
+    })
     setSelectedKey(selected.key)
     setLabel(selected.label)
     setTone(selected.tone)
@@ -366,7 +408,10 @@ export function WorkflowStatusField({
           <form
             className="grid gap-4"
             id="route-status-form"
-            onSubmit={saveStatus}
+            onSubmit={(event) => {
+              if (selectedKey) event.preventDefault()
+              else void saveStatus(event)
+            }}
           >
             <label className="grid gap-2 text-sm font-medium">
               Название
@@ -376,6 +421,9 @@ export function WorkflowStatusField({
                 onChange={(event) => setLabel(event.target.value)}
                 placeholder="Например, На обслуживании"
                 required
+                onBlur={() => {
+                  if (selectedKey) autosave.commit({ label })
+                }}
                 value={label}
               />
             </label>
@@ -384,9 +432,11 @@ export function WorkflowStatusField({
               <FieldSelect
                 options={toneOptions}
                 value={tone}
-                onValueChange={(next) =>
+                onValueChange={(next) => {
                   setTone(next as WorkflowStatus["tone"])
-                }
+                  if (selectedKey)
+                    autosave.commit({ tone: next as WorkflowStatus["tone"] })
+                }}
               />
             </label>
             <label className="grid gap-2 text-sm font-medium">
@@ -404,7 +454,11 @@ export function WorkflowStatusField({
             <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm">
               <Checkbox
                 checked={isAvailable}
-                onCheckedChange={(checked) => setIsAvailable(Boolean(checked))}
+                onCheckedChange={(checked) => {
+                  setIsAvailable(Boolean(checked))
+                  if (selectedKey)
+                    autosave.commit({ isAvailable: Boolean(checked) })
+                }}
               />
               <span>
                 <span className="block font-medium">
@@ -431,19 +485,21 @@ export function WorkflowStatusField({
           </form>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Отмена
+              {selectedKey ? "Готово" : "Отмена"}
             </Button>
-            <Button
-              disabled={saving || !label.trim()}
-              form="route-status-form"
-              type="submit"
-            >
-              {saving
-                ? "Сохраняем…"
-                : selectedKey
-                  ? "Сохранить статус"
-                  : "Добавить статус"}
-            </Button>
+            {!selectedKey && (
+              <Button
+                disabled={saving || !label.trim()}
+                form="route-status-form"
+                type="submit"
+              >
+                {saving
+                  ? "Сохраняем…"
+                  : selectedKey
+                    ? "Сохранить статус"
+                    : "Добавить статус"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

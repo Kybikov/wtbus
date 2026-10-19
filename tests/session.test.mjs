@@ -138,3 +138,15 @@ test("API session loss redirects once without swallowing responses or confusing 
     "/driver?date=2026-09-14#booking"
   )
 })
+
+test("small blur updates survive navigation without exceeding keepalive body limits", async (t) => {
+ const { sessionFetch }=await import("../lib/session-navigation.ts")
+ const requests=[]
+ t.mock.method(globalThis,"fetch",async (_input,init)=>{requests.push(init);return new Response("{}",{status:200})})
+ await sessionFetch("https://vivat.invalid/api/routes",{method:"PATCH",body:JSON.stringify({name:"Updated"})})
+ await sessionFetch("https://vivat.invalid/api/branding",{method:"PATCH",body:JSON.stringify({logo:"x".repeat(70000)})})
+ await sessionFetch("https://vivat.invalid/api/routes",{method:"PATCH",body:"{}",keepalive:false})
+ assert.equal(requests[0].keepalive,true)
+ assert.equal(requests[1].keepalive,undefined)
+ assert.equal(requests[2].keepalive,false)
+})

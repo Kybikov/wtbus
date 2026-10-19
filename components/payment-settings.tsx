@@ -5,12 +5,12 @@ import { sessionFetch } from "@/lib/session-navigation"
 import * as React from "react"
 import { toast } from "sonner"
 
-import { Banknote, Save, LoaderCircle } from "lucide-react"
+import { Banknote } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { LogoPicker } from "@/components/ui/logo-picker"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Button } from "@/components/ui/button"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 
 type PaymentConfig = {
   provider: "internal"
@@ -64,8 +64,36 @@ function isPaymentConfig(value: unknown): value is PaymentConfig {
 export function PaymentSettings({ disabled }: { disabled: boolean }) {
   const [config, setConfig] = React.useState<PaymentConfig>(initialConfig)
   const [loading, setLoading] = React.useState(true)
-  const [saving, setSaving] = React.useState(false)
+  const [loaded, setLoaded] = React.useState(false)
 
+  const autosave = useFieldAutosave<PaymentConfig>(async (next) => {
+    const response = await sessionFetch("/api/payment-settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        merchantName: next.merchantName,
+        iban: next.iban,
+        edrpou: next.edrpou,
+        bankName: next.bankName,
+        bankMfo: next.bankMfo,
+        bankEdrpou: next.bankEdrpou,
+        logoUrl: next.logoUrl,
+        isEnabled: next.isEnabled,
+      }),
+    })
+    const payload: unknown = await response.json().catch(() => null)
+    if (!response.ok || !isPaymentConfig(payload)) {
+      const message =
+        typeof payload === "object" &&
+        payload !== null &&
+        "error" in payload &&
+        typeof payload.error === "string"
+          ? payload.error
+          : "Не удалось сохранить настройки оплаты."
+      throw new Error(message)
+    }
+    return payload
+  })
   React.useEffect(() => {
     const controller = new AbortController()
     void (async () => {
@@ -73,10 +101,12 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
         const response = await sessionFetch("/api/payment-settings", {
           signal: controller.signal,
         })
-        const payload: unknown = await response.json()
+        const payload: unknown = await response.json().catch(() => null)
         if (!response.ok || !isPaymentConfig(payload))
           throw new Error("Не удалось загрузить настройки оплаты.")
+        setLoaded(true)
         setConfig(payload)
+        autosave.initialize(payload)
       } catch (reason) {
         if (!controller.signal.aborted)
           toast.error("Не удалось загрузить настройки оплаты", {
@@ -87,38 +117,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
       }
     })()
     return () => controller.abort()
-  }, [])
-
-  async function save(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true)
-    try {
-      const response = await sessionFetch("/api/payment-settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      })
-      const payload: unknown = await response.json()
-      if (!response.ok || !isPaymentConfig(payload)) {
-        const message =
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof payload.error === "string"
-            ? payload.error
-            : "Не удалось сохранить настройки оплаты."
-        throw new Error(message)
-      }
-      setConfig(payload)
-      toast.success("Настройки оплаты сохранены")
-    } catch (reason) {
-      toast.error("Не удалось сохранить настройки оплаты", {
-        description: reason instanceof Error ? reason.message : undefined,
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
+  }, [autosave])
 
   const fields = [
     {
@@ -142,7 +141,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
   ]
 
   return (
-    <form className="settings-panel" onSubmit={save}>
+    <section className="settings-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-2xl">
           <h2 className="flex items-center gap-2 font-semibold">
@@ -171,7 +170,10 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
             {field.label}
             <Input
               className="mt-2 font-normal"
-              disabled={disabled || loading}
+              disabled={disabled || loading || !loaded}
+              onBlur={(event) =>
+                autosave.commit({ [field.key]: event.target.value })
+              }
               maxLength={field.key === "merchantName" ? 160 : 120}
               onChange={(event) =>
                 setConfig((current) => ({
@@ -191,7 +193,8 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           <LogoPicker
             label="Логотип для оплаты"
             value={config.logoUrl}
-            disabled={disabled || loading || saving}
+            disabled={disabled || loading || !loaded}
+            onValueCommit={(logoUrl) => autosave.commit({ logoUrl })}
             onValueChange={(logoUrl) =>
               setConfig((current) => ({ ...current, logoUrl }))
             }
@@ -201,13 +204,14 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
       <label className="mt-5 flex items-start gap-3 rounded-xl bg-control p-4 text-sm">
         <Checkbox
           checked={config.isEnabled}
-          disabled={disabled || loading}
-          onCheckedChange={(checked) =>
+          disabled={disabled || loading || !loaded}
+          onCheckedChange={(checked) => {
+            autosave.commit({ isEnabled: checked === true })
             setConfig((current) => ({
               ...current,
               isEnabled: checked === true,
             }))
-          }
+          }}
           className="mt-0.5"
         />
         <span>
@@ -223,11 +227,7 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           Гроші надходять напряму на рахунок ФОП. Для автоматичної звірки
           потрібен персональний API-токен Monobank у блоці інтеграцій.
         </p>
-        <Button disabled={disabled || loading || saving} type="submit">
-          {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-          {saving ? "Сохраняем…" : "Сохранить оплату"}
-        </Button>
       </div>
-    </form>
+    </section>
   )
 }

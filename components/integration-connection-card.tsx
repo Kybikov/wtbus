@@ -7,7 +7,6 @@ import {
   EyeOff,
   KeyRound,
   LoaderCircle,
-  Save,
   Trash2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -56,11 +55,18 @@ export function IntegrationConnectionCard({
   const [token, setToken] = React.useState("")
   const [revealed, setRevealed] = React.useState(false)
   const [confirmRemove, setConfirmRemove] = React.useState(false)
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    if (await onSave(token.trim())) {
-      setToken("")
-      setRevealed(false)
+  const submitting = React.useRef(false)
+  async function submit() {
+    const submitted = token.trim()
+    if (!submitted || saving || disabled || submitting.current) return
+    submitting.current = true
+    try {
+      if (await onSave(submitted)) {
+        setToken((current) => (current.trim() === submitted ? "" : current))
+        setRevealed(false)
+      }
+    } finally {
+      submitting.current = false
     }
   }
   return (
@@ -79,7 +85,10 @@ export function IntegrationConnectionCard({
         {description}
       </p>
       <form
-        onSubmit={(event) => void submit(event)}
+        onSubmit={(event) => {
+          event.preventDefault()
+          void submit()
+        }}
         className="mt-5 flex flex-1 flex-col"
       >
         <label htmlFor={id} className="mb-2 text-sm font-medium">
@@ -93,6 +102,15 @@ export function IntegrationConnectionCard({
             disabled={disabled || saving}
             value={token}
             onChange={(event) => setToken(event.target.value)}
+            onBlur={(event) => {
+              if (
+                !(event.relatedTarget instanceof Element) ||
+                event.relatedTarget
+                  .closest("[data-token-reveal]")
+                  ?.getAttribute("data-token-reveal") !== id
+              )
+                void submit()
+            }}
             type={revealed ? "text" : "password"}
             placeholder={
               configured ? (preview ?? "••••••••") : "Вставьте токен"
@@ -107,6 +125,14 @@ export function IntegrationConnectionCard({
               aria-label={
                 revealed ? `Скрыть токен ${name}` : `Показать токен ${name}`
               }
+              onBlur={(event) => {
+                if (
+                  !(event.relatedTarget instanceof HTMLInputElement) ||
+                  event.relatedTarget.id !== id
+                )
+                  void submit()
+              }}
+              data-token-reveal={id}
               aria-pressed={revealed}
               onClick={() => setRevealed((value) => !value)}
             >
@@ -121,7 +147,7 @@ export function IntegrationConnectionCard({
         </p>
         {children}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-          {test}
+          <div inert={!!token.trim()}>{test}</div>
           <div className="flex items-center gap-2">
             {configured ? (
               <Button
@@ -138,17 +164,6 @@ export function IntegrationConnectionCard({
             ) : (
               <span />
             )}
-            <Button
-              type="submit"
-              disabled={disabled || saving || !token.trim()}
-            >
-              {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-              {saving
-                ? "Сохраняем…"
-                : configured
-                  ? "Заменить ключ"
-                  : "Сохранить ключ"}
-            </Button>
           </div>
         </div>
       </form>

@@ -44,11 +44,11 @@ const numberFormat = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 2,
 })
 const tones = {
-  success: "text-emerald-500",
-  warning: "text-amber-500",
-  danger: "text-red-500",
-  info: "text-sky-500",
-  violet: "text-violet-500",
+  success: "text-emerald-700 dark:text-emerald-500",
+  warning: "text-amber-700 dark:text-amber-500",
+  danger: "text-red-700 dark:text-red-500",
+  info: "text-sky-700 dark:text-sky-500",
+  violet: "text-violet-700 dark:text-violet-500",
   neutral: "text-muted-foreground",
 }
 export function EntityMetricsBar<T>({

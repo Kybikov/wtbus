@@ -2,6 +2,7 @@
 // Adapted from React Bits Pro notifications-3: grouped delivery matrix, group
 // toggles and quiet hours. All controls persist through the membership API.
 import * as React from "react"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import Link from "next/link"
 import {
   Bell,
@@ -10,7 +11,6 @@ import {
   LoaderCircle,
   Moon,
   RefreshCw,
-  Save,
   Send,
   ShieldCheck,
   Smartphone,
@@ -92,7 +92,6 @@ export function NotificationPreferences({
   identity: { membershipId: string; role: string }
 }) {
   const [data, setData] = React.useState<Delivery | null>(null)
-  const [saved, setSaved] = React.useState("")
   const [telegram, setTelegram] = React.useState<Telegram | null>(null)
   const [link, setLink] = React.useState<{
     url: string
@@ -106,6 +105,10 @@ export function NotificationPreferences({
   const [permission, setPermission] =
     React.useState<NotificationPermission>("default")
   const [disconnect, setDisconnect] = React.useState(false)
+  const autosave = useFieldAutosave<Preferences>(async (next) => {
+    const result = (await request("delivery", "PATCH", next)) as Delivery
+    return result.preferences
+  })
   const reload = React.useCallback(async () => {
     setLoading(true)
     setFailed(false)
@@ -115,7 +118,7 @@ export function NotificationPreferences({
         request("telegram") as Promise<Telegram>,
       ])
       setData(delivery)
-      setSaved(JSON.stringify(delivery.preferences))
+      autosave.initialize(delivery.preferences)
       setTelegram(tg)
     } catch (error) {
       setFailed(true)
@@ -127,7 +130,7 @@ export function NotificationPreferences({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [autosave])
   React.useEffect(() => {
     const timer = setTimeout(() => void reload(), 0)
     return () => clearTimeout(timer)
@@ -203,35 +206,20 @@ export function NotificationPreferences({
       if ("Notification" in window) setPermission(Notification.permission)
     }
   }
-  const dirty = !!data && JSON.stringify(data.preferences) !== saved
   function change(key: string, channel: Channel, value: boolean) {
-    setData((current) =>
-      current
-        ? {
-            ...current,
-            preferences: {
-              ...current.preferences,
-              events: {
-                ...current.preferences.events,
-                [key]: { ...current.preferences.events[key], [channel]: value },
-              },
-            },
-          }
-        : current
-    )
+    if (!data) return
+    const events = {
+      ...data.preferences.events,
+      [key]: { ...data.preferences.events[key], [channel]: value },
+    }
+    setData({ ...data, preferences: { ...data.preferences, events } })
+    autosave.commit({ events })
   }
-  function quiet(patch: Partial<Preferences["quietHours"]>) {
-    setData((current) =>
-      current
-        ? {
-            ...current,
-            preferences: {
-              ...current.preferences,
-              quietHours: { ...current.preferences.quietHours, ...patch },
-            },
-          }
-        : current
-    )
+  function quiet(patch: Partial<Preferences["quietHours"]>, commit = true) {
+    if (!data) return
+    const quietHours = { ...data.preferences.quietHours, ...patch }
+    setData({ ...data, preferences: { ...data.preferences, quietHours } })
+    if (commit) autosave.commit({ quietHours })
   }
   const groups = [...new Set(data?.events.map((e) => e.group) ?? [])]
   return (
@@ -484,21 +472,19 @@ export function NotificationPreferences({
                           className="justify-self-center px-2 text-xs"
                           aria-label={`${all ? "Выключить" : "Включить"} все: ${group}, ${c.label}`}
                           disabled={!!busy}
-                          onClick={() =>
-                            setData((current) => {
-                              if (!current) return current
-                              const next = { ...current.preferences.events }
-                              for (const e of events)
-                                next[e.key] = { ...next[e.key], [c.key]: !all }
-                              return {
-                                ...current,
-                                preferences: {
-                                  ...current.preferences,
-                                  events: next,
-                                },
-                              }
+                          onClick={() => {
+                            const next = { ...data.preferences.events }
+                            for (const e of events)
+                              next[e.key] = { ...next[e.key], [c.key]: !all }
+                            setData({
+                              ...data,
+                              preferences: {
+                                ...data.preferences,
+                                events: next,
+                              },
                             })
-                          }
+                            autosave.commit({ events: next })
+                          }}
                         >
                           {all ? "Выкл." : "Все"}
                         </Button>
@@ -595,8 +581,9 @@ export function NotificationPreferences({
                     <Input
                       className="mt-2"
                       type="time"
+                      onBlur={(e) => quiet({ start: e.target.value })}
                       value={data.preferences.quietHours.start}
-                      onChange={(e) => quiet({ start: e.target.value })}
+                      onChange={(e) => quiet({ start: e.target.value }, false)}
                       disabled={!!busy}
                     />
                   </label>
@@ -605,8 +592,9 @@ export function NotificationPreferences({
                     <Input
                       className="mt-2"
                       type="time"
+                      onBlur={(e) => quiet({ end: e.target.value })}
                       value={data.preferences.quietHours.end}
-                      onChange={(e) => quiet({ end: e.target.value })}
+                      onChange={(e) => quiet({ end: e.target.value }, false)}
                       disabled={!!busy}
                     />
                   </label>
@@ -637,51 +625,6 @@ export function NotificationPreferences({
               </div>
             ) : null}
           </div>
-          <footer className="settings-footer">
-            <p className="text-xs text-muted-foreground" role="status">
-              {dirty ? "Есть несохранённые изменения" : "Настройки сохранены"}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="ghost"
-                disabled={!dirty || !!busy}
-                onClick={() =>
-                  setData((current) =>
-                    current
-                      ? {
-                          ...current,
-                          preferences: JSON.parse(saved) as Preferences,
-                        }
-                      : current
-                  )
-                }
-              >
-                Отменить
-              </Button>
-              <Button
-                disabled={!dirty || !!busy}
-                onClick={() =>
-                  void perform("save", async () => {
-                    const result = (await request(
-                      "delivery",
-                      "PATCH",
-                      data.preferences
-                    )) as Delivery
-                    setData(result)
-                    setSaved(JSON.stringify(result.preferences))
-                    toast.success("Настройки уведомлений сохранены")
-                  })
-                }
-              >
-                {busy === "save" ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Save />
-                )}
-                Сохранить
-              </Button>
-            </div>
-          </footer>
         </section>
       ) : loading ? (
         <section

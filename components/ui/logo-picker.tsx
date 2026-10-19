@@ -46,11 +46,13 @@ async function prepareLogo(file: File): Promise<string> {
 export function LogoPicker({
   value,
   onValueChange,
+  onValueCommit,
   disabled,
   label = "Логотип компании",
 }: {
   value: string
   onValueChange: (value: string) => void
+  onValueCommit?: (value: string) => void
   disabled?: boolean
   label?: string
 }) {
@@ -63,7 +65,9 @@ export function LogoPicker({
     if (!file || disabled || busy) return
     setBusy(true)
     try {
-      onValueChange(await prepareLogo(file))
+      const next = await prepareLogo(file)
+      onValueChange(next)
+      onValueCommit?.(next)
     } catch (reason) {
       toast.error("Не удалось загрузить логотип", {
         description:
@@ -147,6 +151,7 @@ export function LogoPicker({
                     placeholder="https://example.com/logo.png"
                     value={value.startsWith("data:") ? "" : value}
                     onChange={(event) => onValueChange(event.target.value)}
+                    onBlur={(event) => onValueCommit?.(event.target.value)}
                   />
                 </label>
               </PopoverContent>
@@ -158,7 +163,10 @@ export function LogoPicker({
                 size="icon"
                 aria-label="Убрать логотип"
                 disabled={disabled || busy}
-                onClick={() => onValueChange("")}
+                onClick={() => {
+                  onValueChange("")
+                  onValueCommit?.("")
+                }}
               >
                 <X />
               </Button>

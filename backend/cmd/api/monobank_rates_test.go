@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func TestMonobankCrossRates(t *testing.T) {
@@ -32,5 +33,16 @@ func TestMaskedIntegrationSecret(t *testing.T) {
 	}
 	if maskedIntegrationSecret("") != "" {
 		t.Fatal("empty secret has preview")
+	}
+}
+
+func TestMonobankUAHQuotes(t *testing.T) {
+	now := time.Now().Unix()
+	quotes := monobankQuotes([]monobankRate{{A: 978, B: 980, Buy: 44, Sell: 46, Date: now}, {A: 985, B: 980, Cross: 10, Date: now}, {A: 840, B: 978, Buy: 0.9, Sell: 0.92, Date: now}, {A: 840, B: 980, Buy: 40, Sell: 42, Date: 1}})
+	if len(quotes) != 2 || quotes[0].Currency != "EUR" || quotes[0].Buy != 44 || quotes[0].Sell != 46 {
+		t.Fatal(quotes)
+	}
+	if quotes[1].Buy != 0 || quotes[1].Sell != 0 || quotes[1].Cross != 10 {
+		t.Fatal("invented PLN buy/sell spread", quotes[1])
 	}
 }

@@ -8,7 +8,10 @@ export function safeReturnPath(value: string | null | undefined): string {
     return "/"
   }
   const url = new URL(value, "https://vivat.invalid")
-  if (url.origin !== "https://vivat.invalid" || /^\/login\/?$/.test(url.pathname))
+  if (
+    url.origin !== "https://vivat.invalid" ||
+    /^\/login\/?$/.test(url.pathname)
+  )
     return "/"
   return `${url.pathname}${url.search}${url.hash}`
 }
@@ -24,7 +27,17 @@ export async function sessionFetch(
   input: RequestInfo | URL,
   init?: RequestInit
 ) {
-  const response = await fetch(input, init)
+  // Keep small field updates alive if navigation immediately follows blur.
+  // Fetch limits keepalive bodies to 64 KiB; uploaded logos use the normal path.
+  const keepalive =
+    init?.keepalive === undefined &&
+    ["PATCH", "PUT"].includes(init?.method?.toUpperCase() ?? "") &&
+    typeof init?.body === "string" &&
+    new TextEncoder().encode(init.body).byteLength <= 60_000
+  const response = await fetch(
+    input,
+    keepalive ? { ...init, keepalive: true } : init
+  )
   if (response.status !== 401 || typeof window === "undefined" || redirecting)
     return response
 

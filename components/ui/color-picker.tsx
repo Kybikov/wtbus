@@ -24,18 +24,24 @@ const presets = [
 export function ColorPicker({
   value,
   onValueChange,
+  onValueCommit,
   disabled,
   id,
 }: {
   value: string
   onValueChange: (value: string) => void
+  onValueCommit?: (value: string) => void
   disabled?: boolean
   id?: string
 }) {
   const valid = /^#[\da-f]{6}$/i.test(value)
   const color = valid ? value : "#E9B74D"
   return (
-    <Popover>
+    <Popover
+      onOpenChange={(open) => {
+        if (!open && valid) onValueCommit?.(value)
+      }}
+    >
       <PopoverTrigger
         render={
           <Button
