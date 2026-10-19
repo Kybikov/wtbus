@@ -8,16 +8,15 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline --no-audit --no-fund
 
-FROM base AS builder
+FROM dependencies AS builder
 
 ARG API_INTERNAL_URL=http://api:8080
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
 
 WORKDIR /app
 
-COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 
 RUN --mount=type=cache,target=/app/.next/cache npm run build

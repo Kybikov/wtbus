@@ -1,0 +1,11 @@
+# Vivat's dedicated builder keeps its cache outside the Docker daemon cache,
+# which Coolify's nightly `docker builder prune -af` clears.
+[worker.oci]
+  gc = true
+  max-parallelism = 4
+
+  [[worker.oci.gcpolicy]]
+    all = true
+    reservedSpace = "4GB"
+    maxUsedSpace = "12GB"
+    minFreeSpace = "20GB"

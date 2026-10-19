@@ -78,6 +78,33 @@ Coolify is the standard production deployment path and deploys the application a
 
 The fallback workflow deliberately excludes `.env.production` from synchronization, so server credentials and Telegram tokens are never copied from GitHub. The deployment directory and its private environment file must be created on the server manually.
 
+### Persistent Coolify build cache
+
+On the Vivat deployment server, run `sh deploy/setup-build-cache.sh` once as the
+same Docker user used by Coolify. This creates the dedicated `vivatbus` BuildKit
+builder without changing the default builder for other projects. Its cache stays
+in an attached Docker volume; Coolify's nightly cleanup of the default builder
+does not erase it. BuildKit reclaims unused cache above a 12 GB target and when
+free disk space falls below 20 GB, retaining a 4 GB reserve.
+
+In this application's Coolify build settings, turn off **Inject Build Args to
+Dockerfile** and set the custom Compose build command to:
+
+```sh
+docker compose --project-name mgemeciauk7oxxbrji5sle8g build --builder vivatbus --pull
+```
+
+Coolify adds the Compose path and build environment file automatically. The only
+frontend build argument is the `API_INTERNAL_URL` already declared in Compose;
+runtime secret changes must not invalidate package installation and compilation
+layers. Keep build cache enabled and avoid **Force rebuild** for normal releases.
+The first build warms the npm, Next.js and Go caches; subsequent source changes
+reuse them while keeping TypeScript validation in the production build.
+
+Inspect cache with `docker buildx du --builder vivatbus`. If the builder needs to
+be recreated, use `docker buildx rm --keep-state vivatbus` to retain its cache.
+For a new application UUID, adjust `--project-name` in the command above.
+
 ## Local access and staff roles
 
 The web console is protected by an HttpOnly session cookie. Before starting a shared or server deployment, copy `.env.example` to `.env` and set your own `BOOTSTRAP_OWNER_EMAIL` and strong `BOOTSTRAP_OWNER_PASSWORD`; the initial password must have at least 12 characters. For HTTPS deployments set `SESSION_COOKIE_SECURE=true`.
