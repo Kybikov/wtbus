@@ -131,9 +131,11 @@ export function ExchangeRateSettings({ disabled }: { disabled: boolean }) {
       const r = await sessionFetch("/api/exchange-rates?source=monobank", {
         signal: AbortSignal.timeout(10_000),
       })
-      const p = await r.json()
+      const p = await r.json().catch(() => null)
       if (!r.ok || !isExchangeRates(p))
-        throw Error(p.error ?? "Не удалось получить курсы")
+        throw Error(
+          p?.error ?? "Не удалось получить курсы. Повторите попытку позже."
+        )
       setValues((current) => ({
         ...current,
         ...Object.fromEntries(

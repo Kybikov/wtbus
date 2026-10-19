@@ -61,10 +61,14 @@ func (app *application) testIntegration(w http.ResponseWriter, r *http.Request) 
 	}
 	started := time.Now()
 	if input.Provider == "telegram" {
-		result, _, err := notificationTelegramCall(r.Context(), token, "getMe", nil)
+		result, status, err := notificationTelegramCall(r.Context(), token, "getMe", nil)
 		var bot struct {
 			Username string `json:"username"`
 			IsBot    bool   `json:"is_bot"`
+		}
+		if status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusNotFound {
+			writeError(w, 422, "Ключ Telegram недействителен. Замените его и повторите проверку.")
+			return
 		}
 		if err != nil || json.Unmarshal(result, &bot) != nil || !bot.IsBot || bot.Username == "" {
 			writeError(w, 502, "Не удалось подключиться к Telegram. Проверьте ключ и повторите попытку.")
@@ -85,6 +89,10 @@ func (app *application) testIntegration(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		writeError(w, 422, "Ключ Monobank недействителен или не имеет доступа. Замените его и повторите проверку.")
+		return
+	}
 	if response.StatusCode == 429 {
 		writeError(w, 429, "Monobank просит подождать минуту перед следующей проверкой.")
 		return

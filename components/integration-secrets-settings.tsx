@@ -93,8 +93,11 @@ export function IntegrationSecretsSettings({
       body: JSON.stringify({ provider }),
       signal: AbortSignal.timeout(10_000),
     })
-    const p = await r.json()
-    if (!r.ok) throw Error(p.error ?? "Не удалось проверить подключение")
+    const p = await r.json().catch(() => null)
+    if (!r.ok || !p)
+      throw Error(
+        p?.error ?? "Подключение временно недоступно. Повторите проверку позже."
+      )
     return p.message
   }
 
