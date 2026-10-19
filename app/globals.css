@@ -176,14 +176,13 @@ body:has([data-public-booking]) {
   :root[data-sidebar-variant="inset"] .app-shell-frame {
     gap: 1rem;
   }
-  :root[data-sidebar-variant="inset"] .app-sidebar {
-    margin: 0;
+  /* The positioned container is only a spacer; the inner sidebar owns
+     the surface. A shadow here draws a second panel around its padding. */
+  :root[data-sidebar-variant="inset"] .app-sidebar [data-slot="sidebar-inner"],
+  :root[data-sidebar-variant="floating"]
+    .app-sidebar
+    [data-slot="sidebar-inner"] {
     border-radius: calc(var(--app-radius) * 0.8);
-  }
-  :root[data-sidebar-variant="floating"] .app-sidebar {
-    margin: 0;
-    border-radius: calc(var(--app-radius) * 0.8);
-    box-shadow: 0 18px 32px rgb(0 0 0 / 0.12);
   }
 }
 
