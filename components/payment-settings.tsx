@@ -5,6 +5,11 @@ import { sessionFetch } from "@/lib/session-navigation"
 import * as React from "react"
 import { toast } from "sonner"
 
+import { Banknote, Save, LoaderCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { LogoPicker } from "@/components/ui/logo-picker"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 
 type PaymentConfig = {
@@ -137,30 +142,35 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
   ]
 
   return (
-    <form
-      className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5"
-      onSubmit={save}
-    >
+    <form className="settings-panel" onSubmit={save}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-2xl">
-          <h2 className="font-bold">Оплата на IBAN</h2>
+          <h2 className="flex items-center gap-2 font-semibold">
+            <Banknote className="size-4 text-primary" />
+            Оплата на IBAN
+          </h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Сторінка бронювання і бот показують реквізити, точну суму та QR-код.
             Надходження автоматично звіряється за сумою і призначенням платежу.
           </p>
         </div>
-        <span
-          className={`rounded-full border px-3 py-1 text-xs font-semibold ${config.isEnabled ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-border bg-background text-muted-foreground"}`}
+        <Badge
+          variant="secondary"
+          className={
+            config.isEnabled
+              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+              : ""
+          }
         >
           {config.isEnabled ? "Приём оплат включён" : "Не подключено"}
-        </span>
+        </Badge>
       </div>
       <div className="mt-6 grid gap-5 sm:grid-cols-2">
         {fields.map((field) => (
           <label className="text-sm font-semibold" key={field.key}>
             {field.label}
-            <input
-              className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 font-normal ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            <Input
+              className="mt-2 font-normal"
               disabled={disabled || loading}
               maxLength={field.key === "merchantName" ? 160 : 120}
               onChange={(event) =>
@@ -177,36 +187,28 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
             />
           </label>
         ))}
-        <label className="text-sm font-semibold sm:col-span-2">
-          Логотип компании
-          <input
-            className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 font-normal ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={disabled || loading}
-            maxLength={2000}
-            onChange={(event) =>
-              setConfig((current) => ({
-                ...current,
-                logoUrl: event.target.value,
-              }))
-            }
-            placeholder="https://example.com/logo.png"
-            type="url"
+        <div className="sm:col-span-2">
+          <LogoPicker
+            label="Логотип для оплаты"
             value={config.logoUrl}
+            disabled={disabled || loading || saving}
+            onValueChange={(logoUrl) =>
+              setConfig((current) => ({ ...current, logoUrl }))
+            }
           />
-        </label>
+        </div>
       </div>
-      <label className="mt-5 flex items-start gap-3 rounded-xl border border-border bg-background/70 p-4 text-sm">
-        <input
+      <label className="mt-5 flex items-start gap-3 rounded-xl bg-control p-4 text-sm">
+        <Checkbox
           checked={config.isEnabled}
-          className="mt-0.5 size-4 accent-primary"
           disabled={disabled || loading}
-          onChange={(event) =>
+          onCheckedChange={(checked) =>
             setConfig((current) => ({
               ...current,
-              isEnabled: event.target.checked,
+              isEnabled: checked === true,
             }))
           }
-          type="checkbox"
+          className="mt-0.5"
         />
         <span>
           <span className="font-semibold">Включить оплату в Telegram-боте</span>
@@ -216,16 +218,13 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           </span>
         </span>
       </label>
-      <div className="mt-6 flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="settings-footer">
         <p className="max-w-xl text-xs leading-5 text-muted-foreground">
           Гроші надходять напряму на рахунок ФОП. Для автоматичної звірки
           потрібен персональний API-токен Monobank у блоці інтеграцій.
         </p>
-        <Button
-          disabled={disabled || loading || saving}
-          size="lg"
-          type="submit"
-        >
+        <Button disabled={disabled || loading || saving} type="submit">
+          {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
           {saving ? "Сохраняем…" : "Сохранить оплату"}
         </Button>
       </div>

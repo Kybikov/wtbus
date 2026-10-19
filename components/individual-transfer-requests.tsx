@@ -1,4 +1,5 @@
 "use client"
+import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
@@ -539,12 +540,13 @@ export function IndividualTransferRequests() {
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-semibold">{item.passengerName}</p>
-                <span
-                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${requestBadgeClasses[phaseOf(item.status)] ?? "status-slate"}`}
+                <Badge
+                  variant="secondary"
+                  className={`${requestBadgeClasses[phaseOf(item.status)] ?? "status-slate"}`}
                 >
                   {requestOptions.find((option) => option.value === item.status)
                     ?.label ?? item.status}
-                </span>
+                </Badge>
               </div>
               <div className="space-y-1.5 text-xs text-muted-foreground">
                 <p className="flex items-center gap-1.5 text-sm text-foreground">

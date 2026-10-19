@@ -1,4 +1,5 @@
 "use client"
+import { Badge } from "@/components/ui/badge"
 
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
@@ -17,7 +18,11 @@ function isoDay(date: Date) {
 function parseDay(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return null
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3])
+  )
   return Number.isNaN(date.getTime()) ? null : date
 }
 
@@ -161,9 +166,12 @@ export function EntityCalendar<T>({
                 <span className="flex items-center justify-between text-xs">
                   <span className="tabular-nums">{date.getDate()}</span>
                   {bucket.length ? (
-                    <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
+                    <Badge
+                      variant="secondary"
+                      className="bg-muted tabular-nums"
+                    >
                       {bucket.length}
-                    </span>
+                    </Badge>
                   ) : null}
                 </span>
                 {bucket.slice(0, 3).map((item) => (

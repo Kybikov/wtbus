@@ -1,4 +1,5 @@
 "use client"
+import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
 import { usePageSearch } from "@/hooks/use-page-search"
@@ -718,11 +719,9 @@ export function BookingRegistry() {
       },
       label: "Статус",
       value: (booking) => (
-        <span
-          className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass(booking.status)}`}
-        >
+        <Badge variant="secondary" className={`${statusClass(booking.status)}`}>
           {bookingStatusLabel(booking.status)}
-        </span>
+        </Badge>
       ),
     },
     {
@@ -973,11 +972,12 @@ export function BookingRegistry() {
                       {booking.origin} → {booking.destination}
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(booking.status)}`}
+                  <Badge
+                    variant="secondary"
+                    className={`${statusClass(booking.status)}`}
                   >
                     {bookingStatusLabel(booking.status)}
-                  </span>
+                  </Badge>
                 </div>
                 <div className="flex items-end justify-between text-sm">
                   <span className="text-muted-foreground">

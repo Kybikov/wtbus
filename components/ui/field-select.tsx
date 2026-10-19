@@ -47,7 +47,7 @@ function FieldSelect({
       <SelectTrigger
         aria-label={ariaLabel}
         className={cn(
-          "h-11 w-full rounded-xl border-border bg-background px-3 text-left font-normal",
+          "h-10 w-full min-w-0 px-3 text-left font-normal",
           triggerClassName
         )}
       >

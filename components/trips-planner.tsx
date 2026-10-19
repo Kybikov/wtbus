@@ -1,4 +1,6 @@
 "use client"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
@@ -96,12 +98,22 @@ type RouteResource = {
   vehicleClassRates: Record<string, number>
 }
 
-function routePrice(route: RouteResource | undefined, vehicleId: string, vehicles: TripResource[]) {
+function routePrice(
+  route: RouteResource | undefined,
+  vehicleId: string,
+  vehicles: TripResource[]
+) {
   if (!route) return null
   if (route.tariffMode !== "per_km") return route.defaultPriceMinor
-  const vehicleClass = vehicles.find((vehicle) => vehicle.id === vehicleId)?.vehicleClass
-  const rate = vehicleClass ? route.vehicleClassRates[vehicleClass.toLowerCase()] : undefined
-  return rate === undefined ? route.defaultPriceMinor : Math.round(rate * route.distanceKm)
+  const vehicleClass = vehicles.find(
+    (vehicle) => vehicle.id === vehicleId
+  )?.vehicleClass
+  const rate = vehicleClass
+    ? route.vehicleClassRates[vehicleClass.toLowerCase()]
+    : undefined
+  return rate === undefined
+    ? route.defaultPriceMinor
+    : Math.round(rate * route.distanceKm)
 }
 
 type TripForm = {
@@ -1284,7 +1296,13 @@ export function TripsPlanner() {
                         origin: route?.origin ?? current.origin,
                         destination: route?.destination ?? current.destination,
                         price: route
-                          ? ((routePrice(route, current.vehicleId, resources.vehicles) ?? route.defaultPriceMinor) / 100).toFixed(2)
+                          ? (
+                              (routePrice(
+                                route,
+                                current.vehicleId,
+                                resources.vehicles
+                              ) ?? route.defaultPriceMinor) / 100
+                            ).toFixed(2)
                           : current.price,
                         pricingMode:
                           route?.defaultPricingMode ?? current.pricingMode,
@@ -1307,11 +1325,25 @@ export function TripsPlanner() {
                   disabled={
                     isResourcesLoading || resources.vehicles.length === 0
                   }
-                  onValueChange={(value) => setTripForm((current) => {
-                    const route = resources.routes.find((item) => item.id === current.routeId)
-                    const nextPrice = routePrice(route, value, resources.vehicles)
-                    return { ...current, vehicleId: value, ...(nextPrice === null ? {} : { price: (nextPrice / 100).toFixed(2) }) }
-                  })}
+                  onValueChange={(value) =>
+                    setTripForm((current) => {
+                      const route = resources.routes.find(
+                        (item) => item.id === current.routeId
+                      )
+                      const nextPrice = routePrice(
+                        route,
+                        value,
+                        resources.vehicles
+                      )
+                      return {
+                        ...current,
+                        vehicleId: value,
+                        ...(nextPrice === null
+                          ? {}
+                          : { price: (nextPrice / 100).toFixed(2) }),
+                      }
+                    })
+                  }
                   options={[
                     {
                       value: "",
@@ -1538,8 +1570,8 @@ export function TripsPlanner() {
                 <span className="font-normal text-muted-foreground">
                   (необязательно)
                 </span>
-                <textarea
-                  className="min-h-24 resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                <Textarea
+                  className="min-h-24 resize-y"
                   maxLength={2000}
                   onChange={(event) =>
                     setTripForm((current) => ({
@@ -1618,11 +1650,11 @@ export function TripsPlanner() {
                   {selectedTrip.title}
                 </h2>
               </div>
-              <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">
+              <Badge variant="secondary" className="bg-secondary">
                 {tripOptions.find(
                   (option) => option.value === selectedTrip.status
                 )?.label ?? selectedTrip.status}
-              </span>
+              </Badge>
             </div>
             <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5 border-y border-border py-5 text-sm">
               <div>

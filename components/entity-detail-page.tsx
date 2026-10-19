@@ -405,7 +405,7 @@ export function EntityDetailPage({
       )
     if (field.type === "boolean")
       return (
-        <label className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm">
+        <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-control px-3 text-sm">
           <Checkbox
             checked={Boolean(value)}
             onCheckedChange={(checked) => changeField(key, checked)}
@@ -417,7 +417,7 @@ export function EntityDetailPage({
       return (
         <FieldSelect
           aria-label={entityFieldLabels[key] ?? key}
-          triggerClassName="h-9 w-full max-w-md bg-background"
+          triggerClassName="w-full max-w-md"
           options={field.options ?? []}
           value={String(value ?? "")}
           onValueChange={(next) => changeField(key, next)}
@@ -427,7 +427,7 @@ export function EntityDetailPage({
       return (
         <Textarea
           aria-label={entityFieldLabels[key] ?? key}
-          className="min-h-20 max-w-2xl resize-y bg-background"
+          className="min-h-20 max-w-2xl resize-y"
           value={String(value ?? "")}
           onChange={(event) => changeField(key, event.target.value)}
         />
@@ -437,7 +437,7 @@ export function EntityDetailPage({
     return (
       <Input
         aria-label={entityFieldLabels[key] ?? key}
-        className="h-9 max-w-2xl bg-background"
+        className="max-w-2xl"
         inputMode={
           field.type === "number" || field.type === "money"
             ? "decimal"
@@ -471,10 +471,10 @@ export function EntityDetailPage({
     if (!detail || entity !== "routes") return null
     const price = Number(detail.item.default_price_minor ?? 0) / 100
     return (
-      <InputGroup className="h-9 max-w-md bg-background">
+      <InputGroup className="max-w-md">
         <InputGroupInput
           aria-label="Базовая цена"
-          className="h-9 tabular-nums"
+          className="tabular-nums"
           inputMode="decimal"
           min="0"
           onChange={(event) =>
@@ -498,7 +498,7 @@ export function EntityDetailPage({
               { value: "EUR", label: "EUR" },
               { value: "UAH", label: "UAH" },
             ]}
-            triggerClassName="h-8 w-24 rounded-l-none border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+            triggerClassName="h-10 w-24 rounded-l-none border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
             value={String(detail.item.currency ?? "EUR")}
           />
         </InputGroupAddon>

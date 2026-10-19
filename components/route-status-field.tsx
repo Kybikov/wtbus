@@ -307,7 +307,7 @@ export function WorkflowStatusField({
       <div className="flex w-full max-w-md items-center gap-2">
         <FieldSelect
           aria-label="Статус маршрута"
-          triggerClassName="h-9 min-w-0 flex-1 bg-background"
+          triggerClassName="min-w-0 flex-1"
           options={statuses.map((status) => ({
             value: status.key,
             label: status.label,
@@ -317,7 +317,7 @@ export function WorkflowStatusField({
         />
         <Button
           aria-label="Настроить статусы"
-          className="size-9 shrink-0 rounded-xl"
+          className="size-10 shrink-0 rounded-xl"
           onClick={openSettings}
           size="icon"
           type="button"

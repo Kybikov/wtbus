@@ -3544,7 +3544,7 @@ func normalizeProvisionTenantRequest(input *provisionTenantRequest) error {
 		value := strings.TrimSpace(*input.LogoURL)
 		if value == "" {
 			input.LogoURL = nil
-		} else if len(value) > 2_000 || (!strings.HasPrefix(value, "https://") && !strings.HasPrefix(value, "/")) {
+		} else if !validBrandLogo(value) {
 			return errors.New("logo URL is invalid")
 		} else {
 			input.LogoURL = &value
@@ -5738,8 +5738,8 @@ func (app *application) updateBranding(w http.ResponseWriter, r *http.Request) {
 		value := strings.TrimSpace(*input.LogoURL)
 		if value == "" {
 			input.LogoURL = nil
-		} else if len(value) > 2_000 || (!strings.HasPrefix(value, "https://") && !strings.HasPrefix(value, "/")) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "logo URL must be an HTTPS URL or local path"})
+		} else if !validBrandLogo(value) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "logo must be a PNG/JPG upload, HTTPS URL or local path"})
 			return
 		} else {
 			input.LogoURL = &value
@@ -5826,8 +5826,8 @@ func validatePaymentConfigInput(input *updatePaymentConfigRequest) error {
 	if input.BankEDRPOU != "" && !regexp.MustCompile(`^[0-9]{8,10}$`).MatchString(input.BankEDRPOU) {
 		return errors.New("bank EDRPOU must contain 8 to 10 digits")
 	}
-	if input.LogoURL != "" && (len(input.LogoURL) > 2_000 || !strings.HasPrefix(input.LogoURL, "https://")) {
-		return errors.New("logo URL must be an HTTPS URL")
+	if input.LogoURL != "" && !validBrandLogo(input.LogoURL) {
+		return errors.New("logo must be a PNG/JPG upload, HTTPS URL or local path")
 	}
 	return nil
 }

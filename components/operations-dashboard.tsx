@@ -1,4 +1,5 @@
 "use client"
+import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
@@ -303,6 +304,9 @@ function SegmentedControl<T extends string>({
 
 export function ThemeCustomizer() {
   const { resolvedTheme, setTheme, theme } = useTheme()
+  // next-themes changes setTheme identity when the theme changes. Initial loads
+  // must not rerun and restore the company default after a personal selection.
+  const applyTheme = React.useEffectEvent((value: string) => setTheme(value))
   const { preferences: initialLayout } = useLayoutPreferences()
   const initialPreferences = getRememberedUIPreferences()
   const [open, setOpen] = React.useState(false)
@@ -310,24 +314,18 @@ export function ThemeCustomizer() {
     initialPreferences?.accent ?? "company"
   )
   const [companyAccent, setCompanyAccent] = React.useState("#E9B74D")
-  const [radius, setRadius] = React.useState<Radius>(
-    initialLayout.radius
-  )
+  const [radius, setRadius] = React.useState<Radius>(initialLayout.radius)
   const [compact, setCompact] = React.useState(
     initialLayout.density === "compact"
   )
-  const [scale, setScale] = React.useState<Scale>(
-    initialLayout.scale
+  const [scale, setScale] = React.useState<Scale>(initialLayout.scale)
+  const [sidebarVariant, setSidebarVariant] = React.useState<SidebarVariant>(
+    initialLayout.sidebarVariant
   )
-  const [sidebarVariant, setSidebarVariant] =
-    React.useState<SidebarVariant>(
-      initialLayout.sidebarVariant
-    )
   const [sidebarMode, setSidebarMode] = React.useState<SidebarMode>(
     initialLayout.sidebarMode
   )
   const [preferencesReady, setPreferencesReady] = React.useState(false)
-  const hasLoadedPreferences = React.useRef(false)
   const hasPersonalThemePreference = React.useRef(false)
 
   React.useEffect(() => {
@@ -338,9 +336,6 @@ export function ThemeCustomizer() {
   }, [])
 
   React.useEffect(() => {
-    if (hasLoadedPreferences.current) return
-
-    hasLoadedPreferences.current = true
     const controller = new AbortController()
     const localPreferences = getRememberedUIPreferences()
 
@@ -354,7 +349,7 @@ export function ThemeCustomizer() {
         setSidebarVariant(preferences.sidebarVariant)
         setSidebarMode(preferences.sidebarMode)
         hasPersonalThemePreference.current = true
-        setTheme(preferences.theme)
+        applyTheme(preferences.theme)
       })
     }
 
@@ -379,7 +374,7 @@ export function ThemeCustomizer() {
     })()
 
     return () => controller.abort()
-  }, [setTheme])
+  }, [])
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -399,12 +394,12 @@ export function ThemeCustomizer() {
         ) {
           setCompanyAccent(payload.primaryColor)
           if (!hasPersonalThemePreference.current)
-            setTheme(payload.defaultTheme)
+            applyTheme(payload.defaultTheme)
         }
       })
       .catch(() => undefined)
     return () => controller.abort()
-  }, [setTheme])
+  }, [])
 
   React.useEffect(() => {
     const onBrandingChange = (event: Event) => {
@@ -422,12 +417,12 @@ export function ThemeCustomizer() {
           detail?.defaultTheme === "dark" ||
           detail?.defaultTheme === "system")
       )
-        setTheme(detail.defaultTheme)
+        applyTheme(detail.defaultTheme)
     }
     window.addEventListener("vivat-branding-change", onBrandingChange)
     return () =>
       window.removeEventListener("vivat-branding-change", onBrandingChange)
-  }, [setTheme])
+  }, [])
 
   React.useEffect(() => {
     const root = document.documentElement
@@ -491,7 +486,10 @@ export function ThemeCustomizer() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(preferences),
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]),
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(8_000),
+        ]),
       }).catch(() => undefined)
     }, 350)
     return () => {
@@ -863,11 +861,14 @@ export function OperationsDashboard() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold">{vehicle.name}</p>
-                        <span className="rounded-full bg-sky-500/12 px-2 py-0.5 text-xs font-semibold text-sky-600 dark:text-sky-400">
+                        <Badge
+                          variant="secondary"
+                          className="bg-sky-500/12 text-sky-600 dark:text-sky-400"
+                        >
                           {trip.status === "in_progress"
                             ? "В пути"
                             : "Назначен"}
-                        </span>
+                        </Badge>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {trip.origin} → {trip.destination}

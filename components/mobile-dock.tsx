@@ -247,6 +247,7 @@ export function MobileDock({ role, localSearch }: MobileDockProps) {
                   return (
                     <Button
                       key={item.href}
+                      nativeButton={false}
                       render={<Link href={item.href} />}
                       aria-label={item.label}
                       title={item.label}

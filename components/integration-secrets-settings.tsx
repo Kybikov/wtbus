@@ -1,11 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Eye, EyeOff, KeyRound, Trash2 } from "lucide-react"
+import { Clock3, KeyRound, RefreshCw, Send, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
-
+import { IntegrationConnectionCard } from "@/components/integration-connection-card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { sessionFetch } from "@/lib/session-navigation"
 
 type State = {
@@ -15,11 +15,12 @@ type State = {
   monobankLastSuccessAt?: string
   monobankLastError?: string
 }
-
 const emptyState: State = {
   monobankConfigured: false,
   telegramBotConfigured: false,
 }
+const dateLabel = (value?: string) =>
+  value ? new Date(value).toLocaleString("uk-UA") : "ещё не выполнялась"
 
 export function IntegrationSecretsSettings({
   disabled,
@@ -27,28 +28,37 @@ export function IntegrationSecretsSettings({
   disabled: boolean
 }) {
   const [state, setState] = React.useState(emptyState)
-  const [monobankToken, setMonobankToken] = React.useState("")
-  const [telegramBotToken, setTelegramBotToken] = React.useState("")
-  const [showSecrets, setShowSecrets] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
-  const [saving, setSaving] = React.useState(false)
-
+  const [saving, setSaving] = React.useState<string | null>(null)
+  const [refreshVersion, setRefreshVersion] = React.useState(0)
   React.useEffect(() => {
     const controller = new AbortController()
     void sessionFetch("/api/integration-secrets", { signal: controller.signal })
       .then(async (response) => {
-        const payload = (await response
-          .json()
-          .catch(() => null)) as State | null
-        if (!response.ok || !payload) return
+        const payload = (await response.json().catch(() => null)) as
+          (State & { error?: string }) | null
+        if (!response.ok || !payload)
+          throw new Error(payload?.error ?? "Не удалось загрузить интеграции.")
         setState(payload)
       })
-      .finally(() => setLoading(false))
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted)
+          toast.error("Не удалось загрузить интеграции", {
+            description: reason instanceof Error ? reason.message : undefined,
+          })
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
     return () => controller.abort()
-  }, [])
+  }, [refreshVersion])
 
-  async function save(payload: Record<string, unknown>) {
-    setSaving(true)
+  async function save(
+    provider: string,
+    payload: Record<string, unknown>,
+    removed = false
+  ) {
+    setSaving(provider)
     try {
       const response = await sessionFetch("/api/integration-secrets", {
         method: "PATCH",
@@ -58,145 +68,130 @@ export function IntegrationSecretsSettings({
       const next = (await response.json().catch(() => null)) as
         (State & { error?: string }) | null
       if (!response.ok || !next)
-        throw new Error(next?.error ?? "Не удалось сохранить токены.")
+        throw new Error(next?.error ?? "Не удалось сохранить ключ.")
       setState(next)
-      setMonobankToken("")
-      setTelegramBotToken("")
-      toast.success("Токены интеграций сохранены")
+      toast.success(removed ? "Ключ удалён" : "Ключ сохранён")
+      return true
     } catch (reason) {
-      toast.error("Не удалось сохранить токены", {
-        description: reason instanceof Error ? reason.message : undefined,
-      })
+      toast.error(
+        removed ? "Не удалось удалить ключ" : "Не удалось сохранить ключ",
+        { description: reason instanceof Error ? reason.message : undefined }
+      )
+      return false
     } finally {
-      setSaving(false)
+      setSaving(null)
     }
   }
 
   return (
-    <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 font-bold">
-            <KeyRound className="size-4 text-primary" /> Интеграции и секреты
-          </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Доступно только владельцу и разработчику. Сохранённые токены никогда
-            не возвращаются в браузер.
-          </p>
+    <section className="settings-panel">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+            <KeyRound className="size-4" />
+          </span>
+          <div>
+            <h2 className="font-semibold">Интеграции и секреты</h2>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
+              Подключения платежей и Telegram. Доступно владельцу и
+              разработчику.
+            </p>
+          </div>
         </div>
         <Button
-          aria-label={showSecrets ? "Скрыть ввод" : "Показать ввод"}
-          onClick={() => setShowSecrets((value) => !value)}
-          size="icon"
           type="button"
-          variant="outline"
+          variant="ghost"
+          size="icon"
+          aria-label="Обновить статус интеграций"
+          disabled={loading || !!saving}
+          onClick={() => {
+            setLoading(true)
+            setRefreshVersion((version) => version + 1)
+          }}
         >
-          {showSecrets ? <EyeOff /> : <Eye />}
+          <RefreshCw className={loading ? "animate-spin" : ""} />
         </Button>
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        {[
-          {
-            key: "monobankToken",
-            label: "Токен monobank",
-            value: monobankToken,
-            setValue: setMonobankToken,
-            configured: state.monobankConfigured,
-            clear: "clearMonobank",
-          },
-          {
-            key: "telegramBotToken",
-            label: "Токен Telegram-бота",
-            value: telegramBotToken,
-            setValue: setTelegramBotToken,
-            configured: state.telegramBotConfigured,
-            clear: "clearTelegramBot",
-          },
-        ].map((field) => (
-          <div
-            className="rounded-xl border border-border bg-background/55 p-4"
-            key={field.key}
-          >
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <label className="text-sm font-semibold" htmlFor={field.key}>
-                {field.label}
-              </label>
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                {field.configured ? (
-                  <CheckCircle2 className="size-3.5 text-emerald-500" />
-                ) : null}
-                {field.configured ? "Подключено" : "Не настроено"}
-              </span>
-            </div>
-            <Input
-              autoComplete="new-password"
-              disabled={disabled || loading || saving}
-              id={field.key}
-              onChange={(event) => field.setValue(event.target.value)}
-              placeholder={
-                field.configured
-                  ? "Введите новый токен для замены"
-                  : "Вставьте токен"
-              }
-              type={showSecrets ? "text" : "password"}
-              value={field.value}
-            />
-            {field.configured ? (
-              <Button
-                className="mt-2 px-2 text-destructive hover:text-destructive"
-                disabled={disabled || saving}
-                onClick={() => void save({ [field.clear]: true })}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2 /> Удалить токен
-              </Button>
-            ) : null}
-          </div>
-        ))}
+      </header>
+      <div className="mt-6 grid min-w-0 gap-4 lg:grid-cols-2">
+        <IntegrationConnectionCard
+          name="monobank"
+          description="Автоматическая сверка переводов на IBAN"
+          icon={
+            <span className="text-xl font-bold" aria-hidden="true">
+              m
+            </span>
+          }
+          configured={state.monobankConfigured}
+          disabled={disabled || loading || !!saving}
+          saving={saving === "monobank"}
+          onSave={(token) => save("monobank", { monobankToken: token })}
+          onRemove={() => save("monobank", { clearMonobank: true }, true)}
+        />
+        <IntegrationConnectionCard
+          name="Telegram"
+          description="Бронирование и уведомления через бота"
+          icon={<Send className="size-5" />}
+          configured={state.telegramBotConfigured}
+          disabled={disabled || loading || !!saving}
+          saving={saving === "telegram"}
+          onSave={(token) => save("telegram", { telegramBotToken: token })}
+          onRemove={() => save("telegram", { clearTelegramBot: true }, true)}
+        />
       </div>
       {state.monobankConfigured ? (
-        <div className="mt-5 rounded-xl border border-border bg-background/55 p-4 text-sm">
-          <p className="font-semibold">Автоматична звірка Monobank</p>
-          <p className="mt-1 text-muted-foreground">
-            Використовується персональний API-токен Monobank. Платіж
-            підтверджується лише за точною сумою та унікальним призначенням.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-            <span>
-              Остання перевірка: {state.monobankLastAttemptAt ? new Date(state.monobankLastAttemptAt).toLocaleString("uk-UA") : "ще не виконувалась"}
-            </span>
-            <span>
-              Успішна звірка: {state.monobankLastSuccessAt ? new Date(state.monobankLastSuccessAt).toLocaleString("uk-UA") : "ще не виконувалась"}
-            </span>
+        <div className="mt-4 rounded-2xl bg-control p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Сверка Monobank</h3>
+            <Badge
+              variant="secondary"
+              className={
+                state.monobankLastError
+                  ? "bg-amber-500/12 text-amber-700 dark:text-amber-400"
+                  : ""
+              }
+            >
+              {state.monobankLastError
+                ? "Требует внимания"
+                : state.monobankLastSuccessAt
+                  ? "Проверка выполнена"
+                  : "Ожидает первой проверки"}
+            </Badge>
           </div>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Платёж подтверждается по точной сумме и уникальному назначению.
+          </p>
+          <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
+            <div>
+              <dt className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock3 className="size-3.5" />
+                Последняя проверка
+              </dt>
+              <dd className="mt-1 tabular-nums">
+                {dateLabel(state.monobankLastAttemptAt)}
+              </dd>
+            </div>
+            <div>
+              <dt className="flex items-center gap-1.5 text-muted-foreground">
+                <ShieldCheck className="size-3.5" />
+                Последняя успешная сверка
+              </dt>
+              <dd className="mt-1 tabular-nums">
+                {dateLabel(state.monobankLastSuccessAt)}
+              </dd>
+            </div>
+          </dl>
           {state.monobankLastError ? (
-            <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <p className="mt-3 text-sm break-words text-destructive">
               {state.monobankLastError}
             </p>
           ) : null}
         </div>
       ) : null}
-      <div className="mt-5 flex justify-end border-t border-border pt-5">
-        <Button
-          disabled={
-            disabled ||
-            loading ||
-            saving ||
-            (!monobankToken && !telegramBotToken)
-          }
-          onClick={() =>
-            void save({
-              ...(monobankToken ? { monobankToken } : {}),
-              ...(telegramBotToken ? { telegramBotToken } : {}),
-            })
-          }
-          type="button"
-        >
-          {saving ? "Сохраняем…" : "Сохранить токены"}
-        </Button>
-      </div>
+      <p className="mt-5 flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+        <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
+        Сохранённые токены не возвращаются в браузер. Результат проверки
+        подключения отображается в блоке сверки.
+      </p>
     </section>
   )
 }

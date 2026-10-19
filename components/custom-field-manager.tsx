@@ -6,6 +6,8 @@ import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon, Edit02Icon } from "@hugeicons/core-free-icons"
 
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 
@@ -252,7 +254,7 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
   }
 
   return (
-    <section className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5">
+    <section className="settings-panel">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <h2 className="font-bold">Дополнительные поля</h2>
@@ -314,8 +316,8 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
           </div>
           <label className="grid gap-2 text-sm font-semibold">
             Название
-            <input
-              className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            <Input
+              className="font-normal"
               disabled={saving}
               maxLength={120}
               onChange={(event) =>
@@ -331,8 +333,8 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
           </label>
           <label className="grid gap-2 text-sm font-semibold">
             Ключ
-            <input
-              className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            <Input
+              className="font-normal"
               disabled={saving || editingID !== null}
               maxLength={63}
               onChange={(event) =>
@@ -366,24 +368,23 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
             />
           </label>
           <label className="flex items-center gap-3 self-end pb-3 text-sm font-semibold">
-            <input
+            <Checkbox
               checked={form.isRequired}
               disabled={saving}
-              onChange={(event) =>
+              onCheckedChange={(checked) =>
                 setForm((current) => ({
                   ...current,
-                  isRequired: event.target.checked,
+                  isRequired: checked,
                 }))
               }
-              type="checkbox"
             />
             Обязательное поле
           </label>
           {form.fieldType === "select" ? (
             <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
               Варианты через запятую
-              <input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              <Input
+                className="font-normal"
                 disabled={saving}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -399,16 +400,15 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
           ) : null}
           {editingID ? (
             <label className="flex items-center gap-3 text-sm font-semibold sm:col-span-2">
-              <input
+              <Checkbox
                 checked={form.isActive}
                 disabled={saving}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setForm((current) => ({
                     ...current,
-                    isActive: event.target.checked,
+                    isActive: checked,
                   }))
                 }
-                type="checkbox"
               />
               Показывать это поле сотрудникам
             </label>

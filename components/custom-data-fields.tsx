@@ -1,5 +1,7 @@
 "use client"
 
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { FieldSelect } from "@/components/ui/field-select"
 
 export type CustomFieldType = "text" | "number" | "date" | "boolean" | "select"
@@ -65,16 +67,15 @@ export function CustomDataFields({
           if (field.fieldType === "boolean") {
             return (
               <label
-                className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-background px-3 text-sm font-semibold sm:col-span-2"
+                className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-control px-3 text-sm font-semibold sm:col-span-2"
                 key={field.id}
               >
-                <input
+                <Checkbox
                   {...common}
                   checked={value === true}
-                  onChange={(event) =>
-                    onChange({ ...values, [field.key]: event.target.checked })
+                  onCheckedChange={(checked) =>
+                    onChange({ ...values, [field.key]: checked })
                   }
-                  type="checkbox"
                 />
                 {field.label}
                 {field.isRequired ? (
@@ -124,9 +125,9 @@ export function CustomDataFields({
                   *
                 </span>
               ) : null}
-              <input
+              <Input
                 {...common}
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="font-normal"
                 maxLength={field.fieldType === "text" ? 4000 : undefined}
                 min={field.fieldType === "number" ? "0" : undefined}
                 onChange={(event) =>

@@ -11,6 +11,11 @@ import { PaymentSettings } from "@/components/payment-settings"
 import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
 import { ExchangeRateSettings } from "@/components/exchange-rate-settings"
 import { Button } from "@/components/ui/button"
+import { Palette, Save, LoaderCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { ColorPicker } from "@/components/ui/color-picker"
+import { LogoPicker } from "@/components/ui/logo-picker"
 import { FieldSelect } from "@/components/ui/field-select"
 
 type Branding = {
@@ -132,6 +137,10 @@ export function CompanySettings() {
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!/^#[0-9a-f]{6}$/i.test(branding.primaryColor)) {
+      setError("Выберите цвет в формате #RRGGBB.")
+      return
+    }
     setSaving(true)
     setError(null)
     setNotice(null)
@@ -179,69 +188,68 @@ export function CompanySettings() {
     <AppShell
       onRefresh={() => setRefreshVersion((version) => version + 1)}
       refreshing={loading}
-      pageDescription="Бренд, реквизиты и подписка компании"
+      pageDescription="Бренд, реквизиты и интеграции компании"
       pageTitle="Настройки компании"
       utilities={<ThemeCustomizer />}
     >
-      <div className="w-full min-w-0 space-y-5">
-        {error ? (
-          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
-          </div>
-        ) : null}
+      <div className="company-settings w-full min-w-0 space-y-4">
+        <AdminNotice message={error} variant="error" />
         <AdminNotice message={notice} />
         <form
-          className="rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25 p-5"
+          className="settings-panel"
           onSubmit={save}
+          aria-label="Визуальный стиль"
         >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h2 className="font-bold">Визуальный стиль</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Основной цвет используется для главных действий и рабочего
-                акцента.
-              </p>
-            </div>
-            <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold">
-              {subscriptionLabel(branding.subscriptionStatus)}
-            </span>
-          </div>
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <label className="text-sm font-semibold">
-              Основной цвет
-              <div className="mt-2 flex h-11 overflow-hidden rounded-xl border border-border bg-background">
-                <input
-                  aria-label="Выбрать основной цвет"
-                  className="h-full w-12 border-0 bg-transparent p-1"
-                  disabled={loading || isSubscriptionLocked}
-                  onChange={(event) =>
-                    setBranding((current) => ({
-                      ...current,
-                      primaryColor: event.target.value.toUpperCase(),
-                    }))
-                  }
-                  type="color"
-                  value={branding.primaryColor}
-                />
-                <input
-                  className="min-w-0 flex-1 bg-transparent px-3 font-medium uppercase outline-none"
-                  disabled={loading || isSubscriptionLocked}
-                  maxLength={7}
-                  onChange={(event) =>
-                    setBranding((current) => ({
-                      ...current,
-                      primaryColor: event.target.value.toUpperCase(),
-                    }))
-                  }
-                  pattern="^#[0-9A-Fa-f]{6}$"
-                  value={branding.primaryColor}
-                />
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <Palette className="size-4" />
+              </span>
+              <div>
+                <h2 className="font-semibold">Визуальный стиль</h2>
+                <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
+                  Логотип, цвет и тема компании во всех разделах.
+                </p>
               </div>
-            </label>
-            <label className="text-sm font-semibold">
-              Тема по умолчанию
+            </div>
+            <Badge variant="secondary">
+              {subscriptionLabel(branding.subscriptionStatus)}
+            </Badge>
+          </div>
+          <div className="mt-6 grid min-w-0 gap-5 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <LogoPicker
+                value={branding.logoUrl ?? ""}
+                disabled={loading || saving || isSubscriptionLocked}
+                onValueChange={(logoUrl) =>
+                  setBranding((current) => ({
+                    ...current,
+                    logoUrl: logoUrl || undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label
+                htmlFor="brand-color"
+                className="block text-sm font-medium"
+              >
+                Основной цвет
+              </label>
+              <ColorPicker
+                id="brand-color"
+                value={branding.primaryColor}
+                disabled={loading || saving || isSubscriptionLocked}
+                onValueChange={(primaryColor) =>
+                  setBranding((current) => ({ ...current, primaryColor }))
+                }
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <p className="text-sm font-medium">Тема по умолчанию</p>
               <FieldSelect
-                disabled={loading || isSubscriptionLocked}
+                aria-label="Тема по умолчанию"
+                disabled={loading || saving || isSubscriptionLocked}
                 onValueChange={(value) =>
                   setBranding((current) => ({
                     ...current,
@@ -253,30 +261,14 @@ export function CompanySettings() {
                   { value: "light", label: "Светлая" },
                   { value: "system", label: "Как в системе" },
                 ]}
-                triggerClassName="mt-2"
                 value={branding.defaultTheme}
               />
-            </label>
-            <label className="text-sm font-semibold sm:col-span-2">
-              Логотип (HTTPS URL или путь)
-              <input
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 font-normal"
-                disabled={loading || isSubscriptionLocked}
-                onChange={(event) =>
-                  setBranding((current) => ({
-                    ...current,
-                    logoUrl: event.target.value || undefined,
-                  }))
-                }
-                placeholder="/brand/vivat-bus.png"
-                value={branding.logoUrl ?? ""}
-              />
-            </label>
-            <label className="text-sm font-semibold sm:col-span-2">
+            </div>
+            <label className="min-w-0 space-y-2 text-sm font-medium sm:col-span-2">
               Контакт диспетчера для Telegram-бота
-              <input
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 font-normal"
-                disabled={loading || isSubscriptionLocked}
+              <Input
+                className="mt-2 font-normal"
+                disabled={loading || saving || isSubscriptionLocked}
                 maxLength={160}
                 onChange={(event) =>
                   setBranding((current) => ({
@@ -284,23 +276,23 @@ export function CompanySettings() {
                     dispatcherContact: event.target.value,
                   }))
                 }
-                placeholder="@vivat_bus або +380…"
+                placeholder="@vivat_bus или +380…"
                 value={branding.dispatcherContact}
               />
             </label>
           </div>
-          <div className="mt-6 flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="settings-footer">
             <p className="text-xs leading-5 text-muted-foreground">
               {isSubscriptionLocked
-                ? "Рабочие операции заблокированы до продления. Статус изменяет центральная SaaS-платформа."
-                : "Статус подписки передаётся центральной SaaS-платформой. Приостановка блокирует новые рабочие операции."}
+                ? "Рабочие операции приостановлены до продления подписки."
+                : "Изменения применятся ко всей компании после сохранения."}
             </p>
             <Button
               disabled={loading || saving || isSubscriptionLocked}
-              size="lg"
               type="submit"
             >
-              {saving ? "Сохраняем…" : "Сохранить бренд"}
+              {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+              {saving ? "Сохраняем…" : "Сохранить изменения"}
             </Button>
           </div>
         </form>
@@ -308,18 +300,20 @@ export function CompanySettings() {
           <>
             <PaymentSettings
               key={`payment-${refreshVersion}`}
-              disabled={loading || isSubscriptionLocked}
+              disabled={loading || saving || isSubscriptionLocked}
             />
             <IntegrationSecretsSettings
               key={`integrations-${refreshVersion}`}
-              disabled={loading || isSubscriptionLocked}
+              disabled={loading || saving || isSubscriptionLocked}
             />
-            <ExchangeRateSettings disabled={loading || isSubscriptionLocked} />
+            <ExchangeRateSettings
+              disabled={loading || saving || isSubscriptionLocked}
+            />
           </>
         ) : null}
         <CustomFieldManager
           key={`fields-${refreshVersion}`}
-          disabled={loading || isSubscriptionLocked}
+          disabled={loading || saving || isSubscriptionLocked}
         />
       </div>
     </AppShell>

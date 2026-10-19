@@ -17,7 +17,8 @@ body:has([data-public-booking]) {
 }
 
 @media print {
-  body:has([data-public-booking]), [data-public-booking] {
+  body:has([data-public-booking]),
+  [data-public-booking] {
     --background: #fff;
     --card: #fff;
     --foreground: #111;
@@ -27,10 +28,18 @@ body:has([data-public-booking]) {
     background: #fff;
     color: #111;
   }
-  [data-public-booking] > header, [data-public-booking] > footer,
-  [data-trip-checkout] > header, [data-trip-checkout] > footer,
-  [data-trip-checkout] button, [data-trip-checkout] ol { display: none; }
-  [data-trip-checkout] { min-height: 0; border: 0; }
+  [data-public-booking] > header,
+  [data-public-booking] > footer,
+  [data-trip-checkout] > header,
+  [data-trip-checkout] > footer,
+  [data-trip-checkout] button,
+  [data-trip-checkout] ol {
+    display: none;
+  }
+  [data-trip-checkout] {
+    min-height: 0;
+    border: 0;
+  }
 }
 
 @theme inline {
@@ -51,6 +60,8 @@ body:has([data-public-booking]) {
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
+  --color-control: var(--control);
+  --color-control-hover: var(--control-hover);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
@@ -96,6 +107,8 @@ body:has([data-public-booking]) {
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.93 0.007 106.5);
   --input: oklch(0.93 0.007 106.5);
+  --control: color-mix(in oklch, var(--card), var(--foreground) 4%);
+  --control-hover: color-mix(in oklch, var(--card), var(--foreground) 8%);
   --ring: oklch(0.737 0.021 106.9);
   --chart-1: oklch(0.837 0.128 66.29);
   --chart-2: oklch(0.705 0.213 47.604);
@@ -183,6 +196,86 @@ body:has([data-public-booking]) {
     transparent;
   scrollbar-width: thin;
 }
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--muted-foreground), transparent 65%);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--muted-foreground), transparent 40%);
+}
+
+.menu-surface {
+  border: 1px solid var(--border);
+  border-radius: var(--app-radius);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow:
+    0 12px 36px rgb(0 0 0 / 0.16),
+    0 2px 6px rgb(0 0 0 / 0.06);
+}
+.app-workspace input[type="number"] {
+  appearance: textfield;
+}
+.app-workspace input[type="number"]::-webkit-inner-spin-button,
+.app-workspace input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.settings-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--app-radius);
+  background: var(--card);
+  padding: 1.5rem;
+}
+.settings-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+}
+.settings-footer > p {
+  max-width: 48rem;
+}
+.color-picker .react-colorful {
+  width: 100%;
+  height: 170px;
+}
+.color-picker .react-colorful__saturation {
+  border-radius: 10px 10px 0 0;
+}
+.color-picker .react-colorful__hue {
+  height: 16px;
+  border-radius: 0 0 10px 10px;
+}
+.color-picker .react-colorful__pointer {
+  width: 18px;
+  height: 18px;
+}
+@media (max-width: 639px) {
+  .settings-panel {
+    padding: 1rem;
+  }
+  .settings-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .settings-footer > [data-slot="button"] {
+    width: 100%;
+  }
+}
 
 .surface-card {
   border: 1px solid var(--border);
@@ -226,8 +319,12 @@ body:has([data-public-booking]) {
 }
 
 @media (max-width: 767px) {
-  html[data-scale] { font-size: 16px; }
-  body:has(.app-shell-frame) { overflow: hidden; }
+  html[data-scale] {
+    font-size: 16px;
+  }
+  body:has(.app-shell-frame) {
+    overflow: hidden;
+  }
   .app-shell-frame {
     gap: 0;
     padding: calc(8px + env(safe-area-inset-top)) 0 0;
@@ -246,7 +343,9 @@ body:has([data-public-booking]) {
   :root[data-density="compact"] .workspace-content {
     padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
   }
-  .app-workspace:has(.mobile-collection-footer) .workspace-content { padding-bottom: 16px; }
+  .app-workspace:has(.mobile-collection-footer) .workspace-content {
+    padding-bottom: 16px;
+  }
   .mobile-collection-footer {
     padding: 4px 16px calc(84px + env(safe-area-inset-bottom));
   }
@@ -262,10 +361,23 @@ body:has([data-public-booking]) {
     min-height: 44px;
     min-width: 44px;
   }
-  [data-slot="input"], [data-slot="textarea"],
-  [data-slot="command-input"], [data-slot="select-trigger"],
-  [data-slot="combobox-input"], input, textarea, select { font-size: 16px; }
-  [data-slot="input"], [data-slot="select-trigger"] { min-height: 44px; }
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="command-input"],
+  [data-slot="select-trigger"],
+  [data-slot="combobox-input"],
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  [data-slot="input"],
+  [data-slot="select-trigger"] {
+    min-height: 44px;
+  }
+  [data-slot="input-group"] {
+    min-height: 44px;
+  }
   .group\/calendar {
     --cell-size: min(44px, calc((100vw - 56px) / 7));
   }
@@ -273,20 +385,52 @@ body:has([data-public-booking]) {
     min-width: var(--cell-size);
     min-height: var(--cell-size);
   }
-  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]) { min-height: 44px; }
-  label:has([data-slot="checkbox"]), label:has([data-slot="switch"]) { min-height: 44px; }
-  [data-slot="dropdown-menu-checkbox-item"], [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-sub-trigger"], [data-slot="select-item"] { min-height: 44px; }
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not(
+      [type="file"]
+    ):not([type="color"]) {
+    min-height: 44px;
+  }
+  label:has([data-slot="checkbox"]),
+  label:has([data-slot="switch"]) {
+    min-height: 44px;
+  }
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="select-item"] {
+    min-height: 44px;
+  }
   [data-slot="dialog-content"]:not(.mobile-dock-search) {
-    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(
+      100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    );
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  [data-slot="table-container"] { min-width: 0; overscroll-behavior-x: contain; }
-  .mobile-dock-search [data-slot="command-item"] { border-radius: var(--radius-lg); gap: 12px; padding: 10px 12px; }
+  [data-slot="table-container"] {
+    min-width: 0;
+    overscroll-behavior-x: contain;
+  }
+  .mobile-dock-search [data-slot="command-item"] {
+    border-radius: var(--radius-lg);
+    gap: 12px;
+    padding: 10px 12px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-slot="dialog-content"], [data-slot="dialog-overlay"] { animation: none !important; transition: none !important; }
+  .menu-surface,
+  [data-slot="button"],
+  [data-slot="badge"],
+  [data-slot="select-trigger"] {
+    animation: none !important;
+    transition: none !important;
+  }
+  [data-slot="dialog-content"],
+  [data-slot="dialog-overlay"] {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* Workspace panels share the same surface and outer edges at every scale. */
@@ -363,11 +507,11 @@ body:has([data-public-booking]) {
 
 .status-sky {
   background: oklch(0.67 0.12 230 / 0.16);
-  color: oklch(0.75 0.12 230);
+  color: oklch(0.43 0.12 230);
 }
 .status-gold {
   background: oklch(0.78 0.15 82 / 0.16);
-  color: oklch(0.8 0.15 82);
+  color: oklch(0.43 0.1 82);
 }
 .status-slate {
   background: var(--muted);
@@ -375,6 +519,16 @@ body:has([data-public-booking]) {
 }
 .status-violet {
   background: oklch(0.7 0.15 295 / 0.16);
+  color: oklch(0.44 0.14 295);
+}
+
+.dark .status-sky {
+  color: oklch(0.75 0.12 230);
+}
+.dark .status-gold {
+  color: oklch(0.8 0.15 82);
+}
+.dark .status-violet {
   color: oklch(0.77 0.12 295);
 }
 

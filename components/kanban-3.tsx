@@ -1,4 +1,5 @@
 "use client"
+import { Badge } from "@/components/ui/badge"
 
 import * as React from "react"
 import { createPortal } from "react-dom"
@@ -309,7 +310,10 @@ export default function ReactBitsKanban<T>({
       if (distance < 5) return
       drag.active = true
       const ids = cardsByColumn.get(drag.origin) ?? []
-      setDropSlot({ group: drag.origin, index: Math.max(0, ids.indexOf(drag.id)) })
+      setDropSlot({
+        group: drag.origin,
+        index: Math.max(0, ids.indexOf(drag.id)),
+      })
       setDragId(drag.id)
       root.setPointerCapture(event.pointerId)
     }
@@ -461,14 +465,12 @@ export default function ReactBitsKanban<T>({
                 <span className="truncate text-sm font-semibold">
                   {column.label}
                 </span>
-                <span
-                  className={cn(
-                    "ml-auto rounded-full px-2 py-0.5 text-xs tabular-nums",
-                    tone.count
-                  )}
+                <Badge
+                  variant="secondary"
+                  className={cn("ml-auto tabular-nums", tone.count)}
                 >
                   {ordered.length}
-                </span>
+                </Badge>
                 {column.description ? (
                   <span className="sr-only">{column.description}</span>
                 ) : null}
