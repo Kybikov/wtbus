@@ -53,3 +53,11 @@ Use a disposable PostgreSQL instance: integration tests create isolated schemas,
 To test the production Next WebSocket proxy, build/start Next on port 3001 with an upstream URL `http://localhost:8080`, then set `NOTIFICATION_TEST_API_ADDRESS=127.0.0.1:8080` and `NOTIFICATION_TEST_FRONTEND_URL=http://localhost:3001` for the same Go integration test. This checks real upgrade/auth/origin/tenant/driver boundaries through Next.
 
 Finally verify on an actual phone: install PWA, enable push and use its profile's push test. Then close the PWA, generate an eligible booking/request/trip/payment event from a second session/device, and open the notification on the first phone. Automated encryption/queue tests are not proof of OS notification delivery.
+
+## Push enrollment recovery
+
+`lib/push-device.ts` owns native enrollment. Browser/provider exceptions become Russian messages with permission, unsupported-browser, offline, timeout or reconnect guidance; raw provider text is never shown. A failed native subscription is not saved as a connected device. Enrollment is single-flight, native work remains shared after a timeout, and every wait is bounded. Missing or mismatched VAPID keys require explicit re-enrollment. Binding writes are serialized and invalidate older checks. Turning Push off unsubscribes locally before server removal, and the final removal follows any in-flight bind, so neither a failed API request nor an older background check can cause silent re-enrollment.
+
+The profile rechecks on focus, reconnect, notification permission changes and service-worker subscription changes. Older checks cannot overwrite a newer enable/disable action; a failed connection check does not falsely mark a known connected device as off. Brave enrollment errors include guidance for its separate Google push-messaging option at `brave://settings/privacy`. A website cannot enable that browser setting itself.
+
+The explicit Push test rebinds the device to the current session before enqueueing, and its success message describes queue acceptance. It is not an OS delivery receipt. Verify native delivery on the actual user's browser/device; mocked subscription tests and an accessible provider do not prove that its notification appeared.

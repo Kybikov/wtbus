@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation"
 import { isPublicBookingPath } from "@/lib/public-booking"
 import { parseRealtimeMessage, realtimeEvent } from "@/lib/realtime"
 import { syncExistingPush } from "@/lib/web-push"
+import { pushStateChanged } from "@/lib/push-device"
 
 // One connection per tab. WebSocket invalidates data; only Web Push shows native alerts.
 export function DeviceNotificationMonitor() {
@@ -76,6 +77,15 @@ export function DeviceNotificationMonitor() {
         )
       }
     }
+    const subscriptionChanged = (event: MessageEvent) => {
+      if (event.data?.type !== "vivat-push-subscription-changed") return
+      void syncExistingPush()
+        .catch(() => {})
+        .finally(() => {
+          if (!stopped) window.dispatchEvent(new Event(pushStateChanged))
+        })
+    }
+    navigator.serviceWorker?.addEventListener("message", subscriptionChanged)
     connect()
     const fallback = setInterval(() => {
       if (
@@ -93,6 +103,10 @@ export function DeviceNotificationMonitor() {
       stopped = true
       clearTimeout(timer)
       clearInterval(fallback)
+      navigator.serviceWorker?.removeEventListener(
+        "message",
+        subscriptionChanged
+      )
       socket?.close()
       window.removeEventListener("online", online)
       document.removeEventListener("visibilitychange", visible)

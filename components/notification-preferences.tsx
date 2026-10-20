@@ -41,6 +41,12 @@ import {
   pushRequest,
   syncExistingPush,
 } from "@/lib/web-push"
+import {
+  pushProblem,
+  pushSupported,
+  pushStateChanged,
+  type PushSetupError,
+} from "@/lib/push-device"
 
 type Channel = "push" | "telegram"
 type Preferences = {
@@ -103,6 +109,11 @@ export function NotificationPreferences({
   const [failed, setFailed] = React.useState(false)
   const [supported, setSupported] = React.useState(false)
   const [pushEnabled, setPushEnabled] = React.useState(false)
+  const [pushChecking, setPushChecking] = React.useState(true)
+  const [pushIssue, setPushIssue] = React.useState<PushSetupError | null>(null)
+  const [brave, setBrave] = React.useState(false)
+  const pushVersion = React.useRef(0)
+  const pushMutation = React.useRef(false)
   const [permission, setPermission] =
     React.useState<NotificationPermission>("default")
   const [disconnect, setDisconnect] = React.useState(false)
@@ -136,37 +147,78 @@ export function NotificationPreferences({
     const timer = setTimeout(() => void reload(), 0)
     return () => clearTimeout(timer)
   }, [reload, identity.membershipId])
+  const invalidatePush = React.useCallback(() => {
+    pushVersion.current++
+  }, [])
+  const refreshPush = React.useCallback(async () => {
+    if (pushMutation.current) return
+    const version = ++pushVersion.current
+    const can = pushSupported()
+    setSupported(can)
+    setPushChecking(can)
+    setPermission(
+      "Notification" in window ? Notification.permission : "default"
+    )
+    if (!can) {
+      setPushEnabled(false)
+      return
+    }
+    try {
+      const existing = await currentPushSubscription()
+      const bound =
+        existing && Notification.permission === "granted"
+          ? await syncExistingPush()
+          : false
+      if (version !== pushVersion.current) return
+      setPushEnabled(!!bound)
+      if (bound) setPushIssue(null)
+      else if (Notification.permission === "denied")
+        setPushIssue(pushProblem({ name: "NotAllowedError" }))
+      else if (existing)
+        setPushIssue(pushProblem({ name: "InvalidStateError" }))
+    } catch (error) {
+      if (version === pushVersion.current) setPushIssue(pushProblem(error))
+    } finally {
+      if (version === pushVersion.current) setPushChecking(false)
+    }
+  }, [])
   React.useEffect(() => {
     let cancelled = false
-    async function refresh() {
-      const can =
-        window.isSecureContext &&
-        "Notification" in window &&
-        "PushManager" in window &&
-        "serviceWorker" in navigator
-      setSupported(can)
-      setPermission(
-        "Notification" in window ? Notification.permission : "default"
-      )
-      if (!can) return
-      try {
-        const existing = await currentPushSubscription()
-        const bound =
-          existing && Notification.permission === "granted"
-            ? await syncExistingPush()
-            : false
-        if (!cancelled) setPushEnabled(!!bound)
-      } catch {
-        if (!cancelled) setPushEnabled(false)
-      }
+    const refresh = () => {
+      void refreshPush()
     }
-    void refresh()
+    refresh()
+    const browser = navigator as Navigator & {
+      brave?: { isBrave: () => Promise<boolean> }
+    }
+    void browser.brave
+      ?.isBrave()
+      .then((value) => {
+        if (!cancelled) setBrave(value)
+      })
+      .catch(() => {})
+    let permissionStatus: PermissionStatus | undefined
+    if (navigator.permissions)
+      void navigator.permissions
+        .query({ name: "notifications" })
+        .then((status) => {
+          if (cancelled) return
+          permissionStatus = status
+          status.addEventListener("change", refresh)
+        })
+        .catch(() => {})
     window.addEventListener("focus", refresh)
+    window.addEventListener("online", refresh)
+    window.addEventListener(pushStateChanged, refresh)
     return () => {
       cancelled = true
+      invalidatePush()
+      permissionStatus?.removeEventListener("change", refresh)
       window.removeEventListener("focus", refresh)
+      window.removeEventListener("online", refresh)
+      window.removeEventListener(pushStateChanged, refresh)
     }
-  }, [identity.membershipId])
+  }, [identity.membershipId, refreshPush, invalidatePush])
   const refreshTelegram = React.useCallback(async () => {
     try {
       const tg = (await request("telegram")) as Telegram
@@ -193,16 +245,36 @@ export function NotificationPreferences({
     }
   }, [link, refreshTelegram])
   async function perform(key: string, action: () => Promise<void>) {
+    if (key === "push") {
+      pushMutation.current = true
+      pushVersion.current++
+      setPushChecking(false)
+    }
     setBusy(key)
+    let succeeded = false
     try {
       await action()
+      succeeded = true
+      if (key === "push") setPushIssue(null)
     } catch (error) {
+      const problem = key === "push" ? pushProblem(error) : null
+      if (problem) setPushIssue(problem)
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Не удалось выполнить действие."
+        problem?.message ??
+          (error instanceof Error
+            ? error.message
+            : "Не удалось выполнить действие.")
       )
     } finally {
+      if (key === "push") {
+        pushMutation.current = false
+        if (succeeded) window.dispatchEvent(new Event(pushStateChanged))
+        else {
+          try {
+            if (!(await currentPushSubscription())) setPushEnabled(false)
+          } catch {}
+        }
+      }
       setBusy(null)
       if ("Notification" in window) setPermission(Notification.permission)
     }
@@ -245,13 +317,19 @@ export function NotificationPreferences({
                 Push на этом устройстве
               </h3>
               <Badge variant="secondary" className="max-w-full">
-                {!supported
-                  ? "Недоступен"
-                  : permission === "denied"
-                    ? "Заблокирован"
-                    : pushEnabled
-                      ? "Включён"
-                      : "Выключен"}
+                {pushChecking
+                  ? "Проверяем…"
+                  : !supported
+                    ? "Недоступен"
+                    : permission === "denied"
+                      ? "Заблокирован"
+                      : pushIssue
+                        ? pushEnabled
+                          ? "Проверка недоступна"
+                          : "Не подключён"
+                        : pushEnabled
+                          ? "Включён"
+                          : "Выключен"}
               </Badge>
             </div>
             <p className="mt-3 flex-1 text-xs leading-5 text-muted-foreground">
@@ -261,11 +339,35 @@ export function NotificationPreferences({
                   ? "Разрешите уведомления в настройках браузера или телефона."
                   : "Уведомления приходят и при закрытом приложении. Включите их на каждом нужном устройстве."}
             </p>
+            {pushIssue ? (
+              <div
+                role="status"
+                className="mt-3 rounded-xl bg-control p-3 text-xs leading-5"
+              >
+                <p>{pushIssue.message}</p>
+                {brave &&
+                ["browser-service", "timeout"].includes(pushIssue.code) ? (
+                  <p className="mt-2 text-muted-foreground">
+                    В Brave откройте{" "}
+                    <span className="font-medium text-foreground">
+                      brave://settings/privacy
+                    </span>{" "}
+                    и включите «Использовать сервисы Google для
+                    push-уведомлений». Затем перезапустите браузер и повторите
+                    подключение.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-auto grid grid-cols-1 items-center gap-2 pt-5 sm:grid-cols-2 [&_.call-chip]:w-full [&_.call-chip]:justify-center [&>button]:w-full">
               <Button
                 variant="outline"
                 disabled={
-                  !supported || !!busy || loading || permission === "denied"
+                  !supported ||
+                  !!busy ||
+                  loading ||
+                  pushChecking ||
+                  permission === "denied"
                 }
                 onClick={() =>
                   void perform("push", async () => {
@@ -291,20 +393,22 @@ export function NotificationPreferences({
               </Button>
               <ConnectionTestButton
                 name="Push"
-                disabled={!pushEnabled || !!busy || loading}
+                disabled={!pushEnabled || !!busy || loading || pushChecking}
                 hint={
                   !pushEnabled
                     ? "Сначала включите Push на этом устройстве"
                     : undefined
                 }
                 onTest={async () => {
+                  if (!(await syncExistingPush()))
+                    throw Error("Подключите Push на этом устройстве снова.")
                   const subscription = await currentPushSubscription()
                   if (!subscription) throw Error("Сначала включите Push.")
                   await pushRequest("POST", {
                     test: true,
                     subscription: subscription.toJSON(),
                   })
-                  return "Проверьте уведомления на устройстве"
+                  return "Тестовое уведомление поставлено в очередь. Проверьте устройство."
                 }}
               />
             </div>

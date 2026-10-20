@@ -92,7 +92,7 @@ test("notification clicks remain same-origin and offline recovery goes to the un
       },
     }
   )
-  for (const url of ["https://evil.example", "/requests", "/driver"]) {
+  for (const url of ["https://evil.example", "/requests", "/driver", "/team"]) {
     let work
     handlers.notificationclick({
       notification: { close() {}, data: { url } },
@@ -106,6 +106,7 @@ test("notification clicks remain same-origin and offline recovery goes to the un
     "https://vivat.example/profile",
     "https://vivat.example/requests",
     "https://vivat.example/driver",
+    "https://vivat.example/team",
   ])
   assert.match(
     readFileSync(new URL("../public/offline.html", import.meta.url), "utf8"),

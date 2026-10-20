@@ -48,7 +48,7 @@ self.addEventListener("fetch", (event) => {
   }
 })
 
-const notificationPaths = new Set(["/requests", "/bookings", "/finance", "/trips", "/driver", "/profile"])
+const notificationPaths = new Set(["/requests", "/bookings", "/finance", "/trips", "/driver", "/profile", "/team"])
 function notificationPath(value) { return notificationPaths.has(value) ? value : "/profile" }
 
 self.addEventListener("push", (event) => {
