@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import type { EntityColumn } from "@/components/entity-data-view"
 import type { EntityFilter } from "@/lib/entity-views"
 import type { MetricField } from "@/lib/entity-metrics"
+import { travelDay } from "@/lib/public-booking"
 
 export function textColumn<T>(
   id: string,
@@ -44,6 +45,11 @@ export function dateColumn<T>(
     label,
     defaultVisible: visible,
     value: (item) => formatEntityDate(get(item), timeZone),
+    filterValue: (item) => {
+      const value = get(item)
+      if (!value || !Number.isFinite(Date.parse(value))) return null
+      return value.length === 10 ? value : travelDay(new Date(value), timeZone)
+    },
     metric: { kind: "date", getValue: get },
     className: "tabular-nums",
   }

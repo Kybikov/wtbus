@@ -4,9 +4,12 @@ import { Filter, RotateCcw } from "lucide-react"
 import {
   AdvancedFilterBuilder,
   newFilterGroup,
+  QueryChoice,
 } from "@/components/advanced-filter-builder"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import {
   Dialog,
   DialogTrigger,
@@ -18,6 +21,9 @@ import {
 } from "@/components/ui/dialog"
 import {
   countQuery,
+  appendQueryRule,
+  fieldOperators,
+  queryWithLegacyFilters,
   type FilterGroup,
   type QueryFieldChoice,
 } from "@/lib/entity-query"
@@ -36,15 +42,34 @@ function FilterDraft({
   fields,
   onApply,
   count,
+  initialField,
 }: {
   initial: FilterGroup
   fields: QueryFieldChoice[]
   onApply: (group: FilterGroup) => void
   count?: (group: FilterGroup) => number
+  initialField?: string | null
 }) {
-  const [draft, setDraft] = useState(initial)
+  const [prepared] = useState(() => {
+    const field = fields.find((item) => item.id === initialField)
+    return field
+      ? appendQueryRule(initial, {
+          id: crypto.randomUUID(),
+          field: field.id,
+          operator: fieldOperators(field.kind)[0],
+          value: [],
+        })
+      : initial
+  })
+  const [draft, setDraft] = useState(prepared ?? initial)
   return (
     <>
+      {!prepared && (
+        <p role="alert" className="text-sm text-destructive">
+          Не удалось добавить условие: достигнут лимит вложенности или
+          количества. Измените существующие условия.
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1">
         <AdvancedFilterBuilder
           group={draft}
@@ -81,6 +106,7 @@ export function EntityFilters({
   onOpenChange,
   onChange,
   count,
+  initialField,
 }: {
   fields: QueryFieldChoice[]
   values: Record<string, string>
@@ -89,22 +115,9 @@ export function EntityFilters({
   onOpenChange: (open: boolean) => void
   onChange: (query: FilterGroup) => void
   count?: (query: FilterGroup) => number
+  initialField?: string | null
 }) {
-  const legacy = Object.entries(values)
-    .filter(([, value]) => value)
-    .map(([field, value]) => ({
-      id: `legacy-${field}`,
-      field,
-      operator: "eq" as const,
-      value: [value],
-    }))
-  const initial: FilterGroup = legacy.length
-    ? {
-        id: "root",
-        combinator: "and",
-        rules: [...legacy, ...(query ? [query] : [])],
-      }
-    : (query ?? { id: "root", combinator: "and", rules: [] })
+  const initial = queryWithLegacyFilters(values, query)
   const active = countQuery(initial)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,6 +148,7 @@ export function EntityFilters({
         </DialogHeader>
         <FilterDraft
           initial={initial}
+          initialField={initialField}
           fields={fields}
           count={count}
           onApply={(next) => {
@@ -142,6 +156,138 @@ export function EntityFilters({
             onOpenChange(false)
           }}
         />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ColumnSearchDraft({
+  field,
+  initial,
+  onApply,
+  count,
+}: {
+  field: QueryFieldChoice
+  initial: FilterGroup
+  onApply: (query: FilterGroup) => void
+  count?: (query: FilterGroup) => number
+}) {
+  const [value, setValue] = useState<string[]>([])
+  const [id] = useState(() => crypto.randomUUID())
+  const next = appendQueryRule(initial, {
+    id,
+    field: field.id,
+    operator:
+      field.kind === "text"
+        ? "contains"
+        : field.kind === "select"
+          ? "in"
+          : "eq",
+    value,
+  })
+  const complete = value.length > 0 && value.every((item) => item.trim() !== "")
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (complete && next) onApply(next)
+      }}
+    >
+      <div className="grid gap-2 text-sm">
+        <label htmlFor={field.kind === "select" ? undefined : `search-${id}`}>
+          {field.label}
+        </label>
+        {field.kind === "select" ? (
+          <QueryChoice
+            label={`Значения: ${field.label}`}
+            options={field.options ?? []}
+            values={value}
+            onChange={setValue}
+            multiple
+          />
+        ) : field.kind === "date" ? (
+          <DatePicker
+            id={`search-${id}`}
+            label={`Дата: ${field.label}`}
+            value={value[0] ?? ""}
+            onValueChange={(item) => setValue([item])}
+          />
+        ) : (
+          <Input
+            id={`search-${id}`}
+            autoFocus
+            type={field.kind === "number" ? "number" : "text"}
+            step="any"
+            maxLength={500}
+            placeholder={
+              field.kind === "number" ? "Введите число" : "Введите текст…"
+            }
+            value={value[0] ?? ""}
+            onChange={(event) => setValue([event.target.value])}
+          />
+        )}
+      </div>
+      {!next && (
+        <p role="alert" className="text-sm text-destructive">
+          Достигнут лимит условий. Измените существующий фильтр.
+        </p>
+      )}
+      <DialogFooter className="flex-row items-center justify-between gap-3">
+        <span role="status" className="mr-auto text-xs text-muted-foreground">
+          Совпадений: {complete && next ? (count?.(next) ?? "—") : "—"}
+        </span>
+        <Button type="submit" disabled={!complete || !next}>
+          Найти
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+export function EntityColumnSearch({
+  field,
+  values,
+  query,
+  onClose,
+  onApply,
+  count,
+}: {
+  field?: QueryFieldChoice
+  values: Record<string, string>
+  query?: FilterGroup
+  onClose: () => void
+  onApply: (query: FilterGroup) => void
+  count?: (query: FilterGroup) => number
+}) {
+  return (
+    <Dialog
+      open={Boolean(field)}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md!">
+        <DialogHeader>
+          <DialogTitle>
+            Поиск в колонке{field ? ` «${field.label}»` : ""}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Добавьте условие поиска к текущим фильтрам.
+          </DialogDescription>
+        </DialogHeader>
+        {field && (
+          <ColumnSearchDraft
+            key={field.id}
+            field={field}
+            initial={queryWithLegacyFilters(values, query)}
+            count={count}
+            onApply={(next) => {
+              onApply(next)
+              onClose()
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -1031,17 +1031,26 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               }).format(new Date(item.startsAt))
             }
             toolbarExtras={
-              <DatePicker
-                label="Дата рейсов"
-                className="h-9 w-36"
-                value={day.iso}
-                onValueChange={(value) => {
-                  if (!value) return
-                  const date = new Date(value + "T12:00:00")
-                  setWeekStart(startOfWeek(date))
-                  setSelectedDay(date.getDay() === 0 ? 6 : date.getDay() - 1)
-                }}
-              />
+              <div
+                role="group"
+                aria-label="Фильтр по дню отправления"
+                className="flex shrink-0 items-center gap-2"
+              >
+                <span className="text-xs whitespace-nowrap text-muted-foreground">
+                  Рейсы за
+                </span>
+                <DatePicker
+                  label="Дата рейсов"
+                  className="h-8 w-36"
+                  value={day.iso}
+                  onValueChange={(value) => {
+                    if (!value) return
+                    const date = new Date(value + "T12:00:00")
+                    setWeekStart(startOfWeek(date))
+                    setSelectedDay(date.getDay() === 0 ? 6 : date.getDay() - 1)
+                  }}
+                />
+              </div>
             }
             actions={[
               {

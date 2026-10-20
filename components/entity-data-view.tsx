@@ -3,6 +3,8 @@
 import {
   countQuery,
   matchesQuery,
+  hasColumnCondition,
+  removeColumnConditions,
   type QueryField,
   type FilterGroup,
 } from "@/lib/entity-query"
@@ -33,6 +35,8 @@ import { EntityExportContext } from "@/components/entity-export-context"
 import { EntityFooterContext } from "@/components/entity-footer-context"
 import {
   ArrowDownAZ,
+  Check,
+  Search,
   Copy,
   ExternalLink,
   CheckSquare2,
@@ -80,6 +84,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { EntityViewToolbar } from "@/components/entity-view-toolbar"
+import { EntityColumnSearch } from "@/components/entity-filters"
 import { EntityMetricsBar } from "@/components/entity-metrics-bar"
 import {
   normalizeMetrics,
@@ -117,6 +122,7 @@ export type EntityColumn<T> = {
   className?: string
   metric?: Omit<MetricField<T>, "id" | "label">
   sortValue?: (item: T) => string | number | Date | null | undefined
+  filterValue?: (item: T) => unknown
 }
 
 export type EntityAction<T> = {
@@ -341,6 +347,7 @@ export function EntityDataView<T>({
   const [board, setBoard] = React.useState<BoardLayout | undefined>()
   const [cardSettingsOpen, setCardSettingsOpen] = React.useState(false)
   const [filterRequest, setFilterRequest] = React.useState<string | null>(null)
+  const [searchColumn, setSearchColumn] = React.useState<string | null>(null)
   const columnSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -391,6 +398,7 @@ export function EntityDataView<T>({
           : undefined),
       matches: facet?.matches,
       read: (item: T) => {
+        if (column.filterValue) return column.filterValue(item)
         if (facet?.matches && facet.options?.length)
           return facet.options
             .filter((option) => facet.matches!(item, option.value))
@@ -818,6 +826,17 @@ export function EntityDataView<T>({
         }
         groups={boardGroups}
       />
+      <EntityColumnSearch
+        field={queryFields.find((field) => field.id === searchColumn)}
+        values={values}
+        query={queryGroup}
+        onClose={() => setSearchColumn(null)}
+        count={(query) =>
+          sourceItems.filter((item) => matchesQuery(item, query, queryFields))
+            .length
+        }
+        onApply={(query) => applyConfig({ ...config, filters: {}, query })}
+      />
       <EntityCardSettings
         columns={columns.map((column) => ({
           id: column.id,
@@ -1029,9 +1048,12 @@ export function EntityDataView<T>({
                         </TableHead>
                         {visibleColumns.map((column) => {
                           const activeSort = sort?.columnId === column.id
-                          const matchingFilter = filters.find(
-                            (filter) => filter.id === column.id
+                          const canQuery = Boolean(
+                            column.metric || column.text || column.sortValue
                           )
+                          const filtered =
+                            Boolean(values[column.id]) ||
+                            hasColumnCondition(queryGroup, column.id)
                           return (
                             <SortableColumn
                               key={column.id}
@@ -1108,6 +1130,12 @@ export function EntityDataView<T>({
                                           <ArrowUpAZ className="size-3.5 shrink-0 text-primary" />
                                         )
                                       ) : null}
+                                      {filtered && (
+                                        <Filter
+                                          aria-label="Есть фильтр по колонке"
+                                          className="size-3.5 shrink-0 text-primary"
+                                        />
+                                      )}
                                     </button>
                                     <button
                                       aria-label={`Изменить ширину колонки ${column.label}`}
@@ -1123,6 +1151,43 @@ export function EntityDataView<T>({
                                       <ContextMenuLabel>
                                         {column.label}
                                       </ContextMenuLabel>
+                                      {canQuery && (
+                                        <>
+                                          <ContextMenuItem
+                                            onClick={() =>
+                                              setSearchColumn(column.id)
+                                            }
+                                          >
+                                            <Search /> Поиск в колонке
+                                          </ContextMenuItem>
+                                          <ContextMenuItem
+                                            onClick={() =>
+                                              setFilterRequest(column.id)
+                                            }
+                                          >
+                                            <Filter /> Добавить фильтр
+                                          </ContextMenuItem>
+                                          {filtered && (
+                                            <ContextMenuItem
+                                              onClick={() => {
+                                                const remaining = { ...values }
+                                                delete remaining[column.id]
+                                                applyConfig({
+                                                  ...config,
+                                                  filters: remaining,
+                                                  query: removeColumnConditions(
+                                                    queryGroup,
+                                                    column.id
+                                                  ),
+                                                })
+                                              }}
+                                            >
+                                              <X /> Убрать фильтры колонки
+                                            </ContextMenuItem>
+                                          )}
+                                          <ContextMenuSeparator />
+                                        </>
+                                      )}
                                       <ContextMenuItem
                                         onClick={() =>
                                           setSort({
@@ -1132,6 +1197,10 @@ export function EntityDataView<T>({
                                         }
                                       >
                                         <ArrowDownAZ /> По возрастанию
+                                        {activeSort &&
+                                          sort.direction === "asc" && (
+                                            <Check className="ml-auto text-emerald-500!" />
+                                          )}
                                       </ContextMenuItem>
                                       <ContextMenuItem
                                         onClick={() =>
@@ -1142,21 +1211,16 @@ export function EntityDataView<T>({
                                         }
                                       >
                                         <ArrowUpAZ /> По убыванию
+                                        {activeSort &&
+                                          sort.direction === "desc" && (
+                                            <Check className="ml-auto text-emerald-500!" />
+                                          )}
                                       </ContextMenuItem>
                                       {activeSort ? (
                                         <ContextMenuItem
                                           onClick={() => setSort(null)}
                                         >
                                           <X /> Сбросить сортировку
-                                        </ContextMenuItem>
-                                      ) : null}
-                                      {matchingFilter ? (
-                                        <ContextMenuItem
-                                          onClick={() =>
-                                            setFilterRequest(column.id)
-                                          }
-                                        >
-                                          <Filter /> Добавить фильтр
                                         </ContextMenuItem>
                                       ) : null}
                                       <ContextMenuSeparator />

@@ -70,6 +70,71 @@ export function countQuery(group?: FilterGroup): number {
     ) ?? 0
   )
 }
+
+// A column condition narrows the whole expression, including an existing OR.
+// Refuse overflow instead of letting normalization discard existing conditions.
+export function appendQueryRule(
+  group: FilterGroup | undefined,
+  rule: FilterRule
+): FilterGroup | undefined {
+  const next: FilterGroup = !group?.rules.length
+    ? { id: `group-${rule.id}`, combinator: "and", rules: [rule] }
+    : group.combinator === "and"
+      ? { ...group, rules: [...group.rules, rule] }
+      : { id: `group-${rule.id}`, combinator: "and", rules: [group, rule] }
+  let nodes = 0
+  const fits = (current: FilterGroup, depth: number): boolean =>
+    depth <= 3 &&
+    current.rules.every(
+      (node) => ++nodes <= 40 && (!("rules" in node) || fits(node, depth + 1))
+    )
+  return fits(next, 0) ? next : undefined
+}
+
+export function hasColumnCondition(
+  group: FilterGroup | undefined,
+  field: string
+): boolean {
+  return (
+    group?.rules.some((node) =>
+      "rules" in node ? hasColumnCondition(node, field) : node.field === field
+    ) ?? false
+  )
+}
+
+export function removeColumnConditions(
+  group: FilterGroup | undefined,
+  field: string
+): FilterGroup | undefined {
+  if (!group) return undefined
+  const rules = group.rules.flatMap<FilterRule | FilterGroup>((node) => {
+    if (!("rules" in node)) return node.field === field ? [] : [node]
+    const nested = removeColumnConditions(node, field)
+    return nested ? [nested] : []
+  })
+  return rules.length ? { ...group, rules } : undefined
+}
+
+export function queryWithLegacyFilters(
+  values: Record<string, string>,
+  query?: FilterGroup
+): FilterGroup {
+  const legacy: FilterRule[] = Object.entries(values)
+    .filter(([, value]) => value)
+    .map(([field, value]) => ({
+      id: `legacy-${field}`,
+      field,
+      operator: "eq",
+      value: [value],
+    }))
+  return legacy.length
+    ? {
+        id: "legacy-root",
+        combinator: "and",
+        rules: [...legacy, ...(query ? [query] : [])],
+      }
+    : (query ?? { id: "root", combinator: "and", rules: [] })
+}
 export function normalizeQuery(
   group: FilterGroup | undefined,
   known: string[]

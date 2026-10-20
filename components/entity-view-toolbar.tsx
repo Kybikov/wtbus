@@ -925,6 +925,7 @@ export function EntityViewToolbar<T>({
                 fields={queryFields}
                 values={config.filters}
                 query={config.query}
+                initialField={filterRequest}
                 count={queryCount}
                 open={filtersOpen || Boolean(filterRequest)}
                 onOpenChange={(open) => {

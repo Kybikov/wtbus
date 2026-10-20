@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import {matchesQuery,normalizeQuery,countQuery} from "../lib/entity-query.ts"
+import {matchesQuery,normalizeQuery,countQuery,appendQueryRule,hasColumnCondition,removeColumnConditions,queryWithLegacyFilters} from "../lib/entity-query.ts"
 import {sameViewConfig,normalizeViewConfig} from "../lib/entity-views.ts"
 const fields=[{id:"name",label:"Name",kind:"text",read:item=>item.name},{id:"amount",label:"Amount",kind:"number",read:item=>item.amount},{id:"active",label:"Active",kind:"select",read:item=>item.active},{id:"date",label:"Date",kind:"date",read:item=>item.date},{id:"status",label:"Status",kind:"select",read:item=>item.status}]
 let n=0
@@ -34,4 +34,39 @@ test("saved view query survives normalization and participates in dirty checks",
  const view={mode:"table",columns:["name"],filters:{},query}
  assert.deepEqual(normalizeViewConfig(view,["table"],["name"],["name"],[]).query,query)
  assert.equal(sameViewConfig(view,{...view,query:group("or",...query.rules)}),false)
+})
+
+test("column search narrows an existing OR without changing or mutating its branches",()=>{
+ const original=group("or",rule("status","eq","new"),rule("amount","gt","10"))
+ const snapshot=structuredClone(original)
+ const next=appendQueryRule(original,rule("name","contains","Киев"))
+ assert.equal(matchesQuery({name:"Киев",status:"new",amount:0},next,fields),true)
+ assert.equal(matchesQuery({name:"Львов",status:"new",amount:20},next,fields),false)
+ assert.equal(matchesQuery({name:"Киев",status:"inactive",amount:0},next,fields),false)
+ assert.deepEqual(original,snapshot)
+})
+
+test("column reset removes all of its nested conditions and keeps unrelated conditions",()=>{
+ const query=group("and",rule("name","contains","Киев"),group("or",rule("status","eq","new"),rule("name","eq","Львов")),rule("amount","gt","0"))
+ const next=removeColumnConditions(query,"name")
+ assert.equal(hasColumnCondition(next,"name"),false)
+ assert.equal(hasColumnCondition(query,"name"),true)
+ assert.equal(countQuery(next),2)
+ assert.equal(matchesQuery({status:"new",amount:1},next,fields),true)
+ assert.equal(matchesQuery({status:"inactive",amount:1},next,fields),false)
+ assert.equal(removeColumnConditions(group("and",rule("name","eq","Киев")),"name"),undefined)
+})
+
+test("column actions preserve legacy facets together with grouped conditions",()=>{
+ const combined=queryWithLegacyFilters({status:"new",ignored:""},group("or",rule("amount","gt","10"),rule("name","eq","Киев")))
+ assert.equal(countQuery(combined),3)
+ assert.equal(matchesQuery({status:"inactive",amount:20},combined,fields),false)
+ assert.equal(matchesQuery({status:"new",amount:0,name:"Киев"},combined,fields),true)
+})
+
+test("adding a column condition refuses node and nesting overflow instead of truncating filters",()=>{
+ const full=group("and",...Array.from({length:40},()=>rule("name","contains","x")))
+ assert.equal(appendQueryRule(full,rule("status","eq","new")),undefined)
+ const deep=group("or",group("and",group("and",group("and",rule("name","eq","x")))))
+ assert.equal(appendQueryRule(deep,rule("status","eq","new")),undefined)
 })
