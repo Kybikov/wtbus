@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import {
-  operatorLabels,
+  fieldOperatorLabel,
   countQuery,
   type QueryFieldChoice,
   type FilterGroup,
@@ -960,7 +960,7 @@ export function EntityViewToolbar<T>({
                 >
                   {"rules" in node
                     ? `${node.combinator === "or" ? "Любое" : "Все"} из ${countQuery(node)} условий`
-                    : `${queryFields.find((field) => field.id === node.field)?.label ?? "Колонка"} · ${operatorLabels[node.operator].toLocaleLowerCase("ru")} ${node.value.map((value) => queryFields.find((field) => field.id === node.field)?.options?.find((option) => option.value === value)?.label ?? value).join(", ")}`}
+                    : `${queryFields.find((field) => field.id === node.field)?.label ?? "Колонка"} · ${fieldOperatorLabel(node.operator, queryFields.find((field) => field.id === node.field)?.kind).toLocaleLowerCase("ru")} ${node.value.map((value) => queryFields.find((field) => field.id === node.field)?.options?.find((option) => option.value === value)?.label ?? value).join(node.operator === "between" ? " — " : ", ")}`}
                 </Button>
               </React.Fragment>
             ))}

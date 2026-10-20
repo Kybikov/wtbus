@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import {matchesQuery,normalizeQuery,countQuery,appendQueryRule,hasColumnCondition,removeColumnConditions,queryWithLegacyFilters} from "../lib/entity-query.ts"
+import {matchesQuery,normalizeQuery,countQuery,appendQueryRule,hasColumnCondition,removeColumnConditions,queryWithLegacyFilters,fieldOperators,fieldOperatorLabel,isCompleteFilterRule} from "../lib/entity-query.ts"
 import {sameViewConfig,normalizeViewConfig} from "../lib/entity-views.ts"
 const fields=[{id:"name",label:"Name",kind:"text",read:item=>item.name},{id:"amount",label:"Amount",kind:"number",read:item=>item.amount},{id:"active",label:"Active",kind:"select",read:item=>item.active},{id:"date",label:"Date",kind:"date",read:item=>item.date},{id:"status",label:"Status",kind:"select",read:item=>item.status}]
 let n=0
@@ -69,4 +69,23 @@ test("adding a column condition refuses node and nesting overflow instead of tru
  assert.equal(appendQueryRule(full,rule("status","eq","new")),undefined)
  const deep=group("or",group("and",group("and",group("and",rule("name","eq","x")))))
  assert.equal(appendQueryRule(deep,rule("status","eq","new")),undefined)
+})
+
+test("date filters offer strict and inclusive bounds plus an inclusive period",()=>{
+ assert.ok(fieldOperators("date").includes("between"))
+ assert.equal(fieldOperatorLabel("gte","date"),"Не раньше")
+ assert.equal(fieldOperatorLabel("gte","number"),"Не меньше")
+ const period=group("and",rule("date","between","2026-10-20","2026-10-25"))
+ for(const date of ["2026-10-20","2026-10-22","2026-10-25"])assert.equal(matchesQuery({date},period,fields),true)
+ for(const date of [null,"2026-10-19","2026-10-26"])assert.equal(matchesQuery({date},period,fields),false)
+ assert.equal(matchesQuery({date:"2026-10-20"},group("and",rule("date","after","2026-10-20")),fields),false)
+ assert.equal(matchesQuery({date:"2026-10-20"},group("and",rule("date","gte","2026-10-20")),fields),true)
+ assert.equal(matchesQuery({date:"2026-10-20"},group("and",rule("date","lte","2026-10-20")),fields),true)
+})
+
+test("periods require both ordered dates; an unfinished period does not hide rows",()=>{
+ assert.equal(isCompleteFilterRule(rule("date","between","2026-10-20")),false)
+ assert.equal(isCompleteFilterRule(rule("date","between","2026-10-25","2026-10-20")),false)
+ assert.equal(isCompleteFilterRule(rule("date","between","2026-10-20","2026-10-20")),true)
+ assert.equal(matchesQuery({date:"2026-01-01"},group("and",rule("date","between","2026-10-20","")),fields),true)
 })

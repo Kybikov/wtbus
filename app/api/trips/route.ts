@@ -18,7 +18,7 @@ function isCalendarDay(value: string) {
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get("date")
 
-  if (!date || !isCalendarDay(date)) {
+  if (date !== null && !isCalendarDay(date)) {
     return NextResponse.json(
       { error: "Укажите корректную дату в формате ГГГГ-ММ-ДД." },
       { status: 400 }
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const upstream = await apiFetch(
-      `${apiBaseURL}/api/v1/tenants/vivat-bus/trips?date=${encodeURIComponent(date)}`,
+      `${apiBaseURL}/api/v1/tenants/vivat-bus/trips${date === null ? "" : `?date=${encodeURIComponent(date)}`}`,
       {
         cache: "no-store",
         headers: { Accept: "application/json" },

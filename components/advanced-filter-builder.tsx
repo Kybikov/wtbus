@@ -19,7 +19,7 @@ import {
 import {
   countQuery,
   fieldOperators,
-  operatorLabels,
+  fieldOperatorLabel,
   type FilterGroup,
   type FilterRule,
   type QueryFieldChoice,
@@ -207,15 +207,54 @@ export function AdvancedFilterBuilder({
                     update({
                       ...node,
                       operator: operator as FilterRule["operator"],
+                      value:
+                        operator === "between"
+                          ? [node.value[0] ?? "", node.value[1] ?? ""]
+                          : node.operator === "between"
+                            ? node.value.slice(0, 1)
+                            : node.value,
                     })
                   }
                   options={fieldOperators(
                     fields.find((f) => f.id === node.field)?.kind ?? "text"
-                  ).map((value) => ({ value, label: operatorLabels[value] }))}
+                  ).map((value) => ({
+                    value,
+                    label: fieldOperatorLabel(
+                      value,
+                      fields.find((f) => f.id === node.field)?.kind
+                    ),
+                  }))}
                 />
               </div>
               <div className="col-span-2 min-w-0 sm:col-span-1">
-                {["empty", "notEmpty"].includes(node.operator) ? (
+                {node.operator === "between" ? (
+                  <div className="grid min-w-0 gap-2">
+                    <Input
+                      aria-label="Дата с"
+                      type="date"
+                      value={node.value[0] ?? ""}
+                      max={node.value[1] || undefined}
+                      onChange={(event) =>
+                        update({
+                          ...node,
+                          value: [event.target.value, node.value[1] ?? ""],
+                        })
+                      }
+                    />
+                    <Input
+                      aria-label="Дата по"
+                      type="date"
+                      value={node.value[1] ?? ""}
+                      min={node.value[0] || undefined}
+                      onChange={(event) =>
+                        update({
+                          ...node,
+                          value: [node.value[0] ?? "", event.target.value],
+                        })
+                      }
+                    />
+                  </div>
+                ) : ["empty", "notEmpty"].includes(node.operator) ? (
                   <span className="flex h-10 items-center px-3 text-sm text-muted-foreground">
                     Без значения
                   </span>

@@ -24,6 +24,7 @@ import {
   appendQueryRule,
   fieldOperators,
   queryWithLegacyFilters,
+  isCompleteFilterRule,
   type FilterGroup,
   type QueryFieldChoice,
 } from "@/lib/entity-query"
@@ -32,9 +33,7 @@ function complete(group: FilterGroup): boolean {
   return group.rules.every((node) =>
     "rules" in node
       ? node.rules.length > 0 && complete(node)
-      : ["empty", "notEmpty"].includes(node.operator) ||
-        (node.value.length > 0 &&
-          node.value.every((value) => value.trim() !== ""))
+      : isCompleteFilterRule(node)
   )
 }
 function FilterDraft({

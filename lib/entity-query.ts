@@ -13,6 +13,7 @@ export type FilterOperator =
   | "lte"
   | "before"
   | "after"
+  | "between"
 export type FilterRule = {
   id: string
   field: string
@@ -48,6 +49,27 @@ export const operatorLabels: Record<FilterOperator, string> = {
   lte: "Не больше",
   before: "До",
   after: "После",
+  between: "В период",
+}
+export function fieldOperatorLabel(
+  operator: FilterOperator,
+  kind?: QueryField["kind"]
+) {
+  if (kind === "date" && operator === "gte") return "Не раньше"
+  if (kind === "date" && operator === "lte") return "Не позже"
+  return operatorLabels[operator]
+}
+export function isCompleteFilterRule(rule: FilterRule): boolean {
+  if (["empty", "notEmpty"].includes(rule.operator)) return true
+  if (!rule.value.length || rule.value.some((value) => !value.trim()))
+    return false
+  if (rule.operator !== "between") return true
+  return (
+    rule.value.length === 2 &&
+    Number.isFinite(Date.parse(rule.value[0])) &&
+    Number.isFinite(Date.parse(rule.value[1])) &&
+    rule.value[0] <= rule.value[1]
+  )
 }
 export function fieldOperators(kind: QueryField["kind"]): FilterOperator[] {
   return [
@@ -56,7 +78,7 @@ export function fieldOperators(kind: QueryField["kind"]): FilterOperator[] {
       : kind === "number"
         ? (["eq", "neq", "gt", "gte", "lt", "lte"] as const)
         : kind === "date"
-          ? (["eq", "neq", "before", "after"] as const)
+          ? (["eq", "neq", "before", "after", "gte", "lte", "between"] as const)
           : (["contains", "notContains", "eq", "neq"] as const)),
     "empty",
     "notEmpty",
@@ -198,6 +220,7 @@ export function matchesQuery<T>(
     if (node.operator === "empty" || node.operator === "notEmpty")
       return node.operator === "empty" ? !present(raw) : present(raw)
     if (!node.value.length || value === "") return true // An unfinished draft never hides records.
+    if (node.operator === "between" && !node.value[1]) return true
     const values = Array.isArray(raw) ? raw : [raw]
     const text = (v: unknown) =>
       String(v ?? "")
@@ -250,6 +273,10 @@ export function matchesQuery<T>(
               return left < right
             case "lte":
               return left <= right
+            case "between": {
+              const end = Date.parse(node.value[1])
+              return Number.isFinite(end) && left >= right && left <= end
+            }
             default:
               return false
           }

@@ -27,7 +27,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import { cn } from "@/lib/utils"
-import { DatePicker } from "@/components/ui/date-picker"
+import { travelDay } from "@/lib/public-booking"
 import { EntityDataView } from "@/components/entity-data-view"
 import {
   textColumn,
@@ -460,12 +460,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       setLoadError(null)
 
       try {
-        const response = await sessionFetch(
-          `/api/trips?date=${encodeURIComponent(day.iso)}`,
-          {
-            signal: controller.signal,
-          }
-        )
+        const response = await sessionFetch("/api/trips", {
+          signal: controller.signal,
+        })
         const payload: unknown = await response.json()
 
         if (!response.ok || !isTripCollection(payload)) {
@@ -489,7 +486,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
 
     void loadTrips()
     return () => controller.abort()
-  }, [day.iso, requestVersion])
+  }, [requestVersion])
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -567,19 +564,20 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
   }, [isCreateOpen, isSubmitting])
 
   const lanes = React.useMemo(
-    () => toLanes(trips, resources.vehicles, scheduleTimeZone),
-    [resources.vehicles, scheduleTimeZone, trips]
+    () =>
+      toLanes(
+        trips.filter(
+          (trip) =>
+            travelDay(new Date(trip.startsAt), scheduleTimeZone) === day.iso
+        ),
+        resources.vehicles,
+        scheduleTimeZone
+      ),
+    [resources.vehicles, scheduleTimeZone, trips, day.iso]
   )
   const mobileTrips = React.useMemo(
-    () =>
-      lanes.flatMap((lane) =>
-        lane.trips.map((trip) => ({
-          ...trip,
-          vehicle: lane.vehicle,
-          driver: lane.driver,
-        }))
-      ),
-    [lanes]
+    () => trips.map((trip) => toCalendarTrip(trip, scheduleTimeZone)),
+    [trips, scheduleTimeZone]
   )
 
   const filteredTrips = mobileTrips.filter((item) =>
@@ -1030,28 +1028,6 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 timeZone: scheduleTimeZone,
               }).format(new Date(item.startsAt))
             }
-            toolbarExtras={
-              <div
-                role="group"
-                aria-label="Фильтр по дню отправления"
-                className="flex shrink-0 items-center gap-2"
-              >
-                <span className="text-xs whitespace-nowrap text-muted-foreground">
-                  Рейсы за
-                </span>
-                <DatePicker
-                  label="Дата рейсов"
-                  className="h-8 w-36"
-                  value={day.iso}
-                  onValueChange={(value) => {
-                    if (!value) return
-                    const date = new Date(value + "T12:00:00")
-                    setWeekStart(startOfWeek(date))
-                    setSelectedDay(date.getDay() === 0 ? 6 : date.getDay() - 1)
-                  }}
-                />
-              </div>
-            }
             actions={[
               {
                 label: "Управление рейсом",
@@ -1210,7 +1186,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                                       "new",
                                       "assigned",
                                     ].includes(trip.status)}
-                                    key={`${lane.vehicle}-${trip.title}`}
+                                    key={trip.id}
                                     onDragEnd={() => setDraggingTripID(null)}
                                     onDragStart={(event) => {
                                       event.dataTransfer.effectAllowed = "move"
@@ -1252,38 +1228,46 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                     </p>
                   ) : null}
                   {!isLoading
-                    ? viewTrips.map((trip) => (
-                        <button
-                          className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/50"
-                          key={`${trip.vehicle}-${trip.title}`}
-                          onClick={() => {
-                            setSelectedTripError(null)
-                            setIsCancelConfirmation(false)
-                            setSelectedTrip(trip)
-                          }}
-                          type="button"
-                        >
-                          <span
-                            className={cn(
-                              "grid size-10 shrink-0 place-items-center rounded-xl",
-                              `calendar-${trip.tone}`
-                            )}
+                    ? viewTrips
+                        .filter(
+                          (trip) =>
+                            travelDay(
+                              new Date(trip.startsAt),
+                              scheduleTimeZone
+                            ) === day.iso
+                        )
+                        .map((trip) => (
+                          <button
+                            className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/50"
+                            key={trip.id}
+                            onClick={() => {
+                              setSelectedTripError(null)
+                              setIsCancelConfirmation(false)
+                              setSelectedTrip(trip)
+                            }}
+                            type="button"
                           >
-                            <HugeiconsIcon icon={Car01Icon} size={18} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-bold">
-                              {trip.title}
+                            <span
+                              className={cn(
+                                "grid size-10 shrink-0 place-items-center rounded-xl",
+                                `calendar-${trip.tone}`
+                              )}
+                            >
+                              <HugeiconsIcon icon={Car01Icon} size={18} />
                             </span>
-                            <span className="mt-1 block truncate text-xs text-muted-foreground">
-                              {trip.time} · {trip.vehicle}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-bold">
+                                {trip.title}
+                              </span>
+                              <span className="mt-1 block truncate text-xs text-muted-foreground">
+                                {trip.time} · {trip.vehicle}
+                              </span>
                             </span>
-                          </span>
-                          <span className="text-xs font-bold text-muted-foreground">
-                            {trip.kind === "regular" ? "Рейс" : "Трансфер"}
-                          </span>
-                        </button>
-                      ))
+                            <span className="text-xs font-bold text-muted-foreground">
+                              {trip.kind === "regular" ? "Рейс" : "Трансфер"}
+                            </span>
+                          </button>
+                        ))
                     : null}
                   {!isLoading && filteredTrips.length === 0 ? (
                     <p className="px-4 py-10 text-center text-sm text-muted-foreground">

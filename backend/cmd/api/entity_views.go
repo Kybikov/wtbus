@@ -452,13 +452,23 @@ func validEntityQuery(node *entityQueryNode, depth int, count *int) bool {
 		return false
 	}
 	switch node.Operator {
-	case "eq", "neq", "in", "notIn", "contains", "notContains", "empty", "notEmpty", "gt", "gte", "lt", "lte", "before", "after":
+	case "eq", "neq", "in", "notIn", "contains", "notContains", "empty", "notEmpty", "gt", "gte", "lt", "lte", "before", "after", "between":
 	default:
 		return false
 	}
 	for _, value := range node.Value {
 		if len([]rune(value)) > 500 {
 			return false
+		}
+	}
+	if node.Operator == "between" {
+		if len(node.Value) != 2 || node.Value[0] > node.Value[1] {
+			return false
+		}
+		for _, value := range node.Value {
+			if _, err := time.Parse("2006-01-02", value); err != nil {
+				return false
+			}
 		}
 	}
 	return true

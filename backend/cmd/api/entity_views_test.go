@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func TestEntityViewDatePeriod(t *testing.T) {
+	for _, values := range [][]string{{"2026-10-20", "2026-10-25"}, {"2026-10-20", "2026-10-20"}} {
+		count := 0
+		if !validEntityQuery(&entityQueryNode{ID: "period", Field: "start", Operator: "between", Value: values}, 0, &count) {
+			t.Fatal("valid date period rejected")
+		}
+	}
+	for _, values := range [][]string{{"2026-10-20"}, {"2026-10-25", "2026-10-20"}, {"2026-02-30", "2026-03-05"}, {"", ""}} {
+		count := 0
+		if validEntityQuery(&entityQueryNode{ID: "period", Field: "start", Operator: "between", Value: values}, 0, &count) {
+			t.Fatal("invalid period accepted")
+		}
+	}
+}
+
 func TestEntityViewCardOrder(t *testing.T) {
 	input := entityViewInput{Name: "Board", Visibility: "private", Config: entityViewConfig{
 		Mode: "kanban", Columns: []string{"name"}, Board: &entityViewBoard{OrderBy: "manual", CardOrder: []string{"a", "b"}},

@@ -1708,7 +1708,6 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	day := time.Now().UTC().Truncate(24 * time.Hour)
 	tenant, ok := app.loadTenant(w, r, slug)
 	if !ok {
 		return
@@ -1721,16 +1720,15 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var startsFrom, startsUntil *time.Time
 	if rawDay := r.URL.Query().Get("date"); rawDay != "" {
 		parsedDay, err := time.ParseInLocation("2006-01-02", rawDay, location)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "date must use YYYY-MM-DD"})
 			return
 		}
-		day = parsedDay
-	} else {
-		now := time.Now().In(location)
-		day = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+		until := parsedDay.AddDate(0, 0, 1)
+		startsFrom, startsUntil = &parsedDay, &until
 	}
 
 	rows, err := app.db.Query(r.Context(), `
@@ -1742,11 +1740,11 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		JOIN tenants tenant ON tenant.id = t.tenant_id
 		LEFT JOIN vehicles v ON v.id = t.vehicle_id
 		LEFT JOIN drivers d ON d.id = t.driver_id
-		WHERE tenant.slug = $1
-		  AND t.starts_at >= $2
-		  AND t.starts_at < $3
-		ORDER BY t.starts_at ASC
-	`, slug, day, time.Date(day.Year(), day.Month(), day.Day()+1, 0, 0, 0, 0, location))
+		WHERE t.tenant_id = $1
+		  AND ($2::timestamptz IS NULL OR t.starts_at >= $2)
+		  AND ($3::timestamptz IS NULL OR t.starts_at < $3)
+		ORDER BY t.starts_at ASC, t.id ASC
+	`, tenant.ID, startsFrom, startsUntil)
 	if err != nil {
 		app.log.Error("list trips", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trips"})
