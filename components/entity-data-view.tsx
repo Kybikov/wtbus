@@ -130,6 +130,7 @@ type Props<T> = {
   items: T[]
   renderSchedule?: (items: T[]) => React.ReactNode
   toolbarExtras?: React.ReactNode
+  renderRowActions?: (item: T) => React.ReactNode
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => Promise<void>
@@ -205,7 +206,9 @@ function EntityActionButtons<T>({
   item,
   label,
   actions,
+  extra,
 }: {
+  extra?: React.ReactNode
   item: T
   label: string
   actions: EntityAction<T>[]
@@ -239,6 +242,15 @@ function EntityActionButtons<T>({
             </Tooltip>
           )
         })}
+        {extra && (
+          <div
+            data-no-drag
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {extra}
+          </div>
+        )}
       </div>
     </TooltipProvider>
   )
@@ -274,6 +286,7 @@ export function EntityDataView<T>({
   isSelectable = () => true,
   renderSchedule,
   toolbarExtras,
+  renderRowActions,
   hasMore,
   loadingMore,
   onLoadMore,
@@ -867,6 +880,7 @@ export function EntityDataView<T>({
                       </div>
                       {actions?.length ? (
                         <EntityActionButtons
+                          extra={renderRowActions?.(item)}
                           actions={actions}
                           item={item}
                           label={getLabel(item)}
@@ -1227,6 +1241,7 @@ export function EntityDataView<T>({
                               {actions?.length ? (
                                 <TableCell className="sticky right-0 z-[3] w-28 bg-card text-right">
                                   <EntityActionButtons
+                                    extra={renderRowActions?.(item)}
                                     actions={actions}
                                     item={item}
                                     label={getLabel(item)}
@@ -1285,6 +1300,7 @@ export function EntityDataView<T>({
                     <div className="min-w-0 flex-1">{card(item)}</div>
                     {actions?.length ? (
                       <EntityActionButtons
+                        extra={renderRowActions?.(item)}
                         actions={actions}
                         item={item}
                         label={getLabel(item)}

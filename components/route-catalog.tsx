@@ -161,27 +161,6 @@ export function RouteCatalog() {
     textColumn<Route>("currency", "Валюта", (item) => item.currency, false),
     textColumn<Route>("id", "ID", (item) => item.id, false),
   ]
-  const statusCell = columns.find((column) => column.id === "status")
-  if (statusCell) {
-    const badge = statusCell.value
-    statusCell.value = (item: Route) => (
-      <div
-        data-no-drag
-        className="flex items-center gap-2"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <DeliverySwitch
-          label={`Доступность маршрута ${item.name}`}
-          checked={item.isActive}
-          disabled={saving || selection.pending}
-          onChange={(checked) =>
-            void moveStatus(item, checked ? "active" : "inactive")
-          }
-        />
-        {badge(item)}
-      </div>
-    )
-  }
   async function bulkStatus(status: "active" | "inactive") {
     await selection.run(
       routes,
@@ -403,10 +382,6 @@ export function RouteCatalog() {
     } finally {
       setSaving(false)
     }
-  }
-
-  async function toggle(route: Route) {
-    await moveStatus(route, route.isActive ? "inactive" : "active")
   }
 
   return (
@@ -668,13 +643,16 @@ export function RouteCatalog() {
               matches: (item, value) => item.status === value,
             },
           ]}
-          actions={[
-            {
-              label: "Включить / выключить",
-              onSelect: (item) => void toggle(item),
-              disabled: () => saving || selection.pending,
-            },
-          ]}
+          renderRowActions={(item) => (
+            <DeliverySwitch
+              label={`Доступность маршрута ${item.name}`}
+              checked={item.isActive}
+              disabled={saving || selection.pending}
+              onChange={(checked) =>
+                void moveStatus(item, checked ? "active" : "inactive")
+              }
+            />
+          )}
           bulkActions={
             <>
               <Button
