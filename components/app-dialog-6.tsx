@@ -4,7 +4,7 @@
 import * as React from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Database, History, Link2 } from "lucide-react"
+import { Database, History } from "lucide-react"
 export default function EntityDetailContent({
   overview,
   overviewMeta,
@@ -79,17 +79,7 @@ export default function EntityDetailContent({
         }
       >
         <Card className="workspace-panel min-w-0 shadow-none xl:min-h-0">
-          <CardHeader className="shrink-0 border-b border-border/70">
-            <CardTitle>
-              <h2 className="flex items-center gap-2">
-                <Link2 aria-hidden className="size-4 text-muted-foreground" />
-                Связанные записи
-              </h2>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="min-w-0 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
-            {related}
-          </CardContent>
+          {related}
         </Card>
         <button
           aria-label="Изменить высоту связанных записей и истории действий"
@@ -121,7 +111,7 @@ export default function EntityDetailContent({
               </h2>
             </CardTitle>
           </CardHeader>
-          <CardContent className="min-w-0 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
+          <CardContent className="@container min-w-0 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
             {activity}
           </CardContent>
         </Card>

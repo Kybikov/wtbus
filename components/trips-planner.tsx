@@ -380,7 +380,8 @@ const tripStatusLabels: Record<string, string> = {
   cancelled: "Отменен",
 }
 
-export function TripsPlanner() {
+export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
+  const openedRoute = React.useRef<string | undefined>(undefined)
   const confirmAction = useActionConfirmation()
   const { statuses: workflowStatuses } = useWorkflowStatuses("trips")
   const [weekStart, setWeekStart] = React.useState(() =>
@@ -515,6 +516,27 @@ export function TripsPlanner() {
           throw new Error("Не удалось загрузить транспорт и водителей.")
         }
         setResources(payload)
+        if (createForRoute && openedRoute.current !== createForRoute) {
+          const route = payload.routes.find(
+            (item) => item.id === createForRoute
+          )
+          if (!route) {
+            setResourceError("Этот маршрут недоступен для новых рейсов.")
+          } else {
+            openedRoute.current = createForRoute
+            setEditingTripID(null)
+            setTripForm({
+              ...createEmptyTripForm(formatISODate(new Date())),
+              routeId: route.id,
+              origin: route.origin,
+              destination: route.destination,
+              price: (route.defaultPriceMinor / 100).toFixed(2),
+              pricingMode: route.defaultPricingMode,
+            })
+            setFormError(null)
+            setIsCreateOpen(true)
+          }
+        }
         setTripCustomFields(
           fieldsPayload.items.filter((field) => field.isActive)
         )
@@ -533,7 +555,7 @@ export function TripsPlanner() {
 
     void loadResources()
     return () => controller.abort()
-  }, [requestVersion])
+  }, [requestVersion, createForRoute])
 
   React.useEffect(() => {
     if (!isCreateOpen) return

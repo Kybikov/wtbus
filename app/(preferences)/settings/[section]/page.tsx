@@ -19,6 +19,7 @@ export default async function SettingsSectionPage({
       "fields",
       "integrations",
       "activity",
+      "statuses",
     ].includes(section)
   )
     notFound()

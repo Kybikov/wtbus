@@ -59,6 +59,7 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
     { key: "currency", type: "select" },
     { key: "default_price_minor", type: "money" },
     { key: "driver_pay_minor", type: "money" },
+    { key: "distance_km", type: "number" },
     {
       key: "default_pricing_mode",
       type: "select",
@@ -440,7 +441,7 @@ export function EntityDetailPage({
       return (
         <FieldSelect
           aria-label={entityFieldLabels[key] ?? key}
-          triggerClassName="w-full max-w-md"
+          triggerClassName="w-full"
           options={field.options ?? []}
           value={String(value ?? "")}
           onValueChange={(next) => changeField(key, next)}
@@ -457,11 +458,23 @@ export function EntityDetailPage({
         />
       )
     const displayValue =
-      field.type === "money" ? Number(value ?? 0) / 100 : (value ?? "")
+      key === "distance_km" && value === 0
+        ? ""
+        : field.type === "money"
+          ? Number(value ?? 0) / 100
+          : (value ?? "")
     return (
       <Input
         aria-label={entityFieldLabels[key] ?? key}
-        className="max-w-2xl"
+        className="w-full"
+        placeholder={key === "distance_km" ? "Не указана" : undefined}
+        min={
+          key === "distance_km"
+            ? item?.tariff_mode === "per_km"
+              ? 0.01
+              : 0
+            : undefined
+        }
         inputMode={
           field.type === "number" || field.type === "money"
             ? "decimal"
@@ -471,7 +484,7 @@ export function EntityDetailPage({
           field.type === "number" || field.type === "money" ? "number" : "text"
         }
         step={
-          field.type === "money"
+          field.type === "money" || key === "distance_km"
             ? "0.01"
             : field.type === "number"
               ? "1"
@@ -485,7 +498,9 @@ export function EntityDetailPage({
             field.type === "money"
               ? Math.round(Number(event.target.value) * 100)
               : field.type === "number"
-                ? Number(event.target.value)
+                ? key === "distance_km"
+                  ? event.target.value
+                  : Number(event.target.value)
                 : event.target.value,
             false
           )
@@ -497,7 +512,7 @@ export function EntityDetailPage({
     if (!detail || entity !== "routes") return null
     const price = Number(detail.item.default_price_minor ?? 0) / 100
     return (
-      <InputGroup className="max-w-md">
+      <InputGroup className="w-full">
         <InputGroupInput
           aria-label="Базовая цена"
           className="tabular-nums"
@@ -566,6 +581,31 @@ export function EntityDetailPage({
       }).format(value / 100)
     if (key.endsWith("_at") || key.endsWith("_date"))
       return formatEntityDate(String(value), detail?.timezone)
+    if (
+      key === "vehicle_class_rates" &&
+      typeof value === "object" &&
+      value !== null
+    ) {
+      const rates = Object.entries(value).filter(([, rate]) => Number(rate) > 0)
+      if (!rates.length)
+        return <span className="text-muted-foreground">Не заданы</span>
+      return (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {rates.map(([vehicleClass, rate]) => (
+            <span key={vehicleClass} className="text-sm">
+              <span className="text-muted-foreground">
+                {valueLabels[vehicleClass] ?? vehicleClass} ·{" "}
+              </span>
+              {new Intl.NumberFormat("ru-RU", {
+                style: "currency",
+                currency: String(item?.currency ?? "EUR"),
+              }).format(Number(rate) / 100)}{" "}
+              / км
+            </span>
+          ))}
+        </div>
+      )
+    }
     if (Array.isArray(value))
       return (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -613,6 +653,8 @@ export function EntityDetailPage({
       "payment_method",
       "pricing_mode",
       "default_pricing_mode",
+      "tariff_mode",
+      "vehicle_class",
     ].includes(key)
       ? (valueLabels[String(value)] ?? String(value))
       : String(value)
@@ -686,13 +728,38 @@ export function EntityDetailPage({
           overview={
             <dl className="min-w-0 divide-y divide-border/70">
               {Object.entries(detail.item)
+                .sort(([left], [right]) => {
+                  const order = [
+                    "id",
+                    "name",
+                    "full_name",
+                    "display_name",
+                    "status",
+                    "origin_name",
+                    "destination_name",
+                    "distance_km",
+                    "tariff_mode",
+                    "default_pricing_mode",
+                    "default_price_minor",
+                    "vehicle_class_rates",
+                    "driver_pay_minor",
+                    "created_at",
+                    "updated_at",
+                  ]
+                  const rank = (key: string) =>
+                    order.includes(key) ? order.indexOf(key) : 12
+                  return rank(left) - rank(right)
+                })
                 .filter(
                   ([key]) =>
                     key !== "custom_data" &&
                     key !== "last_location" &&
                     !(
                       entity === "routes" &&
-                      (key === "currency" || key === "is_active")
+                      (key === "currency" ||
+                        key === "is_active" ||
+                        (key === "vehicle_class_rates" &&
+                          detail.item.tariff_mode !== "per_km"))
                     )
                 )
                 .map(([key, value]) => (
@@ -700,13 +767,13 @@ export function EntityDetailPage({
                     key={key}
                     className="grid min-w-0 gap-1.5 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(8rem,0.38fr)_minmax(0,1fr)] sm:gap-5"
                   >
-                    <dt className="text-xs leading-5 text-muted-foreground">
+                    <dt className="flex items-center text-xs leading-5 text-muted-foreground">
                       {entityFieldLabels[key] ??
                         (relationFields[key]
                           ? entityNames[relationFields[key]]
                           : key.replaceAll("_", " "))}
                     </dt>
-                    <dd className="text-sm leading-5 font-medium [overflow-wrap:anywhere] break-words">
+                    <dd className="flex min-h-10 min-w-0 items-center text-sm leading-5 [overflow-wrap:anywhere] break-words [&>div]:w-full">
                       {entity === "routes" && key === "default_price_minor"
                         ? routePriceEditor()
                         : (fieldEditor(key, value) ?? fieldValue(key, value))}
@@ -751,12 +818,18 @@ export function EntityDetailPage({
             <EntityRelatedRecords
               ownerEntity={entity}
               records={relations}
+              createHref={
+                entity === "routes" && detail.item.is_active === true
+                  ? `/trips?createForRoute=${encodeURIComponent(id)}`
+                  : undefined
+              }
               timezone={detail.timezone}
             />
           }
           activity={
             <EntityActivityTimeline
               events={detail.activity}
+              entity={entity}
               timezone={detail.timezone}
             />
           }

@@ -489,21 +489,20 @@ export function RouteCatalog() {
                 value={form.tariffMode}
               />
             </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              Плановая длина, км
+              <Input
+                inputMode="decimal"
+                min={form.tariffMode === "per_km" ? "0.01" : "0"}
+                placeholder="Не указана"
+                onChange={(event) => updateForm("distance", event.target.value)}
+                step="0.01"
+                type="number"
+                value={form.distance}
+              />
+            </label>
             {form.tariffMode === "per_km" ? (
               <>
-                <label className="grid gap-2 text-sm font-semibold">
-                  Расстояние, км
-                  <Input
-                    inputMode="decimal"
-                    min="0.01"
-                    onChange={(event) =>
-                      updateForm("distance", event.target.value)
-                    }
-                    step="0.01"
-                    type="number"
-                    value={form.distance}
-                  />
-                </label>
                 <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-3 md:col-span-2">
                   {(["minivan", "microbus", "bus"] as const).map(
                     (vehicleClass) => (
@@ -511,7 +510,14 @@ export function RouteCatalog() {
                         className="grid gap-2 text-sm font-semibold"
                         key={vehicleClass}
                       >
-                        Цена за км · {vehicleClass}
+                        Цена за км ·{" "}
+                        {
+                          {
+                            minivan: "Минивэн",
+                            microbus: "Микроавтобус",
+                            bus: "Автобус",
+                          }[vehicleClass]
+                        }
                         <Input
                           inputMode="decimal"
                           min="0"
