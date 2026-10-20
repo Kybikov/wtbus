@@ -725,7 +725,7 @@ export function EntityDataView<T>({
                           router.push(entityDetailHref(collection, getId(item)))
                       : undefined
                   }
-                  actions={actions
+                  actions={sourceActions
                     ?.filter((action) => !action.disabled?.(item))
                     .map((action) => ({
                       ...action,
@@ -1099,7 +1099,7 @@ export function EntityDataView<T>({
                         router.push(entityDetailHref(collection, getId(item)))
                     : undefined
                 }
-                actions={actions
+                actions={sourceActions
                   ?.filter((action) => !action.disabled?.(item))
                   .map((action) => ({
                     ...action,
