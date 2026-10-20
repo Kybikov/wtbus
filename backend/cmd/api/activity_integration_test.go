@@ -73,6 +73,35 @@ func TestActivityPostgres(t *testing.T) {
 	if row(`SELECT count(*)::text FROM activity_events WHERE tenant_id=$1 AND actor_membership_id=$2 AND entity_id=$3`, tenant, member, id) != "2" {
 		t.Fatal("missing attributed create or update")
 	}
+	if row(`SELECT details->'changes'->0->>'before' FROM activity_events WHERE tenant_id=$1 AND entity_id=$2 AND action='record_updated' ORDER BY id DESC LIMIT 1`, tenant, id) != "Before" || row(`SELECT details->'changes'->0->>'after' FROM activity_events WHERE tenant_id=$1 AND entity_id=$2 AND action='record_updated' ORDER BY id DESC LIMIT 1`, tenant, id) != "After" {
+		t.Fatal("committed before/after values missing")
+	}
+	w = request("GET", "/api/v1/tenants/audit-qa/entity-details/customers/"+id, nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"before":"Before"`) || !strings.Contains(w.Body.String(), `"actorId":"`+member+`"`) {
+		t.Fatal("detail history missing transitions or actor identity", w.Code, w.Body)
+	}
+	w = request("PATCH", "/api/v1/tenants/audit-qa/customers/"+id, map[string]any{"fullName": "After", "phone": "+380501234567"})
+	if w.Code != 200 || row(`SELECT count(*)::text FROM activity_events WHERE tenant_id=$1 AND entity_id=$2`, tenant, id) != "2" {
+		t.Fatal("successful no-op duplicated timeline entry", w.Code, w.Body)
+	}
+	routeID := row(`INSERT INTO routes(tenant_id,name,origin_name,destination_name,status,currency) VALUES($1,'Audit route','Киев','Львов','active','EUR') RETURNING id::text`, tenant)
+	w = request("PATCH", "/api/v1/tenants/audit-qa/routes/"+routeID, map[string]any{"name": "Audit route", "origin": "Киев", "destination": "Львов", "currency": "EUR", "defaultPriceMinor": 1200, "defaultPricingMode": "per_passenger", "status": "inactive", "tariffMode": "fixed", "distanceKm": 100})
+	if w.Code != 200 {
+		t.Fatal("route transition failed", w.Code, w.Body)
+	}
+	var stored []auditFieldChange
+	if json.Unmarshal([]byte(row(`SELECT details->'changes' FROM activity_events WHERE tenant_id=$1 AND entity_id=$2 ORDER BY id DESC LIMIT 1`, tenant, routeID)), &stored) != nil {
+		t.Fatal("missing route transition")
+	}
+	foundStatus := false
+	for _, change := range stored {
+		if change.Field == "status" {
+			foundStatus = change.Before == "active" && change.After == "inactive" && change.BeforeLabel != "" && change.AfterLabel != "" && change.BeforeTone == "success"
+		}
+	}
+	if !foundStatus {
+		t.Fatal("status labels or historical tones missing", stored)
+	}
 	request("GET", "/api/v1/tenants/audit-qa/customers?q=private-query", nil)
 	if row(`SELECT route FROM api_request_logs WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, tenant) != "GET /api/v1/tenants/{slug}/customers" {
 		t.Fatal("request log retained a raw URL")

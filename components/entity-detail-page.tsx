@@ -6,7 +6,9 @@ import { ArrowUpRight, Check, LoaderCircle } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import EntityDetailContent from "@/components/app-dialog-6"
 import { realtimeEvent, type RealtimeMessage } from "@/lib/realtime"
-import EntityActivityTimeline from "@/components/billing-8"
+import EntityActivityTimeline, {
+  type EntityActivityEvent,
+} from "@/components/billing-8"
 import {
   EntityRelatedRecords,
   type EntityRelatedRecord,
@@ -44,7 +46,7 @@ type Detail = {
   item: Record<string, unknown>
   timezone: string
   related: EntityRelatedRecord[]
-  activity: { action: string; actor: string; kind: string; createdAt: string }[]
+  activity: EntityActivityEvent[]
 }
 type EditableField = {
   key: string
@@ -819,10 +821,13 @@ export function EntityDetailPage({
               ownerEntity={entity}
               records={relations}
               createHref={
-                entity === "routes" && detail.item.is_active === true
+                entity === "routes"
                   ? `/trips?createForRoute=${encodeURIComponent(id)}`
                   : undefined
               }
+              createStatus={String(detail.item.status ?? "")}
+              createAvailable={detail.item.is_active === true}
+              createBusy={saveState === "saving"}
               timezone={detail.timezone}
             />
           }

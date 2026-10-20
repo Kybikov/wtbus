@@ -33,6 +33,9 @@ import { EntityExportContext } from "@/components/entity-export-context"
 import { EntityFooterContext } from "@/components/entity-footer-context"
 import {
   ArrowDownAZ,
+  Copy,
+  ExternalLink,
+  CheckSquare2,
   ArrowUpAZ,
   Eye,
   Filter,
@@ -52,6 +55,7 @@ import ReactBitsKanban, {
 } from "@/components/kanban-3"
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
 import { EntityCardSettings } from "@/components/entity-card-settings"
+import { toast } from "sonner"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -84,6 +88,7 @@ import {
 } from "@/lib/entity-metrics"
 import {
   arrangeBoardGroups,
+  cleanBoard,
   defaultCardLayout,
   normalizeViewConfig,
   type BoardLayout,
@@ -196,6 +201,9 @@ function EntityMenu<T>({
 
 function actionIcon(label: string) {
   const value = label.toLocaleLowerCase("ru")
+  if (value.includes("копир")) return Copy
+  if (value.includes("новой вкладке")) return ExternalLink
+  if (value.includes("выбр") || value.includes("выбор")) return CheckSquare2
   if (value.includes("удал") || value.includes("отмен")) return Trash2
   if (value.includes("редакт") || value.includes("измен")) return Pencil
   if (value.includes("откры") || value.includes("детал")) return Eye
@@ -573,6 +581,42 @@ export function EntityDataView<T>({
     else next.delete(id)
     onSelectedChange(next)
   }
+  const menuActions: EntityAction<T>[] = [
+    ...actions,
+    ...(detailEnabled
+      ? [
+          {
+            label: "Открыть в новой вкладке",
+            onSelect: (item: T) => {
+              window.open(
+                entityDetailHref(collection, getId(item)),
+                "_blank",
+                "noopener,noreferrer"
+              )
+            },
+          },
+          {
+            label: "Скопировать ссылку",
+            onSelect: (item: T) => {
+              void navigator.clipboard
+                .writeText(
+                  new URL(
+                    entityDetailHref(collection, getId(item)),
+                    window.location.origin
+                  ).href
+                )
+                .then(() => toast.success("Ссылка скопирована"))
+                .catch(() => toast.error("Не удалось скопировать ссылку."))
+            },
+          },
+        ]
+      : []),
+    {
+      label: "Выбрать / снять выбор",
+      onSelect: (item: T) => toggleOne(item, !selected.has(getId(item))),
+      disabled: (item: T) => !isSelectable(item),
+    },
+  ]
   const columnWidth = (id: string) => columnWidths[id] ?? 180
   const pinColumn = (id: string, side: "left" | "right" | null) => {
     setPinnedColumns((current) => ({
@@ -1250,7 +1294,7 @@ export function EntityDataView<T>({
                               ) : null}
                             </ContextMenuTrigger>
                             <EntityMenu
-                              actions={actions}
+                              actions={menuActions}
                               item={item}
                               label={getLabel(item)}
                             />
@@ -1308,7 +1352,7 @@ export function EntityDataView<T>({
                     ) : null}
                   </ContextMenuTrigger>
                   <EntityMenu
-                    actions={actions}
+                    actions={menuActions}
                     item={item}
                     label={getLabel(item)}
                   />
@@ -1318,6 +1362,7 @@ export function EntityDataView<T>({
           </div>
         ) : mode === "kanban" ? (
           <ReactBitsKanban
+            footerElement={footerContext.target}
             canMove={canMoveInKanban}
             canMoveTo={canMoveToKanbanGroup}
             columns={visibleBoardGroups}
@@ -1331,18 +1376,37 @@ export function EntityDataView<T>({
             cardOrder={sort ? items.map(getId) : (board?.cardOrder ?? [])}
             onOrderChange={(cardOrder) => {
               setSort(null)
-              setBoard((current) => ({
-                ...current,
-                hidden: current?.hidden ?? [],
-                order: current?.order ?? [],
-                orderBy: current?.orderBy ?? "manual",
-                cardOrder: mergeVisibleCardOrder(
+              setBoard((current) => {
+                const merged = mergeVisibleCardOrder(
                   current?.cardOrder ?? [],
                   cardOrder
-                ),
-              }))
+                )
+                const defaultOrder = sourceItems.map(getId)
+                const isDefault =
+                  merged.length === defaultOrder.length &&
+                  merged.every((id, index) => id === defaultOrder[index])
+                return cleanBoard({
+                  ...current,
+                  hidden: current?.hidden ?? [],
+                  order: current?.order ?? [],
+                  orderBy: current?.orderBy ?? "manual",
+                  cardOrder: isDefault ? undefined : merged,
+                })
+              })
             }}
             onMove={onKanbanGroupChange}
+            onSelect={(item) => toggleOne(item, !selected.has(getId(item)))}
+            isSelected={(item) => selected.has(getId(item))}
+            onConfigureCard={() => setCardSettingsOpen(true)}
+            onHideColumn={(id) => {
+              if (visibleBoardGroups.length <= 1) return
+              setBoard((current) => ({
+                ...current,
+                hidden: [...(current?.hidden ?? []), id],
+                order: current?.order ?? [],
+                orderBy: current?.orderBy ?? "manual",
+              }))
+            }}
             onOpen={
               detailEnabled
                 ? (item) =>
@@ -1352,10 +1416,10 @@ export function EntityDataView<T>({
             renderCard={(item) => (
               <ContextMenu>
                 <ContextMenuTrigger render={<div />}>
-                  {card(item, true)}
+                  {card(item)}
                 </ContextMenuTrigger>
                 <EntityMenu
-                  actions={actions}
+                  actions={menuActions}
                   item={item}
                   label={getLabel(item)}
                 />
@@ -1381,7 +1445,7 @@ export function EntityDataView<T>({
                   {card(item, true)}
                 </ContextMenuTrigger>
                 <EntityMenu
-                  actions={actions}
+                  actions={menuActions}
                   item={item}
                   label={getLabel(item)}
                 />
@@ -1403,7 +1467,7 @@ export function EntityDataView<T>({
                   {card(item, true)}
                 </ContextMenuTrigger>
                 <EntityMenu
-                  actions={actions}
+                  actions={menuActions}
                   item={item}
                   label={getLabel(item)}
                 />

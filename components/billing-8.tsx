@@ -15,18 +15,15 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react"
+import { ActivityChanges } from "@/components/activity-changes"
+import { groupActivityEvents, type ActivityEvent } from "@/lib/activity-changes"
+import { Badge } from "@/components/ui/badge"
 import { activityActions, activityFieldNames } from "@/lib/activity-labels"
 import { entityNames } from "@/lib/entity-details"
 import type { EntityCollection } from "@/lib/entity-views"
 import { formatEntityDate } from "@/lib/entity-columns"
 
-export type EntityActivityEvent = {
-  action: string
-  actor: string
-  kind: string
-  changedFields?: string[]
-  createdAt: string
-}
+export type EntityActivityEvent = ActivityEvent
 
 function presentation(
   event: EntityActivityEvent,
@@ -121,18 +118,19 @@ export default function EntityActivityTimeline({
       hour: "2-digit",
       minute: "2-digit",
     }).format(new Date(value))
+  const grouped = groupActivityEvents(events)
   return (
     <ol className="min-w-0">
-      {events.map((event, index) => {
+      {grouped.map((event, index) => {
         const day = date(event.createdAt)
         const { title, icon: Icon, color } = presentation(event, entity)
         const ActorIcon = event.kind === "system" ? Bot : UserRound
         return (
           <li
-            key={`${event.createdAt}:${event.action}:${index}`}
+            key={event.id ?? `${event.createdAt}:${event.action}:${index}`}
             className="min-w-0"
           >
-            {(index === 0 || day !== date(events[index - 1].createdAt)) && (
+            {(index === 0 || day !== date(grouped[index - 1].createdAt)) && (
               <p className="py-3 text-xs font-medium text-muted-foreground first:pt-0">
                 {day}
               </p>
@@ -145,15 +143,36 @@ export default function EntityActivityTimeline({
                 <Icon className="size-4" />
               </span>
               <div className="min-w-0 [overflow-wrap:anywhere]">
-                <p className="text-sm leading-5 font-medium">{title}</p>
+                <p className="flex flex-wrap items-center gap-2 text-sm leading-5 font-medium">
+                  {title}
+                  {event.count > 1 && (
+                    <Badge
+                      variant="secondary"
+                      title={`${event.count} одинаковых действия за минуту`}
+                    >
+                      × {event.count}
+                    </Badge>
+                  )}
+                </p>
                 <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ActorIcon aria-hidden className="size-3 shrink-0" />
                   {event.actor}
                 </p>
               </div>
-              <p className="col-start-2 row-start-2 min-w-0 text-xs leading-5 [overflow-wrap:anywhere] text-muted-foreground @min-[30rem]:col-start-3 @min-[30rem]:row-start-1">
-                {activityFieldNames(event.changedFields)}
-              </p>
+              <div className="col-start-2 row-start-2 min-w-0 text-xs leading-5 [overflow-wrap:anywhere] text-muted-foreground @min-[30rem]:col-start-3 @min-[30rem]:row-start-1">
+                {!!event.changes?.length && (
+                  <ActivityChanges
+                    changes={event.changes}
+                    timezone={timezone}
+                  />
+                )}
+                {activityFieldNames(
+                  (event.changedFields ?? []).filter(
+                    (field) =>
+                      !event.changes?.some((change) => change.field === field)
+                  )
+                )}
+              </div>
               <time
                 dateTime={event.createdAt}
                 title={formatEntityDate(event.createdAt, timezone)}

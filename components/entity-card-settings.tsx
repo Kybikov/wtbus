@@ -1,8 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronUp, Columns2, Plus, Square, Type, X } from "lucide-react"
+import { Columns2, Plus, Square, Type, X } from "lucide-react"
 
+import { ReorderableList } from "@/components/list-4"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -65,6 +66,9 @@ function CardSettingsForm({
   onCancel: () => void
 }) {
   const [draft, setDraft] = React.useState<CardLayout>(initial)
+  const [rowIds, setRowIds] = React.useState(() =>
+    initial.rows.map((_, index) => `row-${index}`)
+  )
   const options = columns.map((column) => ({
     value: column.id,
     label: column.label,
@@ -83,133 +87,118 @@ function CardSettingsForm({
     }))
   }
 
-  function moveRow(index: number, direction: -1 | 1) {
-    setDraft((current) => {
-      const next = [...current.rows]
-      const target = index + direction
-      if (target < 0 || target >= next.length) return current
-      const [row] = next.splice(index, 1)
-      next.splice(target, 0, row)
-      return { ...current, rows: next }
-    })
-  }
-
   return (
     <>
       <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
         <div className="space-y-2 rounded-xl border bg-muted/20 p-2">
-          {draft.rows.map((row, index) => {
-            const secondOptions = options.filter(
-              (option) => option.value !== row.fields[0]
-            )
-            return (
-              <div
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
-                key={`${index}-${row.layout}-${row.fields.join(":")}`}
-              >
-                <div className="flex flex-col">
-                  <Button
-                    aria-label="Выше"
-                    disabled={index === 0}
-                    onClick={() => moveRow(index, -1)}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ChevronUp />
-                  </Button>
-                  <Button
-                    aria-label="Ниже"
-                    disabled={index === draft.rows.length - 1}
-                    onClick={() => moveRow(index, 1)}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ChevronDown />
-                  </Button>
-                </div>
-                <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1fr)_11rem]">
-                  <div
-                    className={
-                      row.layout === "two"
-                        ? "grid gap-2 sm:grid-cols-2"
-                        : "min-w-0"
-                    }
-                  >
-                    <FieldSelect
-                      aria-label="Поле"
-                      onValueChange={(field) => {
-                        const second =
-                          row.fields[1] && row.fields[1] !== field
-                            ? row.fields[1]
-                            : (secondOptions.find(
-                                (option) => option.value !== field
-                              )?.value ?? field)
-                        updateRow(index, {
-                          ...row,
-                          fields:
-                            row.layout === "two" ? [field, second] : [field],
-                        })
-                      }}
-                      options={options}
-                      value={row.fields[0] ?? ""}
-                    />
-                    {row.layout === "two" ? (
+          <ReorderableList
+            items={draft.rows.map((row, index) => ({ row, id: rowIds[index] }))}
+            getId={(item) => item.id}
+            getLabel={(item) =>
+              columns.find((column) => column.id === item.row.fields[0])
+                ?.label ?? "Поле"
+            }
+            onReorder={(items) => {
+              setDraft((current) => ({
+                ...current,
+                rows: items.map((item) => item.row),
+              }))
+              setRowIds(items.map((item) => item.id))
+            }}
+          >
+            {({ row }, handle, index) => {
+              const secondOptions = options.filter(
+                (option) => option.value !== row.fields[0]
+              )
+              return (
+                <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                  {handle}
+                  <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1fr)_11rem]">
+                    <div
+                      className={
+                        row.layout === "two"
+                          ? "grid gap-2 sm:grid-cols-2"
+                          : "min-w-0"
+                      }
+                    >
                       <FieldSelect
-                        aria-label="Второе поле"
-                        onValueChange={(field) =>
+                        aria-label="Поле"
+                        onValueChange={(field) => {
+                          const second =
+                            row.fields[1] && row.fields[1] !== field
+                              ? row.fields[1]
+                              : (secondOptions.find(
+                                  (option) => option.value !== field
+                                )?.value ?? field)
                           updateRow(index, {
                             ...row,
-                            fields: [row.fields[0] ?? field, field],
+                            fields:
+                              row.layout === "two" ? [field, second] : [field],
                           })
-                        }
-                        options={secondOptions}
-                        value={row.fields[1] ?? ""}
+                        }}
+                        options={options}
+                        value={row.fields[0] ?? ""}
                       />
-                    ) : null}
+                      {row.layout === "two" ? (
+                        <FieldSelect
+                          aria-label="Второе поле"
+                          onValueChange={(field) =>
+                            updateRow(index, {
+                              ...row,
+                              fields: [row.fields[0] ?? field, field],
+                            })
+                          }
+                          options={secondOptions}
+                          value={row.fields[1] ?? ""}
+                        />
+                      ) : null}
+                    </div>
+                    <FieldSelect
+                      aria-label="Тип отображения"
+                      onValueChange={(layout) => {
+                        const kind = layout as CardLayoutKind
+                        if (kind === "two" && columns.length < 2) return
+                        const first = row.fields[0] ?? columns[0]?.id ?? ""
+                        const second =
+                          columns.find((column) => column.id !== first)?.id ??
+                          first
+                        updateRow(index, {
+                          layout: kind,
+                          fields: kind === "two" ? [first, second] : [first],
+                        })
+                      }}
+                      options={layoutOptions}
+                      value={row.layout}
+                    />
                   </div>
-                  <FieldSelect
-                    aria-label="Тип отображения"
-                    onValueChange={(layout) => {
-                      const kind = layout as CardLayoutKind
-                      if (kind === "two" && columns.length < 2) return
-                      const first = row.fields[0] ?? columns[0]?.id ?? ""
-                      const second =
-                        columns.find((column) => column.id !== first)?.id ??
-                        first
-                      updateRow(index, {
-                        layout: kind,
-                        fields: kind === "two" ? [first, second] : [first],
-                      })
+                  <Button
+                    aria-label="Убрать строку"
+                    disabled={draft.rows.length === 1}
+                    onClick={() => {
+                      setRowIds((current) =>
+                        current.filter((_, itemIndex) => itemIndex !== index)
+                      )
+                      setDraft((current) => ({
+                        ...current,
+                        rows: current.rows.filter(
+                          (_, itemIndex) => itemIndex !== index
+                        ),
+                      }))
                     }}
-                    options={layoutOptions}
-                    value={row.layout}
-                  />
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <X />
+                  </Button>
                 </div>
-                <Button
-                  aria-label="Убрать строку"
-                  disabled={draft.rows.length === 1}
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      rows: current.rows.filter(
-                        (_, itemIndex) => itemIndex !== index
-                      ),
-                    }))
-                  }
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <X />
-                </Button>
-              </div>
-            )
-          })}
+              )
+            }}
+          </ReorderableList>
           <Button
             disabled={draft.rows.length >= 12 || columns.length === 0}
-            onClick={() =>
+            onClick={() => {
+              setRowIds((current) => [...current, crypto.randomUUID()])
               setDraft((current) => ({
                 ...current,
                 rows: [
@@ -220,7 +209,7 @@ function CardSettingsForm({
                   },
                 ],
               }))
-            }
+            }}
             size="sm"
             type="button"
             variant="link"
@@ -268,8 +257,7 @@ export function EntityCardSettings({
   onOpenChange: (open: boolean) => void
   onApply: (layout: CardLayout) => void
 }) {
-  const initial =
-    value ?? defaultCardLayout(columns.map((column) => column.id))
+  const initial = value ?? defaultCardLayout(columns.map((column) => column.id))
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">

@@ -10,8 +10,16 @@ import {
   motion,
   useReducedMotion,
 } from "motion/react"
-import { GripVertical, LoaderCircle } from "lucide-react"
+import { ArrowDownAZ, EyeOff, LoaderCircle, Settings2 } from "lucide-react"
 import { toast } from "sonner"
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuLabel,
+} from "@/components/ui/context-menu"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -44,6 +52,11 @@ type Props<T> = {
   onOrderChange?: (order: string[]) => void
   cardOrder?: string[]
   onOpen?: (item: T) => void
+  onSelect?: (item: T) => void
+  isSelected?: (item: T) => boolean
+  onHideColumn?: (id: string) => void
+  onConfigureCard?: () => void
+  footerElement?: HTMLElement | null
   emptyText?: string
 }
 type Slot = { group: string; index: number }
@@ -68,15 +81,21 @@ type PointerDrag = {
   pointerId: number
   active: boolean
   openOnClick: boolean
+  pointerType: string
+  startedAt: number
+  scrolling: boolean
+  lastX: number
+  lastY: number
+  scrollStart: number
 }
 const PAGE = 40
 const columnTones: Record<ReactBitsKanbanTone, string> = {
-  neutral: "border-border bg-muted/30",
-  info: "border-sky-500/20 bg-sky-500/[0.045]",
-  warning: "border-amber-500/20 bg-amber-500/[0.045]",
-  success: "border-emerald-500/20 bg-emerald-500/[0.045]",
-  danger: "border-red-500/20 bg-red-500/[0.045]",
-  violet: "border-violet-500/20 bg-violet-500/[0.045]",
+  neutral: "border-border bg-muted/55",
+  info: "border-sky-500/25 bg-sky-500/[0.09]",
+  warning: "border-amber-500/25 bg-amber-500/[0.09]",
+  success: "border-emerald-500/25 bg-emerald-500/[0.09]",
+  danger: "border-red-500/25 bg-red-500/[0.09]",
+  violet: "border-violet-500/25 bg-violet-500/[0.09]",
 }
 const dots: Record<ReactBitsKanbanTone, string> = {
   neutral: "bg-muted-foreground",
@@ -100,6 +119,11 @@ export default function ReactBitsKanban<T>({
   onOrderChange,
   cardOrder,
   onOpen,
+  onSelect,
+  isSelected = () => false,
+  onHideColumn,
+  onConfigureCard,
+  footerElement,
   emptyText = "Нет записей",
 }: Props<T>) {
   const uid = React.useId(),
@@ -117,10 +141,14 @@ export default function ReactBitsKanban<T>({
   const [pending, setPending] = React.useState<Set<string>>(() => new Set())
   const busy = React.useRef(new Set<string>())
   const [dragId, setDragId] = React.useState<string | null>(null)
+  const [touchScrolling, setTouchScrolling] = React.useState(false)
   const [grab, setGrab] = React.useState<Grab | null>(null)
   const [slot, setSlot] = React.useState<Slot | null>(null)
   const [shown, setShown] = React.useState<Record<string, number>>({})
   const [announcement, setAnnouncement] = React.useState("")
+  const [availableHeight, setAvailableHeight] = React.useState<number | null>(
+    null
+  )
   const root = React.useRef<HTMLDivElement>(null),
     viewport = React.useRef<HTMLDivElement>(null),
     ghost = React.useRef<HTMLDivElement>(null)
@@ -129,6 +157,7 @@ export default function ReactBitsKanban<T>({
     drop = React.useRef<Slot | null>(null),
     frame = React.useRef<number | null>(null)
   const skipClick = React.useRef(false)
+  const lastTap = React.useRef<{ id: string; at: number } | null>(null)
   const model = React.useRef({ order, itemById, getGroup, onOrderChange })
   React.useLayoutEffect(() => {
     model.current = { order, itemById, getGroup, onOrderChange }
@@ -158,6 +187,29 @@ export default function ReactBitsKanban<T>({
       .filter((group) => !columns.some((c) => c.id === group))
       .map((id) => ({ id, label: id })),
   ]
+  React.useLayoutEffect(() => {
+    const measure = () => {
+      const top = viewport.current?.getBoundingClientRect().top
+      if (top === undefined) return
+      const footerTop = footerElement?.getBoundingClientRect().top
+      const bottom = Math.min(
+        window.innerHeight - 16,
+        footerTop && footerTop > top ? footerTop - 12 : window.innerHeight - 16
+      )
+      setAvailableHeight(Math.max(120, Math.floor(bottom - top)))
+    }
+    const observer = new ResizeObserver(measure)
+    if (root.current?.parentElement?.parentElement)
+      observer.observe(root.current.parentElement.parentElement)
+    if (footerElement) observer.observe(footerElement)
+    const frame = requestAnimationFrame(measure)
+    window.addEventListener("resize", measure)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+      window.removeEventListener("resize", measure)
+    }
+  }, [footerElement])
   const movable = (item: T) =>
     Boolean(
       (onMove || onOrderChange) && canMove(item) && !pending.has(getId(item))
@@ -252,8 +304,7 @@ export default function ReactBitsKanban<T>({
       return null
     for (const [group, element] of colRefs.current) {
       const rect = element.getBoundingClientRect()
-      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
-        continue
+      if (x < rect.left || x > rect.right) continue
       const cards = [
         ...element.querySelectorAll<HTMLElement>("[data-kanban-card]"),
       ].filter((card) => card.dataset.kanbanCard !== id)
@@ -324,10 +375,9 @@ export default function ReactBitsKanban<T>({
       return
     if (
       !handle &&
-      (event.pointerType !== "mouse" ||
-        (event.target as HTMLElement).closest(
-          "button,input,textarea,select,a,[role=checkbox],[data-no-drag]"
-        ))
+      (event.target as HTMLElement).closest(
+        "button,input,textarea,select,a,[role=checkbox],[data-no-drag]"
+      )
     )
       return
     const item = itemById.get(id),
@@ -350,25 +400,66 @@ export default function ReactBitsKanban<T>({
       pointerId: event.pointerId,
       active: false,
       openOnClick: !handle,
+      pointerType: event.pointerType,
+      startedAt: event.timeStamp,
+      scrolling: false,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      scrollStart: viewport.current?.scrollLeft ?? 0,
     }
     root.current?.setPointerCapture(event.pointerId)
-    card
-      .querySelector<HTMLElement>("[data-kanban-handle]")
-      ?.focus({ preventScroll: true })
+    card.focus({ preventScroll: true })
   }
   function move(event: React.PointerEvent) {
     const d = drag.current
     if (!d) return
     d.x = event.clientX
     d.y = event.clientY
-    if (!d.active && Math.hypot(d.x - d.startX, d.y - d.startY) >= 5) {
+    if (document.querySelector('[data-slot="context-menu-content"][data-open]'))
+      return
+    const distance = Math.hypot(d.x - d.startX, d.y - d.startY)
+    if (
+      d.pointerType !== "mouse" &&
+      !d.active &&
+      (d.scrolling || (distance >= 5 && event.timeStamp - d.startedAt < 250))
+    ) {
+      d.scrolling = true
+      setTouchScrolling(true)
+      if (Math.abs(d.x - d.startX) > Math.abs(d.y - d.startY)) {
+        if (viewport.current) viewport.current.scrollLeft -= d.x - d.lastX
+      } else {
+        const body = colRefs.current
+          .get(d.origin)
+          ?.querySelector<HTMLElement>("[data-kanban-body]")
+        const delta = d.y - d.lastY
+        let scroller: HTMLElement | null | undefined = body
+        while (scroller) {
+          const canScroll =
+            scroller.scrollHeight > scroller.clientHeight + 1 &&
+            (delta > 0
+              ? scroller.scrollTop > 0
+              : scroller.scrollTop <
+                scroller.scrollHeight - scroller.clientHeight - 1)
+          if (canScroll) {
+            scroller.scrollTop -= delta
+            break
+          }
+          scroller = scroller.parentElement
+        }
+        if (!scroller) window.scrollBy(0, -delta)
+      }
+      d.lastX = d.x
+      d.lastY = d.y
+      return
+    }
+    if (!d.active && distance >= 5) {
       d.active = true
       setDragId(d.id)
       setAnnouncement("Карточка выбрана для перемещения.")
       frame.current = requestAnimationFrame(tick)
     }
   }
-  function finish(cancel = false) {
+  function finish(cancel = false, at = 0) {
     const d = drag.current
     if (!d) return
     if (frame.current !== null) cancelAnimationFrame(frame.current)
@@ -387,10 +478,43 @@ export default function ReactBitsKanban<T>({
       }, 0)
     }
     setDragId(null)
+    setTouchScrolling(false)
+    if (
+      !cancel &&
+      d.scrolling &&
+      Math.abs(d.x - d.startX) > 50 &&
+      Math.abs(d.x - d.startX) > Math.abs(d.y - d.startY)
+    ) {
+      const rail = viewport.current,
+        width = colRefs.current.get(d.origin)?.getBoundingClientRect().width
+      if (rail && width)
+        rail.scrollLeft = Math.max(
+          0,
+          Math.min(
+            rail.scrollWidth - rail.clientWidth,
+            d.scrollStart + (d.x < d.startX ? 1 : -1) * (width + 12)
+          )
+        )
+    }
     setSlot(null)
-    if (!cancel && !d.active && d.openOnClick) {
+    if (
+      !cancel &&
+      !d.scrolling &&
+      !d.active &&
+      d.openOnClick &&
+      !document.querySelector('[data-slot="context-menu-content"][data-open]')
+    ) {
       const item = itemById.get(d.id)
-      if (item) onOpen?.(item)
+      if (item) {
+        const previousTap = lastTap.current
+        if (previousTap?.id === d.id && at - previousTap.at < 350) {
+          lastTap.current = null
+          onOpen?.(item)
+        } else {
+          lastTap.current = { id: d.id, at }
+          onSelect?.(item)
+        }
+      }
     } else if (!cancel && d.active && target) {
       const next = placeKanbanCard(
         order,
@@ -500,7 +624,7 @@ export default function ReactBitsKanban<T>({
       className="relative w-full min-w-0"
       data-kanban-board
       onPointerMove={move}
-      onPointerUp={() => finish()}
+      onPointerUp={(event) => finish(false, event.timeStamp)}
       onPointerCancel={() => finish(true)}
       onLostPointerCapture={() => finish(true)}
       onKeyDownCapture={(event) => {
@@ -512,16 +636,20 @@ export default function ReactBitsKanban<T>({
       }}
     >
       <p id={instructions} className="sr-only">
-        Перетащите карточку за ручку. С клавиатуры: пробел, стрелки, Enter.
-        Escape отменяет перемещение.
+        Нажмите на карточку, чтобы выбрать. Дважды — открыть. Для перемещения с
+        клавиатуры нажмите Alt и пробел, затем стрелки и Enter. Escape отменяет
+        перемещение. На телефоне удерживайте карточку перед перетаскиванием.
       </p>
       <div
         ref={viewport}
         className={cn(
-          "flex h-[clamp(22rem,calc(100dvh-16rem),64rem)] w-full gap-3 overflow-x-auto overflow-y-hidden pb-2",
-          !dragId && "snap-x snap-proximity"
+          "flex h-[clamp(22rem,calc(100dvh-16rem),64rem)] w-full items-start gap-3 overflow-x-auto overflow-y-hidden pb-2",
+          !dragId && !touchScrolling && "snap-x snap-proximity"
         )}
         data-kanban-viewport
+        style={
+          availableHeight === null ? undefined : { height: availableHeight }
+        }
       >
         <LayoutGroup id={uid}>
           {visibleColumns.map((column) => {
@@ -552,25 +680,70 @@ export default function ReactBitsKanban<T>({
                   else colRefs.current.delete(column.id)
                 }}
                 className={cn(
-                  "flex h-full w-[min(20rem,calc(100vw-3rem))] shrink-0 snap-start flex-col overflow-hidden rounded-[var(--rb-r-xl)] border transition-[border-color,box-shadow] data-[drop=allowed]:ring-2 data-[drop=allowed]:ring-primary/40 data-[drop=blocked]:ring-2 data-[drop=blocked]:ring-destructive/40 motion-reduce:transition-none",
+                  "flex h-fit max-h-full w-[min(20rem,calc(100vw-3rem))] shrink-0 snap-start flex-col overflow-hidden rounded-[var(--rb-r-xl)] border transition-[border-color,box-shadow] data-[drop=allowed]:ring-2 data-[drop=allowed]:ring-primary/40 data-[drop=blocked]:ring-2 data-[drop=blocked]:ring-destructive/40 motion-reduce:transition-none",
                   columnTones[tone]
                 )}
               >
-                <header className="flex min-h-12 shrink-0 items-center gap-2 px-3">
-                  <span className={cn("size-2 rounded-full", dots[tone])} />
-                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
-                    {column.label}
-                  </h3>
-                  <Badge
-                    variant="secondary"
-                    className={cn("tabular-nums", statusToneClass(tone))}
+                <ContextMenu>
+                  <ContextMenuTrigger
+                    render={
+                      <header className="flex min-h-12 shrink-0 items-center gap-2 px-3" />
+                    }
                   >
-                    {ordered.length}
-                  </Badge>
-                </header>
+                    <span className={cn("size-2 rounded-full", dots[tone])} />
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
+                      {column.label}
+                    </h3>
+                    <Badge
+                      variant="secondary"
+                      className={cn("tabular-nums", statusToneClass(tone))}
+                    >
+                      {ordered.length}
+                    </Badge>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuGroup>
+                      <ContextMenuLabel>{column.label}</ContextMenuLabel>
+                      <ContextMenuItem
+                        onClick={() => {
+                          const sorted = [...ids].sort((a, b) =>
+                            getLabel(itemById.get(a)!).localeCompare(
+                              getLabel(itemById.get(b)!),
+                              "ru"
+                            )
+                          )
+                          let cursor = 0
+                          remember(
+                            order.map((id) =>
+                              ids.includes(id) ? sorted[cursor++] : id
+                            )
+                          )
+                        }}
+                      >
+                        <ArrowDownAZ />
+                        Карточки по названию
+                      </ContextMenuItem>
+                      {onConfigureCard && (
+                        <ContextMenuItem onClick={onConfigureCard}>
+                          <Settings2 />
+                          Настроить карточки
+                        </ContextMenuItem>
+                      )}
+                      {onHideColumn && (
+                        <ContextMenuItem
+                          disabled={visibleColumns.length <= 1}
+                          onClick={() => onHideColumn(column.id)}
+                        >
+                          <EyeOff />
+                          Скрыть столбец
+                        </ContextMenuItem>
+                      )}
+                    </ContextMenuGroup>
+                  </ContextMenuContent>
+                </ContextMenu>
                 <div
                   data-kanban-body
-                  className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2 pb-2"
+                  className="min-h-0 space-y-2 overflow-y-auto overscroll-contain px-2 pb-2"
                 >
                   {ordered.slice(0, limit).map((id) => {
                     const item = itemById.get(id)
@@ -590,17 +763,35 @@ export default function ReactBitsKanban<T>({
                         }}
                         data-kanban-card={id}
                         aria-busy={pending.has(id) || undefined}
-                        tabIndex={onOpen ? 0 : undefined}
+                        tabIndex={0}
+                        role="button"
+                        data-kanban-handle={id}
+                        aria-pressed={isSelected(item)}
+                        aria-describedby={instructions}
+                        aria-keyshortcuts="Enter Space Alt+Space"
                         aria-label={getLabel(item)}
+                        style={{ touchAction: "none" }}
                         onPointerDown={(event) => begin(event, id)}
                         onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return
                           if (
-                            event.target === event.currentTarget &&
-                            event.key === "Enter"
+                            grab?.id === id ||
+                            (event.altKey && event.key === " ")
                           ) {
+                            keyboard(event, id)
+                            return
+                          }
+                          if (event.key === " ") {
+                            event.preventDefault()
+                            onSelect?.(item)
+                          }
+                          if (event.key === "Enter") {
                             event.preventDefault()
                             onOpen?.(item)
                           }
+                        }}
+                        onDoubleClick={() => {
+                          if (!movable(item)) onOpen?.(item)
                         }}
                         onClick={(event) => {
                           if (skipClick.current) return
@@ -609,43 +800,28 @@ export default function ReactBitsKanban<T>({
                               "button,a,input,textarea,select,[role=checkbox],[data-no-drag]"
                             )
                           )
-                            onOpen?.(item)
+                            onSelect?.(item)
                         }}
                         className={cn(
                           "relative rounded-[var(--rb-r-lg)] border border-border/80 bg-card shadow-sm transition-[border-color,box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-                          onOpen && "cursor-pointer hover:border-primary/35",
+                          enabled
+                            ? "cursor-grab hover:border-primary/35 active:cursor-grabbing"
+                            : "cursor-pointer hover:border-primary/35",
+                          isSelected(item) &&
+                            "border-primary bg-primary/10 ring-1 ring-primary/50",
                           dragging &&
                             "border-dashed border-primary/60 bg-primary/10 shadow-none",
                           isGrabbed && "ring-2 ring-primary/40"
                         )}
                       >
-                        <div
-                          className={cn(
-                            "flex min-h-7 items-center justify-end px-1.5 pt-1",
-                            dragging && "opacity-0"
-                          )}
-                        >
-                          {pending.has(id) ? (
-                            <span className="mr-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <LoaderCircle className="size-3 animate-spin" />
-                              Сохраняем…
-                            </span>
-                          ) : enabled ? (
-                            <button
-                              type="button"
-                              data-kanban-handle={id}
-                              aria-label={`Переместить ${getLabel(item)}`}
-                              aria-describedby={instructions}
-                              aria-pressed={isGrabbed}
-                              onClick={(e) => e.stopPropagation()}
-                              onPointerDown={(event) => begin(event, id, true)}
-                              onKeyDown={(event) => keyboard(event, id)}
-                              className="grid size-10 cursor-grab touch-none place-items-center rounded-md text-muted-foreground outline-none hover:bg-control-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing sm:size-7"
-                            >
-                              <GripVertical className="size-4" />
-                            </button>
-                          ) : null}
-                        </div>
+                        {pending.has(id) && (
+                          <span
+                            className="absolute top-1 right-1 z-10 rounded-full bg-card p-1"
+                            aria-label="Сохраняем"
+                          >
+                            <LoaderCircle className="size-3 animate-spin text-primary" />
+                          </span>
+                        )}
                         <div
                           className={cn(
                             dragging && "pointer-events-none opacity-25"
@@ -713,9 +889,6 @@ export default function ReactBitsKanban<T>({
                     !reduce && "scale-[1.02] rotate-[-1.5deg]"
                   )}
                 >
-                  <div className="flex h-8 items-center justify-end px-3 text-muted-foreground">
-                    <GripVertical className="size-4" />
-                  </div>
                   {renderCard(itemById.get(dragId)!)}
                 </div>
               </motion.div>

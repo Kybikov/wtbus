@@ -38,11 +38,14 @@ type entityRelation struct {
 	Meta   json.RawMessage `json:"meta,omitempty"`
 }
 type entityActivity struct {
-	Action        string   `json:"action"`
-	Actor         string   `json:"actor"`
-	Kind          string   `json:"kind"`
-	CreatedAt     string   `json:"createdAt"`
-	ChangedFields []string `json:"changedFields,omitempty"`
+	ID            string             `json:"id"`
+	ActorID       string             `json:"actorId,omitempty"`
+	Action        string             `json:"action"`
+	Actor         string             `json:"actor"`
+	Kind          string             `json:"kind"`
+	CreatedAt     string             `json:"createdAt"`
+	ChangedFields []string           `json:"changedFields,omitempty"`
+	Changes       []auditFieldChange `json:"changes,omitempty"`
 }
 
 func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
@@ -127,14 +130,14 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	events := make([]entityActivity, 0)
-	rows, err := app.db.Query(r.Context(), `SELECT e.action,coalesce(u.display_name,'Система'),e.actor_kind,e.created_at::text,coalesce(e.details->'changedFields','[]'::jsonb) FROM activity_events e LEFT JOIN memberships m ON m.id=e.actor_membership_id AND m.tenant_id=e.tenant_id LEFT JOIN users u ON u.id=m.user_id WHERE e.tenant_id=$2 AND (e.entity_id=$1 OR ($3='team' AND e.actor_membership_id::text=$1)) ORDER BY e.created_at DESC LIMIT 30`, id, company.ID, entity)
+	rows, err := app.db.Query(r.Context(), `SELECT e.id::text,coalesce(e.actor_membership_id::text,'system'),e.action,coalesce(u.display_name,'Система'),e.actor_kind,e.created_at::text,coalesce(e.details->'changedFields','[]'::jsonb),coalesce(e.details->'changes','[]'::jsonb) FROM activity_events e LEFT JOIN memberships m ON m.id=e.actor_membership_id AND m.tenant_id=e.tenant_id LEFT JOIN users u ON u.id=m.user_id WHERE e.tenant_id=$2 AND (e.entity_id=$1 OR ($3='team' AND e.actor_membership_id::text=$1)) ORDER BY e.created_at DESC,e.id DESC LIMIT 30`, id, company.ID, entity)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
 	}
 	for rows.Next() {
 		var event entityActivity
-		if err = rows.Scan(&event.Action, &event.Actor, &event.Kind, &event.CreatedAt, &event.ChangedFields); err != nil {
+		if err = rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.Actor, &event.Kind, &event.CreatedAt, &event.ChangedFields, &event.Changes); err != nil {
 			rows.Close()
 			app.publicFailure(w, err)
 			return

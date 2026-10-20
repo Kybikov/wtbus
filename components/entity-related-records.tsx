@@ -86,11 +86,17 @@ export function EntityRelatedRecords({
   records,
   timezone,
   createHref,
+  createStatus,
+  createAvailable = true,
+  createBusy = false,
 }: {
   ownerEntity: EntityCollection
   records: EntityRelatedRecord[]
   timezone: string
   createHref?: string
+  createStatus?: string
+  createAvailable?: boolean
+  createBusy?: boolean
 }) {
   const available = React.useMemo(() => availableMetricKeys(records), [records])
   const storageKey = `entity-detail-related-fields:${ownerEntity}`
@@ -142,6 +148,7 @@ export function EntityRelatedRecords({
             )[record.entity]
         )
         .filter(Boolean)
+        .concat(createHref ? ["routes"] : [])
     ),
   ]
     .sort()
@@ -204,6 +211,11 @@ export function EntityRelatedRecords({
     window.dispatchEvent(new Event("vivat-related-fields"))
   }
 
+  const canCreate =
+    !createBusy &&
+    (statusCatalog.routes?.find((status) => status.key === createStatus)
+      ?.isAvailable ??
+      createAvailable)
   return (
     <>
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-3 border-b border-border/70">
@@ -254,11 +266,16 @@ export function EntityRelatedRecords({
           {createHref && (
             <Button
               aria-label="Добавить рейс по этому маршруту"
-              title="Добавить рейс по этому маршруту"
+              title={
+                canCreate
+                  ? "Добавить рейс по этому маршруту"
+                  : "Сначала включите маршрут для новых рейсов"
+              }
+              disabled={!canCreate}
               size="icon"
               variant="outline"
               className="size-8 rounded-lg"
-              render={<Link href={createHref} />}
+              render={canCreate ? <Link href={createHref} /> : undefined}
             >
               <Plus className="size-4" />
             </Button>

@@ -21,3 +21,6 @@ Verification: `npm test`, typecheck, changed-scope ESLint, production build, `go
 ## React Bits Micro controls
 
 Use the shared DeliverySwitch (Squish Switch) for boolean settings, shared Select (Glide Select) for choices, and HoldActionButton for destructive confirmations. Source is adapted from the current React Bits TS/Tailwind registry. Switch drags commit once on release; cancelled gestures do not save. Selects preserve Base UI portals, collision handling, scrolling, typeahead and disabled options. Hold confirmations require 1.2 seconds with pointer or keyboard; early release, focus loss, pointer cancellation or Escape cancels. Motion respects reduced-motion preferences. Row selection and passenger consent remain checkboxes.
+
+
+Saved-view configuration is the explicit exception to automatic saving: columns, filters, sorting, metrics and card/board layout remain preview drafts until Save current or Create new is chosen in the centered bottom banner. Name and sharing changes still autosave. Kanban status transitions remain immediate operational changes; only their card order belongs to the layout draft.

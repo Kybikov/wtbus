@@ -39,6 +39,7 @@ const entities: { value: WorkflowEntity; label: string }[] = [
 const phaseLabels: Record<string, string> = {
   active: "Активен",
   unavailable: "Недоступен",
+  temporarily_unavailable: "Временно недоступен",
   inactive: "Отключён",
   archived: "В архиве",
   ready: "Готов к назначению",
@@ -398,9 +399,11 @@ function StatusEditor({
             <FieldSelect
               aria-label="Поведение статуса"
               disabled={Boolean(status)}
-              options={phases[entity].map((value) => ({
+              options={[
+                ...new Set([...phases[entity], form.semanticPhase]),
+              ].map((value) => ({
                 value,
-                label: phaseLabels[value],
+                label: phaseLabels[value] ?? status?.label ?? "Особый статус",
               }))}
               value={form.semanticPhase}
               onValueChange={(next) => change("semanticPhase", next)}

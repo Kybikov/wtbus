@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -106,8 +105,8 @@ func (app *application) beginAudit(r *http.Request, actor identity) {
 	}
 }
 
-// Bound memory, persist only metadata, and never retain headers, query strings,
-// request/response bodies, credentials, IP addresses or arbitrary input keys.
+// Bound memory and keep request diagnostics separate from allowlisted record
+// value changes. Never persist raw bodies, credentials, IPs or arbitrary keys.
 func (app *application) requestAudit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/api/v1/realtime" {
@@ -198,12 +197,7 @@ func (app *application) requestAudit(next http.Handler) http.Handler {
 			if state.before != nil {
 				fields := []string{}
 				if after != nil {
-					for key, before := range state.before {
-						if key != "updated_at" && !reflect.DeepEqual(before, after[key]) {
-							fields = append(fields, key)
-						}
-					}
-					sort.Strings(fields)
+					fields = auditChangedFields(state.before, after)
 					details["changedFields"] = fields
 				}
 			} else if body != nil {
@@ -219,9 +213,20 @@ func (app *application) requestAudit(next http.Handler) http.Handler {
 				sort.Strings(fields)
 				details["submittedFields"] = fields
 			}
+			if state.before != nil && after != nil {
+				changes := auditChanges(state.before, after)
+				app.labelAuditChanges(ctx, actor, entity, changes)
+				if len(changes) > 0 {
+					details["changes"] = changes
+				}
+			}
 			// Device housekeeping and GPS samples already have their own records; avoid
 			// turning them into thousands of indistinguishable manager activity rows.
-			if entity != "gps-points" && entity != "push" && entity != "notifications" && entity != "notification-preferences" && entity != "preferences" {
+			noChange := false
+			if fields, ok := details["changedFields"].([]string); ok && len(fields) == 0 {
+				noChange = true
+			}
+			if !noChange && entity != "gps-points" && entity != "push" && entity != "notifications" && entity != "notification-preferences" && entity != "preferences" {
 				raw, _ := json.Marshal(details)
 				_, err = tx.Exec(ctx, `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,$2,'human',$3,$4,NULLIF($5,''),$6)`, actor.TenantID, actor.MembershipID, action, entity, id, raw)
 			}
@@ -288,10 +293,12 @@ func (app *application) activityHistory(w http.ResponseWriter, r *http.Request) 
 		} else {
 			err = rows.Scan(&id, &actor, &action, &entity, &entityID, &created, &details)
 			var safe struct {
-				ChangedFields   []string `json:"changedFields"`
-				SubmittedFields []string `json:"submittedFields"`
+				ChangedFields   []string           `json:"changedFields"`
+				SubmittedFields []string           `json:"submittedFields"`
+				Changes         []auditFieldChange `json:"changes"`
 			}
 			_ = json.Unmarshal(details, &safe)
+			item["changes"] = safe.Changes
 			item["changedFields"] = safe.ChangedFields
 			item["submittedFields"] = safe.SubmittedFields
 			item["entityId"] = entityID

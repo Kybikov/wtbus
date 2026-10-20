@@ -1,6 +1,8 @@
 "use client"
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { ActivityChanges } from "@/components/activity-changes"
+import type { ActivityChange } from "@/lib/activity-changes"
 import { InfiniteSentinel } from "@/components/infinite-sentinel"
 import { History } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -20,6 +22,7 @@ type Entry = {
   entityId?: string
   createdAt: string
   changedFields?: string[]
+  changes?: ActivityChange[]
   submittedFields?: string[]
   status?: number
   durationMs?: number
@@ -190,6 +193,16 @@ export function ActivityHistory({ role }: { role?: string }) {
                       ? `${entry.action} ${entry.entity.replace(/^[A-Z]+ /, "")}`
                       : (activityActions[entry.action] ?? "Действие с записью")}
                   </p>
+                  {kind === "activity" && !!entry.changes?.length && (
+                    <div className="mt-2">
+                      <ActivityChanges
+                        changes={entry.changes}
+                        timezone={
+                          Intl.DateTimeFormat().resolvedOptions().timeZone
+                        }
+                      />
+                    </div>
+                  )}
                   {kind === "activity" &&
                     !!(
                       entry.changedFields?.length ||
@@ -197,7 +210,16 @@ export function ActivityHistory({ role }: { role?: string }) {
                     ) && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         {activityFieldNames(
-                          entry.changedFields ?? entry.submittedFields
+                          (
+                            entry.changedFields ??
+                            entry.submittedFields ??
+                            []
+                          ).filter(
+                            (field) =>
+                              !entry.changes?.some(
+                                (change) => change.field === field
+                              )
+                          )
                         )}
                       </p>
                     )}

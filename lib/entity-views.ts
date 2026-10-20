@@ -203,30 +203,44 @@ export function normalizeViewConfig(
   }
 }
 
+function sortedObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedObjectKeys)
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, sortedObjectKeys(entry)])
+    )
+  return value
+}
+
 export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
   const canonical = (value: EntityViewConfig) =>
-    JSON.stringify({
-      mode: value.mode,
-      columns: value.columns,
-      filters: Object.entries(value.filters)
-        .filter(([, v]) => v !== "")
-        .sort(([a], [b]) => a.localeCompare(b)),
-      query: value.query ?? null,
-      metrics: value.metrics ?? [],
-      columnWidths: Object.entries(value.columnWidths ?? {}).sort(([a], [b]) =>
-        a.localeCompare(b)
-      ),
-      pinnedColumns: value.pinnedColumns ?? { left: [], right: [] },
-      sort: value.sort ?? null,
-      card: value.card ?? null,
-      board: value.board
-        ? {
-            hidden: [...(value.board.hidden ?? [])].sort(),
-            order: value.board.order ?? [],
-            orderBy: value.board.orderBy ?? "manual",
-            cardOrder: value.board.cardOrder ?? [],
-          }
-        : null,
-    })
+    JSON.stringify(
+      sortedObjectKeys({
+        mode: value.mode,
+        columns: value.columns,
+        filters: Object.entries(value.filters)
+          .filter(([, v]) => v !== "")
+          .sort(([a], [b]) => a.localeCompare(b)),
+        query: value.query ?? null,
+        metrics: value.metrics ?? [],
+        columnWidths: Object.entries(value.columnWidths ?? {}).sort(
+          ([a], [b]) => a.localeCompare(b)
+        ),
+        pinnedColumns: value.pinnedColumns ?? { left: [], right: [] },
+        sort: value.sort ?? null,
+        card: value.card ?? null,
+        board: value.board
+          ? {
+              hidden: [...(value.board.hidden ?? [])].sort(),
+              order: value.board.order ?? [],
+              orderBy: value.board.orderBy ?? "manual",
+              cardOrder: value.board.cardOrder ?? [],
+            }
+          : null,
+      })
+    )
   return canonical(a) === canonical(b)
 }

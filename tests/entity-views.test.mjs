@@ -175,3 +175,11 @@ test("dirty state tracks column order and ignores cleared filters while detectin
     false
   )
 })
+
+
+test("saving a view through JSONB does not leave a false unsaved banner due to object key order", () => {
+  const original = { mode: "kanban", columns: ["name", "price"], filters: {}, card: { rows: [{ fields: ["name"], layout: "title" }], size: "sm" }, board: { hidden: [], order: ["active", "inactive"], orderBy: "manual" } }
+  const persisted = { filters: {}, columns: ["name", "price"], mode: "kanban", card: { size: "sm", rows: [{ layout: "title", fields: ["name"] }] }, board: { orderBy: "manual", order: ["active", "inactive"], hidden: [] } }
+  assert.equal(sameViewConfig(original, persisted), true)
+  assert.equal(sameViewConfig(original, { ...persisted, columns: ["price", "name"] }), false)
+})

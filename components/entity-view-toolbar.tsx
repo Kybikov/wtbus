@@ -7,6 +7,17 @@ import {
   type QueryFieldChoice,
   type FilterGroup,
 } from "@/lib/entity-query"
+import { ReorderableList } from "@/components/list-4"
+import { createPortal } from "react-dom"
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuLabel,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu"
 import { EntityFilters } from "@/components/entity-filters"
 import { HoldActionButton } from "@/components/ui/hold-action-button"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -15,11 +26,15 @@ import { adminControlClassName } from "@/lib/admin-ui"
 import { cn } from "@/lib/utils"
 import {
   Check,
+  ArrowDownUp,
+  Copy,
+  Eye,
+  RotateCcw,
+  Save,
+  Trash2,
   ChevronDown,
-  ChevronUp,
   CheckSquare2,
   CalendarDays,
-  Ellipsis,
   GalleryHorizontal,
   KanbanSquare,
   List,
@@ -55,7 +70,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
   arrangeBoardGroups,
@@ -90,6 +104,7 @@ function ViewChip({
   shared,
   dirty,
   onClick,
+  menu,
 }: {
   label: string
   mode: EntityViewMode
@@ -97,46 +112,53 @@ function ViewChip({
   shared?: boolean
   dirty?: boolean
   onClick: () => void
+  menu: React.ReactNode
 }) {
   const Icon = modeIcons[mode]
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      aria-pressed={selected}
-      title={`${label} · ${entityModeLabels[mode]}${shared ? " · общий" : ""}`}
-      className={cn(
-        control,
-        "max-w-56",
-        selected && "border-primary/50 bg-primary/15 text-foreground"
-      )}
-      onClick={onClick}
-    >
-      <Icon />
-      <span className="truncate">{label}</span>
-      {shared ? <Users className="text-muted-foreground" /> : null}
-      {selected && dirty ? (
-        <span
-          aria-label="Есть несохранённые изменения"
-          className="size-1.5 shrink-0 rounded-full bg-primary"
-        />
-      ) : null}
-    </Button>
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={selected}
+            title={`${label} · ${entityModeLabels[mode]}${shared ? " · общий" : ""}`}
+            className={cn(
+              control,
+              "max-w-56",
+              selected && "border-primary/50 bg-primary/15 text-foreground"
+            )}
+            onClick={onClick}
+          />
+        }
+      >
+        <Icon />
+        <span className="truncate">{label}</span>
+        {shared ? <Users className="text-muted-foreground" /> : null}
+        {dirty ? (
+          <span
+            aria-label="Есть несохранённые изменения"
+            className="size-1.5 shrink-0 rounded-full bg-primary"
+          />
+        ) : null}
+      </ContextMenuTrigger>
+      {menu}
+    </ContextMenu>
   )
 }
 function BoardSettings({
   groups,
-  columns,
   config,
   onChange,
   onConfigureCard,
 }: {
   groups: { id: string; label: string; count: number }[]
-  columns: { id: string; label: string }[]
   config: EntityViewConfig
   onChange: (config: EntityViewConfig) => void
   onConfigureCard?: () => void
 }) {
+  const [open, setOpen] = React.useState(false)
   const board = config.board
   const hidden = new Set(board?.hidden ?? [])
   const orderBy = board?.orderBy ?? "manual"
@@ -156,7 +178,7 @@ function BoardSettings({
     })
   }
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={<Button variant="outline" size="sm" className={control} />}
       >
@@ -191,60 +213,30 @@ function BoardSettings({
             value={orderBy}
           />
         </div>
-        <div className="max-h-60 space-y-1 overflow-y-auto">
-          {shown.map((group, index) => {
-            const checked = !hidden.has(group.id)
-            return (
-              <div className="flex items-center gap-2" key={group.id}>
-                {orderBy === "manual" ? (
-                  <div className="flex flex-col">
-                    <Button
-                      aria-label={`Выше: ${group.label}`}
-                      disabled={index === 0}
-                      onClick={() => {
-                        const ids = shown.map((item) => item.id)
-                        const [moved] = ids.splice(index, 1)
-                        ids.splice(index - 1, 0, moved)
-                        update({
-                          hidden: [...hidden],
-                          order: ids,
-                          orderBy: "manual",
-                        })
-                      }}
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <ChevronUp />
-                    </Button>
-                    <Button
-                      aria-label={`Ниже: ${group.label}`}
-                      disabled={index === shown.length - 1}
-                      onClick={() => {
-                        const ids = shown.map((item) => item.id)
-                        const [moved] = ids.splice(index, 1)
-                        ids.splice(index + 1, 0, moved)
-                        update({
-                          hidden: [...hidden],
-                          order: ids,
-                          orderBy: "manual",
-                        })
-                      }}
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <ChevronDown />
-                    </Button>
-                  </div>
-                ) : null}
+        <div className="max-h-72 overflow-y-auto">
+          <ReorderableList
+            items={shown}
+            getId={(group) => group.id}
+            getLabel={(group) => group.label}
+            disabled={orderBy !== "manual"}
+            onReorder={(next) =>
+              update({
+                hidden: [...hidden],
+                order: next.map((group) => group.id),
+                orderBy: "manual",
+              })
+            }
+          >
+            {(group, handle) => (
+              <div className="flex min-h-12 items-center gap-2 px-1">
+                {handle}
                 <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
                   <Checkbox
-                    checked={checked}
-                    disabled={checked && visibleCount === 1}
-                    onCheckedChange={(value) => {
+                    checked={!hidden.has(group.id)}
+                    disabled={!hidden.has(group.id) && visibleCount === 1}
+                    onCheckedChange={(checked) => {
                       const next = new Set(hidden)
-                      if (value) next.delete(group.id)
+                      if (checked) next.delete(group.id)
                       else next.add(group.id)
                       update({
                         hidden: [...next],
@@ -259,59 +251,16 @@ function BoardSettings({
                   </span>
                 </label>
               </div>
-            )
-          })}
-        </div>
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground">
-            Сортировать карточки
-          </p>
-          <FieldSelect
-            aria-label="Сортировать карточки"
-            onValueChange={(columnId) =>
-              onChange({
-                ...config,
-                sort: columnId
-                  ? {
-                      columnId,
-                      direction: config.sort?.direction ?? "asc",
-                    }
-                  : null,
-              })
-            }
-            options={[
-              { value: "", label: "Без сортировки" },
-              ...columns.map((column) => ({
-                value: column.id,
-                label: column.label,
-              })),
-            ]}
-            value={config.sort?.columnId ?? ""}
-          />
-          {config.sort ? (
-            <FieldSelect
-              aria-label="Направление сортировки"
-              onValueChange={(direction) =>
-                onChange({
-                  ...config,
-                  sort: {
-                    columnId: config.sort?.columnId ?? "",
-                    direction: direction === "desc" ? "desc" : "asc",
-                  },
-                })
-              }
-              options={[
-                { value: "asc", label: "По возрастанию" },
-                { value: "desc", label: "По убыванию" },
-              ]}
-              value={config.sort.direction}
-            />
-          ) : null}
+            )}
+          </ReorderableList>
         </div>
         {onConfigureCard ? (
           <Button
             className="w-full justify-start"
-            onClick={onConfigureCard}
+            onClick={() => {
+              setOpen(false)
+              onConfigureCard?.()
+            }}
             size="sm"
             type="button"
             variant="ghost"
@@ -320,6 +269,76 @@ function BoardSettings({
             Настройка карточки
           </Button>
         ) : null}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function ViewSorting({
+  columns,
+  config,
+  onChange,
+}: {
+  columns: { id: string; label: string }[]
+  config: EntityViewConfig
+  onChange: (next: EntityViewConfig) => void
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            aria-label="Сортировка"
+            variant="outline"
+            size="sm"
+            className={control}
+          />
+        }
+      >
+        <ArrowDownUp />
+        <span className="sr-only sm:not-sr-only">Сортировка</span>
+        {config.sort && <span className="size-1.5 rounded-full bg-primary" />}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 space-y-3 p-3">
+        <p className="text-sm font-medium">Сортировка записей</p>
+        <FieldSelect
+          aria-label="Поле сортировки"
+          options={[
+            { value: "", label: "Вручную" },
+            ...columns.map((column) => ({
+              value: column.id,
+              label: column.label,
+            })),
+          ]}
+          value={config.sort?.columnId ?? ""}
+          onValueChange={(columnId) =>
+            onChange({
+              ...config,
+              sort: columnId
+                ? { columnId, direction: config.sort?.direction ?? "asc" }
+                : null,
+            })
+          }
+        />
+        {config.sort && (
+          <FieldSelect
+            aria-label="Направление сортировки"
+            options={[
+              { value: "asc", label: "По возрастанию" },
+              { value: "desc", label: "По убыванию" },
+            ]}
+            value={config.sort.direction}
+            onValueChange={(direction) =>
+              onChange({
+                ...config,
+                sort: {
+                  columnId: config.sort!.columnId,
+                  direction: direction === "desc" ? "desc" : "asc",
+                },
+              })
+            }
+          />
+        )}
       </PopoverContent>
     </Popover>
   )
@@ -442,7 +461,6 @@ export function EntityViewToolbar<T>({
             (item) => item.id === activeRef.current
           )
           autosave.initialize(selected ?? null)
-          applyRef.current(selected?.config ?? defaultsRef.current)
         }
         if (!restored.current) {
           restored.current = true
@@ -469,23 +487,109 @@ export function EntityViewToolbar<T>({
   }, [collection, revision, ready, autosave])
   const current = views.find((view) => view.id === active)
   const dirty = !sameViewConfig(config, current?.config ?? defaults)
+  const [drafts, setDrafts] = React.useState(
+    () => new Map<string, EntityViewConfig>()
+  )
+  function discardDraft(id: string) {
+    setDrafts((current) => {
+      const next = new Map(current)
+      next.delete(id)
+      return next
+    })
+  }
+  const [targetView, setTargetView] = React.useState<
+    SavedEntityView | undefined
+  >()
+  const [createConfig, setCreateConfig] = React.useState<EntityViewConfig>()
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
   React.useEffect(() => {
-    if (!current?.canEdit || !dirty || !ready || dialog === "create") return
-    const timer = setTimeout(() => autosave.commit({ config }), 350)
-    return () => clearTimeout(timer)
-  }, [autosave, config, current?.canEdit, current?.id, dirty, ready, dialog])
+    if (!dirty && !drafts.size) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+    }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [dirty, drafts.size])
+  async function saveCurrent() {
+    if (!current?.canEdit || busy || !dirty) return
+    const snapshot = config,
+      view = current
+    setBusy(true)
+    setError("")
+    try {
+      const response = await sessionFetch(
+        `/api/entity-views?entity=${collection}&id=${encodeURIComponent(view.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: view.name,
+            visibility: view.visibility,
+            config: snapshot,
+            version: view.version,
+          }),
+          signal: AbortSignal.timeout(10000),
+        }
+      )
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.item)
+        throw Error(payload?.error ?? "Не удалось сохранить вид.")
+      setViews((list) =>
+        list.map((item) => (item.id === view.id ? payload.item : item))
+      )
+      setDrafts((current) => {
+        const stashed = current.get(view.id)
+        if (stashed && !sameViewConfig(stashed, snapshot)) return current
+        const next = new Map(current)
+        next.delete(view.id)
+        return next
+      })
+      if (activeRef.current === view.id) autosave.initialize(payload.item)
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Не удалось сохранить вид."
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+  function resetDraft() {
+    setError("")
+    discardDraft(active)
+    onChange(current?.config ?? defaults)
+  }
   function select(view?: SavedEntityView) {
+    setError("")
+    if (dirty) setDrafts((current) => new Map(current).set(active, config))
+    else discardDraft(active)
     autosave.initialize(view ?? null)
     setActive(view?.id ?? "")
-    onChange(view?.config ?? defaults)
+    onChange(drafts.get(view?.id ?? "") ?? view?.config ?? defaults)
     try {
       localStorage.setItem(`entity-view:${scope}:${collection}`, view?.id ?? "")
     } catch {}
   }
-  function open(kind: "create" | "edit" | "delete") {
-    setName(kind === "create" ? "" : (current?.name ?? ""))
+  function open(
+    kind: "create" | "edit" | "delete",
+    view: SavedEntityView | null | undefined = current
+  ) {
+    setTargetView(view ?? undefined)
+    if (kind === "create")
+      setCreateConfig(
+        view === null
+          ? (drafts.get("") ?? defaults)
+          : view && view.id !== active
+            ? view.config
+            : config
+      )
+    if (kind === "edit") autosave.initialize(view ?? null)
+    setName(kind === "create" ? "" : (view?.name ?? ""))
     setVisibility(
-      kind === "create" ? "private" : (current?.visibility ?? "private")
+      kind === "create" ? "private" : (view?.visibility ?? "private")
     )
     setError("")
     setDialog(kind)
@@ -500,7 +604,7 @@ export function EntityViewToolbar<T>({
     setError("")
     try {
       const response = await sessionFetch(
-        `/api/entity-views?entity=${collection}${kind !== "create" ? `&id=${current?.id}` : ""}`,
+        `/api/entity-views?entity=${collection}${kind !== "create" ? `&id=${targetView?.id}` : ""}`,
         {
           method:
             kind === "create" ? "POST" : kind === "edit" ? "PATCH" : "DELETE",
@@ -511,8 +615,11 @@ export function EntityViewToolbar<T>({
                 body: JSON.stringify({
                   name: name.trim(),
                   visibility,
-                  config,
-                  version: current?.version ?? 0,
+                  config:
+                    kind === "create"
+                      ? (createConfig ?? config)
+                      : targetView?.config,
+                  version: targetView?.version ?? 0,
                 }),
               }
             : {}),
@@ -522,14 +629,32 @@ export function EntityViewToolbar<T>({
       if (!response.ok)
         throw new Error(payload.error ?? "Не удалось сохранить вид.")
       if (kind === "delete") {
-        setViews((list) => list.filter((view) => view.id !== active))
-        select()
+        setViews((list) => list.filter((view) => view.id !== targetView?.id))
+        discardDraft(targetView?.id ?? "")
+        if (active === targetView?.id) {
+          discardDraft(active)
+          setActive("")
+          onChange(drafts.get("") ?? defaults)
+          autosave.initialize(null)
+          try {
+            localStorage.setItem(`entity-view:${scope}:${collection}`, "")
+          } catch {}
+        }
       } else {
         setViews((list) => [
           ...list.filter((view) => view.id !== payload.item.id),
           payload.item,
         ])
-        select(payload.item)
+        discardDraft(payload.item.id)
+        setActive(payload.item.id)
+        autosave.initialize(payload.item)
+        onChange(payload.item.config)
+        try {
+          localStorage.setItem(
+            `entity-view:${scope}:${collection}`,
+            payload.item.id
+          )
+        } catch {}
       }
       setDialog(null)
     } catch (reason) {
@@ -538,6 +663,65 @@ export function EntityViewToolbar<T>({
       setBusy(false)
     }
   }
+  const viewMenu = (view?: SavedEntityView) => (
+    <ContextMenuContent>
+      <ContextMenuGroup>
+        <ContextMenuLabel>{view?.name ?? "По умолчанию"}</ContextMenuLabel>
+        <ContextMenuItem onClick={() => select(view)}>
+          <Eye />
+          Открыть вид
+        </ContextMenuItem>
+        {onConfigureCard && (view?.id ?? "") === active && (
+          <ContextMenuItem onClick={onConfigureCard}>
+            <Settings2 />
+            Настройка карточки
+          </ContextMenuItem>
+        )}
+        <ContextMenuItem
+          disabled={busy || !scope}
+          onClick={() => open("create", view ?? null)}
+        >
+          <Copy />
+          Создать копию
+        </ContextMenuItem>
+        {view?.canEdit && (
+          <ContextMenuItem disabled={busy} onClick={() => open("edit", view)}>
+            <Settings2 />
+            Настройки вида
+          </ContextMenuItem>
+        )}
+        {(view?.id ?? "") === active && dirty && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              disabled={!view?.canEdit || busy}
+              onClick={() => void saveCurrent()}
+            >
+              <Save />
+              Сохранить изменения
+            </ContextMenuItem>
+            <ContextMenuItem disabled={busy} onClick={resetDraft}>
+              <RotateCcw />
+              Сбросить изменения
+            </ContextMenuItem>
+          </>
+        )}
+        {view?.canEdit && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              disabled={busy}
+              onClick={() => open("delete", view)}
+            >
+              <Trash2 />
+              Удалить вид
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuGroup>
+    </ContextMenuContent>
+  )
   const activeFilters = filters.filter((filter) => config.filters[filter.id])
   const clearFilter = (id: string) => {
     const next = { ...config.filters }
@@ -574,8 +758,9 @@ export function EntityViewToolbar<T>({
                 label="По умолчанию"
                 mode={active ? defaults.mode : config.mode}
                 selected={!active}
-                dirty={dirty}
+                dirty={!active ? dirty : drafts.has("")}
                 onClick={() => select()}
+                menu={viewMenu()}
               />
               {(["shared", "private"] as const).flatMap((group) =>
                 views
@@ -587,8 +772,9 @@ export function EntityViewToolbar<T>({
                       mode={view.id === active ? config.mode : view.config.mode}
                       selected={view.id === active}
                       shared={view.visibility === "shared"}
-                      dirty={dirty}
+                      dirty={view.id === active ? dirty : drafts.has(view.id)}
                       onClick={() => select(view)}
+                      menu={viewMenu(view)}
                     />
                   ))
               )}
@@ -603,47 +789,6 @@ export function EntityViewToolbar<T>({
               <Plus />
               <span className="sr-only sm:not-sr-only">Создать вид</span>
             </Button>
-            {current?.canEdit || onConfigureCard ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={control}
-                      aria-label="Действия вида"
-                    />
-                  }
-                >
-                  <Ellipsis />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuGroup>
-                    {onConfigureCard ? (
-                      <DropdownMenuItem onClick={onConfigureCard}>
-                        Настройка карточки
-                      </DropdownMenuItem>
-                    ) : null}
-                    {onConfigureCard && current?.canEdit ? (
-                      <DropdownMenuSeparator />
-                    ) : null}
-                    {current?.canEdit ? (
-                      <>
-                        <DropdownMenuItem onClick={() => open("edit")}>
-                          Настройки вида
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => open("delete")}
-                        >
-                          Удалить вид
-                        </DropdownMenuItem>
-                      </>
-                    ) : null}
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
           </div>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
             {selectedCount ? (
@@ -678,6 +823,13 @@ export function EntityViewToolbar<T>({
                 </PopoverContent>
               </Popover>
             ) : null}
+            <ViewSorting
+              columns={columns.filter((column) =>
+                config.columns.includes(column.id)
+              )}
+              config={config}
+              onChange={onChange}
+            />
             {config.mode === "table" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -719,7 +871,6 @@ export function EntityViewToolbar<T>({
               </DropdownMenu>
             ) : config.mode === "kanban" ? (
               <BoardSettings
-                columns={columns}
                 config={config}
                 groups={groups}
                 onChange={onChange}
@@ -860,6 +1011,54 @@ export function EntityViewToolbar<T>({
           </Button>
         </div>
       ) : null}
+      {mounted &&
+        dirty &&
+        createPortal(
+          <section
+            aria-label="Несохранённые изменения вида"
+            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-40 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-2xl border border-primary/30 bg-popover p-3 shadow-xl sm:bottom-20"
+          >
+            <p role="status" className="px-1 text-sm font-medium">
+              Есть несохранённые изменения
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !current?.canEdit}
+                title={
+                  !current
+                    ? "Стандартный вид: сохраните изменения как новый вид"
+                    : !current.canEdit
+                      ? "Этот вид доступен только для просмотра"
+                      : undefined
+                }
+                onClick={() => void saveCurrent()}
+              >
+                <Save />
+                Сохранить в текущий
+              </Button>
+              <Button
+                size="sm"
+                disabled={busy || !scope}
+                onClick={() => open("create")}
+              >
+                <Plus />
+                Создать новый
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Отменить изменения вида"
+                disabled={busy}
+                onClick={resetDraft}
+              >
+                <RotateCcw />
+              </Button>
+            </div>
+          </section>,
+          document.body
+        )}
       <Dialog
         open={dialog !== null}
         onOpenChange={(value) => {
@@ -921,7 +1120,7 @@ export function EntityViewToolbar<T>({
               </div>
             </div>
           ) : (
-            <p className="text-sm">{current?.name}</p>
+            <p className="text-sm">{targetView?.name}</p>
           )}
           {error ? (
             <div role="alert" className="space-y-2 text-sm text-destructive">
