@@ -630,3 +630,13 @@ body:has([data-public-booking]) {
 .dark .calendar-violet {
   color: oklch(0.8 0.11 295);
 }
+
+/* A blocked action explains its restriction instead of showing a second,
+   ordinary icon tooltip on the same trigger. */
+body:has([data-disabled-action-hint][data-open]) [data-slot="tooltip-content"]:not([data-disabled-action-hint]) {
+  visibility: hidden;
+}
+[data-disabled-reason]:is(:disabled, [aria-disabled="true"], [data-disabled]) {
+  pointer-events: auto;
+  cursor: not-allowed;
+}

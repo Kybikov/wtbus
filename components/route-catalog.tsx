@@ -589,13 +589,18 @@ export function RouteCatalog() {
             <div className="flex justify-end gap-2 md:col-span-2">
               <Button
                 disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
                 onClick={closeEditor}
                 type="button"
                 variant="ghost"
               >
                 Отмена
               </Button>
-              <Button disabled={saving} type="submit">
+              <Button
+                disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
+                type="submit"
+              >
                 {saving
                   ? "Сохраняем…"
                   : isEditing
@@ -665,6 +670,7 @@ export function RouteCatalog() {
                 variant="outline"
                 size="sm"
                 disabled={selection.pending || saving}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onClick={() => void bulkStatus("active")}
               >
                 Включить
@@ -673,6 +679,7 @@ export function RouteCatalog() {
                 variant="outline"
                 size="sm"
                 disabled={selection.pending || saving}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onClick={() => void bulkStatus("inactive")}
               >
                 Отключить

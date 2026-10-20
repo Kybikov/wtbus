@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { DisabledActionReasonContext } from "@/components/disabled-action-scope"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 
 import { cn } from "@/lib/utils"
@@ -79,13 +80,16 @@ function DropdownMenuLabel({
 
 function DropdownMenuItem({
   className,
+  disabledReason,
   inset,
   variant = "default",
   ...props
 }: MenuPrimitive.Item.Props & {
   inset?: boolean
   variant?: "default" | "destructive"
+  disabledReason?: string
 }) {
+  const scopeReason = React.useContext(DisabledActionReasonContext)
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
@@ -96,6 +100,9 @@ function DropdownMenuItem({
         className
       )}
       {...props}
+      data-disabled-reason={
+        props.disabled ? (scopeReason ?? disabledReason) : undefined
+      }
     />
   )
 }
@@ -106,14 +113,20 @@ function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
 
 function DropdownMenuSubTrigger({
   className,
+  disabledReason,
   inset,
   children,
   ...props
 }: MenuPrimitive.SubmenuTrigger.Props & {
   inset?: boolean
+  disabledReason?: string
 }) {
+  const scopeReason = React.useContext(DisabledActionReasonContext)
   return (
     <MenuPrimitive.SubmenuTrigger
+      data-disabled-reason={
+        props.disabled ? (scopeReason ?? disabledReason) : undefined
+      }
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
@@ -158,15 +171,21 @@ function DropdownMenuSubContent({
 
 function DropdownMenuCheckboxItem({
   className,
+  disabledReason,
   children,
   checked,
   inset,
   ...props
 }: MenuPrimitive.CheckboxItem.Props & {
   inset?: boolean
+  disabledReason?: string
 }) {
+  const scopeReason = React.useContext(DisabledActionReasonContext)
   return (
     <MenuPrimitive.CheckboxItem
+      data-disabled-reason={
+        props.disabled ? (scopeReason ?? disabledReason) : undefined
+      }
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
       className={cn(

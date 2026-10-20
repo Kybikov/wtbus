@@ -295,6 +295,11 @@ export function AdvancedFilterBuilder({
           variant="ghost"
           size="sm"
           disabled={total >= 30 || !fields.length}
+          disabledReason={
+            !fields.length
+              ? "Нет доступных полей для фильтрации."
+              : "Можно добавить не больше 30 условий."
+          }
           onClick={() =>
             onChange({
               ...group,
@@ -318,6 +323,7 @@ export function AdvancedFilterBuilder({
             variant="ghost"
             size="sm"
             disabled={total >= 30}
+            disabledReason={"Можно добавить не больше 30 условий."}
             onClick={() =>
               onChange({ ...group, rules: [...group.rules, newFilterGroup()] })
             }

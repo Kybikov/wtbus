@@ -34,6 +34,13 @@ export function ProfileAppSettings() {
         ) : (
           <Button
             disabled={!install.ready || installing}
+            disabledReason={
+              installing
+                ? "Окно установки уже открывается."
+                : install.ios
+                  ? "Откройте сайт в Safari и выберите «Поделиться» → «На экран Домой»."
+                  : "Установите приложение через меню браузера: «Установить приложение» или «Добавить на главный экран»."
+            }
             onClick={() => void installApp()}
           >
             {installing ? "Открываем установку…" : "Установить приложение"}

@@ -961,12 +961,22 @@ export function BookingRegistry() {
   const actions: EntityAction<Booking>[] = [
     {
       label: "Подтвердить перевод",
+      disabledReason: (booking) =>
+        confirmingID === booking.id
+          ? "Подтверждение оплаты уже выполняется."
+          : "Перевод можно подтвердить только для бронирования, ожидающего оплаты.",
       disabled: (booking) =>
         booking.status !== "awaiting_payment" || confirmingID === booking.id,
       onSelect: (booking) => void confirmTransfer(booking),
     },
     {
       label: "Отменить бронирование",
+      disabledReason: (booking) =>
+        cancellingID === booking.id
+          ? "Бронирование уже отменяется. Дождитесь завершения."
+          : ["in_progress", "completed"].includes(booking.tripStatus)
+            ? "Нельзя отменить бронирование после начала рейса."
+            : "Бронирование уже закрыто или отменено.",
       destructive: true,
       disabled: (booking) =>
         ![
@@ -1341,13 +1351,22 @@ export function BookingRegistry() {
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <Button
                 disabled={isCreating}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
                 onClick={() => setIsCreateOpen(false)}
                 type="button"
                 variant="outline"
               >
                 Отмена
               </Button>
-              <Button disabled={isCreating || isCreateLoading} type="submit">
+              <Button
+                disabled={isCreating || isCreateLoading}
+                disabledReason={
+                  isCreateLoading
+                    ? "Дождитесь загрузки данных для бронирования."
+                    : "Бронирование создаётся. Дождитесь завершения."
+                }
+                type="submit"
+              >
                 {isCreating ? "Создаем бронь…" : "Создать бронь"}
               </Button>
             </div>

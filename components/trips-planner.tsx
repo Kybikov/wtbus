@@ -1181,6 +1181,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                                       `calendar-${trip.tone}`
                                     )}
                                     disabled={isRescheduling}
+                                    data-disabled-reason={
+                                      "Рейс переносится. Дождитесь завершения."
+                                    }
                                     draggable={[
                                       "draft",
                                       "new",
@@ -1324,6 +1327,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               </div>
               <Button
                 disabled={isSubmitting}
+                disabledReason={
+                  "Действие с рейсом выполняется. Дождитесь завершения."
+                }
                 onClick={() => {
                   setIsCreateOpen(false)
                   setEditingTripID(null)
@@ -1678,6 +1684,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               <Button
                 className="order-2 sm:order-1"
                 disabled={isSubmitting}
+                disabledReason={
+                  "Действие с рейсом выполняется. Дождитесь завершения."
+                }
                 onClick={() => setIsCreateOpen(false)}
                 type="button"
                 variant="outline"
@@ -1686,6 +1695,13 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               </Button>
               <Button
                 disabled={isSubmitting || isResourcesLoading || !!resourceError}
+                disabledReason={
+                  isSubmitting
+                    ? "Рейс сохраняется. Дождитесь завершения."
+                    : isResourcesLoading
+                      ? "Дождитесь загрузки маршрутов, транспорта и водителей."
+                      : "Не удалось загрузить данные для рейса. Обновите страницу и повторите попытку."
+                }
                 type="submit"
               >
                 {isSubmitting
@@ -1772,6 +1788,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button
                     disabled={isStatusSubmitting}
+                    disabledReason={
+                      "Действие с рейсом выполняется. Дождитесь завершения."
+                    }
                     onClick={() => setIsCancelConfirmation(false)}
                     size="sm"
                     type="button"
@@ -1781,6 +1800,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                   </Button>
                   <HoldActionButton
                     disabled={isStatusSubmitting}
+                    disabledReason={
+                      "Действие с рейсом выполняется. Дождитесь завершения."
+                    }
                     onConfirm={() => void changeSelectedTripStatus("cancelled")}
                     size="sm"
                   >
@@ -1793,6 +1815,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               <Button
                 className="order-2 sm:order-1"
                 disabled={isStatusSubmitting}
+                disabledReason={
+                  "Действие с рейсом выполняется. Дождитесь завершения."
+                }
                 onClick={() => {
                   setSelectedTrip(null)
                   setIsCancelConfirmation(false)
@@ -1806,6 +1831,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 <Button
                   className="order-1 sm:order-2"
                   disabled={isStatusSubmitting}
+                  disabledReason={
+                    "Действие с рейсом выполняется. Дождитесь завершения."
+                  }
                   onClick={() => void changeSelectedTripStatus("assigned")}
                   type="button"
                 >
@@ -1816,6 +1844,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 <Button
                   className="order-1 sm:order-2"
                   disabled={isStatusSubmitting}
+                  disabledReason={
+                    "Действие с рейсом выполняется. Дождитесь завершения."
+                  }
                   onClick={() => void changeSelectedTripStatus("in_progress")}
                   type="button"
                 >
@@ -1826,6 +1857,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 <Button
                   className="order-1 sm:order-2"
                   disabled={isStatusSubmitting}
+                  disabledReason={
+                    "Действие с рейсом выполняется. Дождитесь завершения."
+                  }
                   onClick={() => void changeSelectedTripStatus("completed")}
                   type="button"
                 >
@@ -1837,6 +1871,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 <Button
                   className="order-3"
                   disabled={isStatusSubmitting}
+                  disabledReason={
+                    "Действие с рейсом выполняется. Дождитесь завершения."
+                  }
                   onClick={() => setIsCancelConfirmation(true)}
                   type="button"
                   variant="destructive"

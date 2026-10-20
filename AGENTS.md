@@ -14,3 +14,7 @@ Use blur-based autosave for existing records and settings throughout the product
 
 
 Saved-view configuration is an explicit exception: filters, sorting, columns, card layout and board ordering are preview drafts. Show the centered unsaved-view banner and persist only after the user chooses Save current or Create new. View name and visibility remain ordinary blur/choice autosaves. Keep record mutations, including Kanban status changes, separate from these layout drafts.
+
+## Unavailable actions
+
+Every disabled action must explain the actual reason and, where possible, how to enable it. Pass `disabledReason` to shared buttons, hold confirmations and menu items; native action buttons use `data-disabled-reason`. Cover every branch of a compound disabled condition. Keep hover, keyboard focus and touch explanations available without changing layout or removing activation, permission or financial safeguards. Loading and saving explain the pending operation; read-only and unavailable states explain their restriction. Do not use a generic “unavailable” message in place of a known reason. Settings may inherit a precise loading/error/subscription reason from their disabled scope. The disabled-action contract test checks new call sites.

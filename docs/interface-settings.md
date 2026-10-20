@@ -24,3 +24,9 @@ Use the shared DeliverySwitch (Squish Switch) for boolean settings, shared Selec
 
 
 Saved-view configuration is the explicit exception to automatic saving: columns, filters, sorting, metrics and card/board layout remain preview drafts until Save current or Create new is chosen in the centered bottom banner. Name and sharing changes still autosave. Kanban status transitions remain immediate operational changes; only their card order belongs to the layout draft.
+
+## Reasons for unavailable actions
+
+Disabled buttons and menu actions carry an explicit `disabledReason`; native action buttons carry `data-disabled-reason`. A single delegated tooltip handles ordinary controls and portalled menus, without adding layout wrappers. Shared Base UI buttons remain disabled but allow keyboard focus; the button's disabled guard still prevents click/Enter/Space activation. On touch, tapping the blocked action reveals its explanation. The hint closes on Escape, scrolling, leaving the action, removal or re-enabling, and keeps the control's existing accessibility description. It replaces an ordinary icon tooltip while visible.
+
+Reasons identify the blocking condition: an in-progress write, a missing required field, no connection, permissions, record status, a list limit or a standard/read-only view. The standard view cannot be overwritten; its hint directs the user to Create new. Compound conditions provide the relevant reason for their current state. Company settings inherit the actual loading, load-error or paused-subscription explanation through `DisabledActionScope`, including React portals; native controls use the matching DOM scope. Never enable a blocked action just to attach a tooltip. `tests/disabled-actions.test.mjs` prevents new disabled action call sites without an explanation.

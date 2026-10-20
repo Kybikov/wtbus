@@ -154,6 +154,9 @@ export function LoginForm() {
                 <button
                   className="flex w-full items-center justify-between rounded-2xl border border-border bg-control px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-primary/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={submitting}
+                  data-disabled-reason={
+                    "Дождитесь завершения текущей операции."
+                  }
                   key={company.slug}
                   onClick={() => selectCompany(company)}
                   role="listitem"
@@ -169,6 +172,7 @@ export function LoginForm() {
             <Button
               className="w-full"
               disabled={submitting}
+              disabledReason={"Дождитесь завершения текущей операции."}
               onClick={() => {
                 setCompanySelection(null)
                 setPassword("")
@@ -226,6 +230,7 @@ export function LoginForm() {
             <Button
               className="w-full"
               disabled={submitting}
+              disabledReason={"Дождитесь завершения текущей операции."}
               size="lg"
               type="submit"
             >

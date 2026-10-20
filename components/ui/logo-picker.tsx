@@ -124,6 +124,11 @@ export function LogoPicker({
               type="button"
               variant="outline"
               disabled={disabled || busy}
+              disabledReason={
+                busy
+                  ? "Логотип загружается. Дождитесь завершения."
+                  : "Изменение логотипа сейчас недоступно."
+              }
               onClick={() => fileInput.current?.click()}
             >
               {busy ? <LoaderCircle className="animate-spin" /> : <Upload />}
@@ -137,6 +142,11 @@ export function LogoPicker({
                     variant="ghost"
                     size="icon"
                     disabled={disabled || busy}
+                    disabledReason={
+                      busy
+                        ? "Логотип загружается. Дождитесь завершения."
+                        : "Изменение логотипа сейчас недоступно."
+                    }
                     aria-label="Логотип по ссылке"
                   />
                 }
@@ -163,6 +173,11 @@ export function LogoPicker({
                 size="icon"
                 aria-label="Убрать логотип"
                 disabled={disabled || busy}
+                disabledReason={
+                  busy
+                    ? "Логотип загружается. Дождитесь завершения."
+                    : "Изменение логотипа сейчас недоступно."
+                }
                 onClick={() => {
                   onValueChange("")
                   onValueCommit?.("")

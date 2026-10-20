@@ -1,6 +1,7 @@
 "use client"
 
 import { useSettingsRole } from "@/components/settings-frame"
+import { DisabledActionScope } from "@/components/disabled-action-scope"
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
@@ -140,135 +141,148 @@ export function CompanySettings({
     return () => window.removeEventListener("vivat-settings-refresh", refresh)
   }, [])
 
+  const disabledReason = loading
+    ? "Дождитесь загрузки настроек компании."
+    : error
+      ? "Не удалось загрузить настройки. Обновите страницу и повторите попытку."
+      : isSubscriptionLocked
+        ? "Подписка компании приостановлена. Обратитесь к владельцу, чтобы возобновить изменения."
+        : undefined
+
   return (
-    <div className="company-settings w-full min-w-0 space-y-4">
-      <AdminNotice message={error} variant="error" />
-      {section === "statuses" && (
-        <WorkflowStatusSettings
-          disabled={loading || !!error || isSubscriptionLocked}
-        />
-      )}
-      {section === "activity" && <ActivityHistory role={role} />}
-      {section === "company" ? (
-        <section className="settings-panel" aria-label="Визуальный стиль">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                <Palette className="size-4" />
-              </span>
-              <div>
-                <h2 className="font-semibold">Визуальный стиль</h2>
-                <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Логотип, цвет и тема компании во всех разделах.
-                </p>
+    <DisabledActionScope reason={disabledReason}>
+      <div
+        className="company-settings w-full min-w-0 space-y-4"
+        data-disabled-scope={disabledReason}
+      >
+        <AdminNotice message={error} variant="error" />
+        {section === "statuses" && (
+          <WorkflowStatusSettings
+            disabled={loading || !!error || isSubscriptionLocked}
+          />
+        )}
+        {section === "activity" && <ActivityHistory role={role} />}
+        {section === "company" ? (
+          <section className="settings-panel" aria-label="Визуальный стиль">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                  <Palette className="size-4" />
+                </span>
+                <div>
+                  <h2 className="font-semibold">Визуальный стиль</h2>
+                  <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
+                    Логотип, цвет и тема компании во всех разделах.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="mt-6 grid min-w-0 gap-5 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <LogoPicker
-                value={branding.logoUrl ?? ""}
-                disabled={loading || !!error || isSubscriptionLocked}
-                onValueCommit={(logoUrl) =>
-                  autosave.commit({ logoUrl: logoUrl || undefined })
-                }
-                onValueChange={(logoUrl) =>
-                  setBranding((current) => ({
-                    ...current,
-                    logoUrl: logoUrl || undefined,
-                  }))
-                }
-              />
-            </div>
-            <div className="min-w-0 space-y-2">
-              <label
-                htmlFor="brand-color"
-                className="block text-sm font-medium"
-              >
-                Основной цвет
+            <div className="mt-6 grid min-w-0 gap-5 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <LogoPicker
+                  value={branding.logoUrl ?? ""}
+                  disabled={loading || !!error || isSubscriptionLocked}
+                  onValueCommit={(logoUrl) =>
+                    autosave.commit({ logoUrl: logoUrl || undefined })
+                  }
+                  onValueChange={(logoUrl) =>
+                    setBranding((current) => ({
+                      ...current,
+                      logoUrl: logoUrl || undefined,
+                    }))
+                  }
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <label
+                  htmlFor="brand-color"
+                  className="block text-sm font-medium"
+                >
+                  Основной цвет
+                </label>
+                <ColorPicker
+                  id="brand-color"
+                  value={branding.primaryColor}
+                  disabled={loading || !!error || isSubscriptionLocked}
+                  onValueCommit={(primaryColor) =>
+                    autosave.commit({ primaryColor })
+                  }
+                  onValueChange={(primaryColor) =>
+                    setBranding((current) => ({ ...current, primaryColor }))
+                  }
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <p className="text-sm font-medium">Тема по умолчанию</p>
+                <FieldSelect
+                  aria-label="Тема по умолчанию"
+                  disabled={loading || !!error || isSubscriptionLocked}
+                  onValueChange={(value) => {
+                    autosave.commit({
+                      defaultTheme: value as Branding["defaultTheme"],
+                    })
+                    setBranding((current) => ({
+                      ...current,
+                      defaultTheme: value as Branding["defaultTheme"],
+                    }))
+                  }}
+                  options={[
+                    { value: "dark", label: "Тёмная" },
+                    { value: "light", label: "Светлая" },
+                    { value: "system", label: "Как в системе" },
+                  ]}
+                  value={branding.defaultTheme}
+                />
+              </div>
+              <label className="min-w-0 space-y-2 text-sm font-medium sm:col-span-2">
+                Контакт диспетчера для Telegram-бота
+                <Input
+                  className="mt-2 font-normal"
+                  disabled={loading || !!error || isSubscriptionLocked}
+                  onBlur={(event) =>
+                    autosave.commit({ dispatcherContact: event.target.value })
+                  }
+                  maxLength={160}
+                  onChange={(event) =>
+                    setBranding((current) => ({
+                      ...current,
+                      dispatcherContact: event.target.value,
+                    }))
+                  }
+                  placeholder="@vivat_bus или +380…"
+                  value={branding.dispatcherContact}
+                />
               </label>
-              <ColorPicker
-                id="brand-color"
-                value={branding.primaryColor}
-                disabled={loading || !!error || isSubscriptionLocked}
-                onValueCommit={(primaryColor) =>
-                  autosave.commit({ primaryColor })
-                }
-                onValueChange={(primaryColor) =>
-                  setBranding((current) => ({ ...current, primaryColor }))
-                }
-              />
             </div>
-            <div className="min-w-0 space-y-2">
-              <p className="text-sm font-medium">Тема по умолчанию</p>
-              <FieldSelect
-                aria-label="Тема по умолчанию"
-                disabled={loading || !!error || isSubscriptionLocked}
-                onValueChange={(value) => {
-                  autosave.commit({
-                    defaultTheme: value as Branding["defaultTheme"],
-                  })
-                  setBranding((current) => ({
-                    ...current,
-                    defaultTheme: value as Branding["defaultTheme"],
-                  }))
-                }}
-                options={[
-                  { value: "dark", label: "Тёмная" },
-                  { value: "light", label: "Светлая" },
-                  { value: "system", label: "Как в системе" },
-                ]}
-                value={branding.defaultTheme}
-              />
-            </div>
-            <label className="min-w-0 space-y-2 text-sm font-medium sm:col-span-2">
-              Контакт диспетчера для Telegram-бота
-              <Input
-                className="mt-2 font-normal"
-                disabled={loading || !!error || isSubscriptionLocked}
-                onBlur={(event) =>
-                  autosave.commit({ dispatcherContact: event.target.value })
-                }
-                maxLength={160}
-                onChange={(event) =>
-                  setBranding((current) => ({
-                    ...current,
-                    dispatcherContact: event.target.value,
-                  }))
-                }
-                placeholder="@vivat_bus или +380…"
-                value={branding.dispatcherContact}
-              />
-            </label>
-          </div>
-          {isSubscriptionLocked && (
-            <p className="mt-5 text-xs text-muted-foreground">
-              Рабочие операции приостановлены до продления подписки.
-            </p>
-          )}
-        </section>
-      ) : null}
-      {canManageSecrets && section === "payments" ? (
-        <PaymentSettings
-          key={`payment-${refreshVersion}`}
-          disabled={loading || !!error || isSubscriptionLocked}
-        />
-      ) : null}
-      {canManageSecrets && section === "integrations" ? (
-        <IntegrationSecretsSettings
-          key={`integrations-${refreshVersion}`}
-          disabled={loading || !!error || isSubscriptionLocked}
-        />
-      ) : null}
-      {canManageSecrets && section === "finance" ? (
-        <ExchangeRateSettings key={`finance-${refreshVersion}`} />
-      ) : null}
-      {section === "fields" ? (
-        <CustomFieldManager
-          key={`fields-${refreshVersion}`}
-          disabled={loading || !!error || isSubscriptionLocked}
-        />
-      ) : null}
-    </div>
+            {isSubscriptionLocked && (
+              <p className="mt-5 text-xs text-muted-foreground">
+                Рабочие операции приостановлены до продления подписки.
+              </p>
+            )}
+          </section>
+        ) : null}
+        {canManageSecrets && section === "payments" ? (
+          <PaymentSettings
+            key={`payment-${refreshVersion}`}
+            disabled={loading || !!error || isSubscriptionLocked}
+          />
+        ) : null}
+        {canManageSecrets && section === "integrations" ? (
+          <IntegrationSecretsSettings
+            key={`integrations-${refreshVersion}`}
+            disabled={loading || !!error || isSubscriptionLocked}
+          />
+        ) : null}
+        {canManageSecrets && section === "finance" ? (
+          <ExchangeRateSettings key={`finance-${refreshVersion}`} />
+        ) : null}
+        {section === "fields" ? (
+          <CustomFieldManager
+            key={`fields-${refreshVersion}`}
+            disabled={loading || !!error || isSubscriptionLocked}
+          />
+        ) : null}
+      </div>
+    </DisabledActionScope>
   )
 }

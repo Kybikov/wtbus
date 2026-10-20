@@ -369,6 +369,15 @@ export function NotificationPreferences({
                   pushChecking ||
                   permission === "denied"
                 }
+                disabledReason={
+                  !supported
+                    ? "Этот браузер не поддерживает Push-уведомления."
+                    : permission === "denied"
+                      ? "Разрешите уведомления для сайта в настройках браузера."
+                      : loading || pushChecking
+                        ? "Проверяем подключение уведомлений. Дождитесь результата."
+                        : "Настройки уведомлений сохраняются. Дождитесь завершения."
+                }
                 onClick={() =>
                   void perform("push", async () => {
                     if (pushEnabled) {
@@ -394,6 +403,13 @@ export function NotificationPreferences({
               <ConnectionTestButton
                 name="Push"
                 disabled={!pushEnabled || !!busy || loading || pushChecking}
+                disabledReason={
+                  busy
+                    ? "Дождитесь завершения текущей операции."
+                    : loading || pushChecking
+                      ? "Проверяем подключение уведомлений. Дождитесь результата."
+                      : "Сначала включите Push на этом устройстве."
+                }
                 hint={
                   !pushEnabled
                     ? "Сначала включите Push на этом устройстве"
@@ -467,6 +483,9 @@ export function NotificationPreferences({
                   aria-label="Отключить Telegram"
                   variant="outline"
                   disabled={!!busy}
+                  disabledReason={
+                    "Настройки уведомлений сохраняются. Дождитесь завершения."
+                  }
                   onClick={() => setDisconnect(true)}
                 >
                   <Unplug />
@@ -477,6 +496,15 @@ export function NotificationPreferences({
                   variant="outline"
                   aria-label="Подключить Telegram"
                   disabled={!!busy || loading || !telegram?.botConfigured}
+                  disabledReason={
+                    busy
+                      ? "Дождитесь завершения текущей операции."
+                      : loading
+                        ? "Дождитесь загрузки настроек уведомлений."
+                        : !telegram?.botConfigured
+                          ? "Сначала подключите Telegram-бота в настройках компании."
+                          : "Сначала подключите свой Telegram."
+                  }
                   onClick={() =>
                     void perform("link", async () => {
                       const result = await request("telegram", "POST", {
@@ -511,6 +539,15 @@ export function NotificationPreferences({
                   !telegram.botConfigured ||
                   !!busy ||
                   loading
+                }
+                disabledReason={
+                  busy
+                    ? "Дождитесь завершения текущей операции."
+                    : loading
+                      ? "Дождитесь загрузки настроек уведомлений."
+                      : !telegram?.botConfigured
+                        ? "Сначала подключите Telegram-бота в настройках компании."
+                        : "Сначала подключите свой Telegram."
                 }
                 hint={
                   !telegram?.connected
@@ -577,6 +614,9 @@ export function NotificationPreferences({
                           className="justify-self-center px-2 text-xs"
                           aria-label={`${all ? "Выключить" : "Включить"} все: ${group}, ${c.label}`}
                           disabled={!!busy}
+                          disabledReason={
+                            "Настройки уведомлений сохраняются. Дождитесь завершения."
+                          }
                           onClick={() => {
                             const next = { ...data.preferences.events }
                             for (const e of events)
@@ -664,6 +704,9 @@ export function NotificationPreferences({
                         day.value
                       )}
                       disabled={!!busy}
+                      disabledReason={
+                        "Настройки уведомлений сохраняются. Дождитесь завершения."
+                      }
                       onClick={() =>
                         quiet({
                           days: data.preferences.quietHours.days.includes(
@@ -753,11 +796,17 @@ export function NotificationPreferences({
               variant="outline"
               onClick={() => setDisconnect(false)}
               disabled={!!busy}
+              disabledReason={
+                "Настройки уведомлений сохраняются. Дождитесь завершения."
+              }
             >
               Отмена
             </Button>
             <HoldActionButton
               disabled={!!busy}
+              disabledReason={
+                "Настройки уведомлений сохраняются. Дождитесь завершения."
+              }
               onConfirm={() =>
                 void perform("disconnect", async () => {
                   setTelegram((await request("telegram", "DELETE")) as Telegram)

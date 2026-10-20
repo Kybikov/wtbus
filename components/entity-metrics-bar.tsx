@@ -147,6 +147,7 @@ export function EntityMetricsBar<T>({
                   <DropdownMenuLabel>{label}</DropdownMenuLabel>
                   <DropdownMenuItem
                     disabled={index === 0}
+                    disabledReason={"Эта метрика уже первая."}
                     onClick={() => {
                       const next = [...metrics]
                       ;[next[index - 1], next[index]] = [
@@ -160,6 +161,7 @@ export function EntityMetricsBar<T>({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={index === metrics.length - 1}
+                    disabledReason={"Эта метрика уже последняя."}
                     onClick={() => {
                       const next = [...metrics]
                       ;[next[index + 1], next[index]] = [
@@ -198,6 +200,11 @@ export function EntityMetricsBar<T>({
               variant="outline"
               className={adminControlClassName}
               disabled={!fields.length || metrics.length >= MAX_VIEW_METRICS}
+              disabledReason={
+                !fields.length
+                  ? "Нет полей для расчёта метрики."
+                  : "Достигнут лимит метрик этого вида."
+              }
             />
           }
         >
@@ -229,6 +236,7 @@ export function EntityMetricsBar<T>({
                               value: option.value,
                             })
                         )}
+                        disabledReason={"Эта метрика уже добавлена в вид."}
                         onClick={() =>
                           add({
                             field: field.id,
@@ -255,6 +263,7 @@ export function EntityMetricsBar<T>({
                             metricKey(metric) ===
                             metricKey({ field: field.id, operation })
                         )}
+                        disabledReason={"Эта метрика уже добавлена в вид."}
                         onClick={() => add({ field: field.id, operation })}
                       >
                         {metricLabels[operation]}

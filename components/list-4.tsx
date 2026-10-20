@@ -156,10 +156,17 @@ export function ReorderableList<T>({
             <button
               type="button"
               disabled={disabled}
+              data-disabled-reason={
+                "Выберите порядок «Вручную», чтобы перетаскивать элементы."
+              }
               data-list4-handle={id}
               aria-label={`Переместить: ${getLabel(item)}. Позиция ${index + 1} из ${items.length}`}
               aria-pressed={grabbed}
-              title="Перетащите. С клавиатуры: пробел, стрелки, Escape."
+              title={
+                disabled
+                  ? undefined
+                  : "Перетащите. С клавиатуры: пробел, стрелки, Escape."
+              }
               className="grid size-8 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-muted-foreground hover:bg-control-hover focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing disabled:cursor-default disabled:opacity-30"
               onKeyDown={(event) => {
                 if (grabbed || event.key === " " || event.key === "Enter")

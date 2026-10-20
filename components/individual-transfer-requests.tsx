@@ -503,12 +503,20 @@ export function IndividualTransferRequests() {
           actions={[
             {
               label: "Взять в работу",
+              disabledReason: () =>
+                updatingID || selection.pending
+                  ? "Дождитесь завершения изменения заявки."
+                  : "В работу можно взять только новую заявку.",
               onSelect: (item) => void updateRequest(item, "in_progress"),
               disabled: (item) =>
                 item.status !== "new" || !!updatingID || selection.pending,
             },
             {
               label: "Подобрать рейс",
+              disabledReason: () =>
+                updatingID || selection.pending
+                  ? "Дождитесь завершения изменения заявки."
+                  : "Сначала возьмите заявку в работу.",
               onSelect: (item) => void updateRequest(item, "awaiting_trip"),
               disabled: (item) =>
                 item.status !== "in_progress" ||
@@ -517,6 +525,12 @@ export function IndividualTransferRequests() {
             },
             {
               label: "Создать бронирование",
+              disabledReason: (item) =>
+                updatingID || selection.pending
+                  ? "Дождитесь завершения изменения заявки."
+                  : item.bookingId
+                    ? "Для этой заявки уже создано бронирование."
+                    : "Бронирование можно создать для заявки в работе или ожидающей рейс.",
               onSelect: (item) =>
                 router.push(
                   `/bookings?from_request=${encodeURIComponent(item.id)}`
@@ -529,6 +543,10 @@ export function IndividualTransferRequests() {
             },
             {
               label: "Закрыть без брони",
+              disabledReason: () =>
+                updatingID || selection.pending
+                  ? "Дождитесь завершения изменения заявки."
+                  : "Закрыть без брони можно только заявку в работе или ожидающую рейс.",
               onSelect: (item) => void updateRequest(item, "closed"),
               disabled: (item) =>
                 !["in_progress", "awaiting_trip"].includes(item.status) ||
@@ -537,6 +555,10 @@ export function IndividualTransferRequests() {
             },
             {
               label: "Отклонить",
+              disabledReason: () =>
+                updatingID || selection.pending
+                  ? "Дождитесь завершения изменения заявки."
+                  : "Заявка уже закрыта или отклонена.",
               onSelect: (item) => void updateRequest(item, "cancelled"),
               destructive: true,
               disabled: (item) =>
@@ -614,6 +636,7 @@ export function IndividualTransferRequests() {
                 variant="outline"
                 size="sm"
                 disabled={!!updatingID || selection.pending}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onClick={() => void bulkStatus("in_progress")}
               >
                 В работу
@@ -622,6 +645,7 @@ export function IndividualTransferRequests() {
                 variant="outline"
                 size="sm"
                 disabled={!!updatingID || selection.pending}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onClick={() => void bulkStatus("closed")}
               >
                 Закрыть
@@ -630,6 +654,7 @@ export function IndividualTransferRequests() {
                 variant="destructive"
                 size="sm"
                 disabled={!!updatingID || selection.pending}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onClick={() => void bulkStatus("cancelled")}
               >
                 Отклонить

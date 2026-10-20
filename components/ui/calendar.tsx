@@ -11,7 +11,11 @@ import {
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowLeftIcon, ArrowRightIcon, ArrowDownIcon } from "@hugeicons/core-free-icons"
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowDownIcon,
+} from "@hugeicons/core-free-icons"
 
 function Calendar({
   className,
@@ -135,6 +139,20 @@ function Calendar({
         ...classNames,
       }}
       components={{
+        PreviousMonthButton: (buttonProps) => (
+          <Button
+            {...buttonProps}
+            variant={buttonVariant}
+            disabledReason="Более ранние даты находятся за пределами доступного периода."
+          />
+        ),
+        NextMonthButton: (buttonProps) => (
+          <Button
+            {...buttonProps}
+            variant={buttonVariant}
+            disabledReason="Более поздние даты находятся за пределами доступного периода."
+          />
+        ),
         Root: ({ className, rootRef, ...props }) => {
           return (
             <div
@@ -148,18 +166,33 @@ function Calendar({
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === "left") {
             return (
-              <HugeiconsIcon icon={ArrowLeftIcon} strokeWidth={2} className={cn("size-4", className)} {...props} />
+              <HugeiconsIcon
+                icon={ArrowLeftIcon}
+                strokeWidth={2}
+                className={cn("size-4", className)}
+                {...props}
+              />
             )
           }
 
           if (orientation === "right") {
             return (
-              <HugeiconsIcon icon={ArrowRightIcon} strokeWidth={2} className={cn("size-4", className)} {...props} />
+              <HugeiconsIcon
+                icon={ArrowRightIcon}
+                strokeWidth={2}
+                className={cn("size-4", className)}
+                {...props}
+              />
             )
           }
 
           return (
-            <HugeiconsIcon icon={ArrowDownIcon} strokeWidth={2} className={cn("size-4", className)} {...props} />
+            <HugeiconsIcon
+              icon={ArrowDownIcon}
+              strokeWidth={2}
+              className={cn("size-4", className)}
+              {...props}
+            />
           )
         },
         DayButton: ({ ...props }) => (
@@ -198,6 +231,7 @@ function CalendarDayButton({
   return (
     <Button
       ref={ref}
+      disabledReason="Эта дата находится за пределами доступного периода. Выберите другую дату."
       variant="ghost"
       size="icon"
       data-day={day.date.toLocaleDateString(locale?.code)}

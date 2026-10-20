@@ -2,16 +2,19 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import CallChip, { type CallChipStatus } from "@/components/ui/call-chip"
+import { Button } from "@/components/ui/button"
 
 export function ConnectionTestButton({
   name,
   disabled,
   hint,
+  disabledReason,
   onTest,
 }: {
   name: string
   disabled?: boolean
   hint?: string
+  disabledReason?: string
   onTest: () => Promise<string>
 }) {
   const [status, setStatus] = useState<CallChipStatus>("idle")
@@ -42,13 +45,19 @@ export function ConnectionTestButton({
     }
   }
   return (
-    <button
+    <Button
       type="button"
       disabled={disabled || status === "running"}
+      disabledReason={
+        status === "running"
+          ? "Проверка уже выполняется. Дождитесь результата."
+          : (disabledReason ?? hint)
+      }
       title={hint}
       aria-label={`Проверить ${name}`}
       onClick={() => void test()}
-      className="max-w-full rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      variant="ghost"
+      className="h-auto max-w-full rounded-xl border-0 p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <CallChip
         name={name.endsWith(" API") ? "API" : "Тест"}
@@ -70,6 +79,6 @@ export function ConnectionTestButton({
         shake={3}
         className="max-w-full"
       />
-    </button>
+    </Button>
   )
 }

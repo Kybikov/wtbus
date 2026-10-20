@@ -80,6 +80,7 @@ function FilterDraft({
         <Button
           variant="ghost"
           disabled={!countQuery(draft)}
+          disabledReason={"Нет условий, которые можно сбросить."}
           onClick={() => setDraft(newFilterGroup())}
         >
           <RotateCcw />
@@ -89,7 +90,13 @@ function FilterDraft({
           <span role="status" className="text-xs text-muted-foreground">
             Совпадений: {count?.(draft) ?? "—"}
           </span>
-          <Button disabled={!complete(draft)} onClick={() => onApply(draft)}>
+          <Button
+            disabled={!complete(draft)}
+            disabledReason={
+              "Заполните значения всех условий. Для периода укажите обе даты в правильном порядке."
+            }
+            onClick={() => onApply(draft)}
+          >
             Применить
           </Button>
         </div>
@@ -236,7 +243,15 @@ function ColumnSearchDraft({
         <span role="status" className="mr-auto text-xs text-muted-foreground">
           Совпадений: {complete && next ? (count?.(next) ?? "—") : "—"}
         </span>
-        <Button type="submit" disabled={!complete || !next}>
+        <Button
+          type="submit"
+          disabled={!complete || !next}
+          disabledReason={
+            !next
+              ? "Достигнут лимит условий. Удалите лишние или упростите группы."
+              : "Введите значение для поиска."
+          }
+        >
           Найти
         </Button>
       </DialogFooter>

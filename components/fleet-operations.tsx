@@ -611,13 +611,18 @@ export function FleetOperations() {
             <div className="flex justify-end gap-2 sm:col-span-2">
               <Button
                 disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
                 onClick={closeEditor}
                 type="button"
                 variant="ghost"
               >
                 Отмена
               </Button>
-              <Button disabled={saving} type="submit">
+              <Button
+                disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
+                type="submit"
+              >
                 {saving
                   ? "Сохраняем…"
                   : editingID
@@ -676,6 +681,8 @@ export function FleetOperations() {
                     label: "Включить / выключить",
                     onSelect: (item) => void toggleVehicle(item),
                     disabled: () => saving || selection.pending,
+                    disabledReason:
+                      "Доступность автомобиля уже меняется. Дождитесь завершения.",
                   },
                 ]
               : []
@@ -687,6 +694,7 @@ export function FleetOperations() {
                   variant="outline"
                   size="sm"
                   disabled={saving || selection.pending}
+                  disabledReason={"Дождитесь завершения текущей операции."}
                   onClick={() => void bulkActive(true)}
                 >
                   Включить
@@ -695,6 +703,7 @@ export function FleetOperations() {
                   variant="outline"
                   size="sm"
                   disabled={saving || selection.pending}
+                  disabledReason={"Дождитесь завершения текущей операции."}
                   onClick={() => void bulkActive(false)}
                 >
                   Отключить

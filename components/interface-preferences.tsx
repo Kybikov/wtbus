@@ -502,6 +502,7 @@ function InterfacePreferencesState({
               </p>
               <Button
                 disabled={!preferencesReady}
+                disabledReason={"Дождитесь загрузки настроек оформления."}
                 onClick={resetPreferences}
                 variant="outline"
               >

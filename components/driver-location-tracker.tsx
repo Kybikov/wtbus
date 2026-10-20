@@ -428,6 +428,9 @@ export function DriverLocationTracker() {
                 <Button
                   className="mt-4 w-full"
                   disabled={updatingTripStatus}
+                  disabledReason={
+                    "Статус рейса меняется. Дождитесь завершения."
+                  }
                   onClick={() => void changeTripStatus("in_progress")}
                   size="lg"
                 >
@@ -441,6 +444,13 @@ export function DriverLocationTracker() {
                     cashLoading ||
                     (cashSummary?.tripId === selectedVehicle.activeTrip.id &&
                       cashSummary.collectedMinor !== cashSummary.amountMinor)
+                  }
+                  disabledReason={
+                    updatingTripStatus
+                      ? "Статус рейса меняется. Дождитесь завершения."
+                      : cashLoading
+                        ? "Проверяем оплату пассажиров. Дождитесь результата."
+                        : "Сначала подтвердите получение всех наличных оплат этого рейса."
                   }
                   onClick={() => void changeTripStatus("completed")}
                   size="lg"
@@ -473,6 +483,11 @@ export function DriverLocationTracker() {
                     <Button
                       className="mt-4 w-full"
                       disabled={confirmingCash || !online}
+                      disabledReason={
+                        confirmingCash
+                          ? "Подтверждаем получение денег. Дождитесь результата."
+                          : "Для подтверждения оплаты нужно подключение к интернету."
+                      }
                       onClick={() => void confirmCashReceipt()}
                       size="lg"
                     >
@@ -500,6 +515,7 @@ export function DriverLocationTracker() {
             <Button
               className="mt-4"
               disabled={loading}
+              disabledReason={"Данные ещё загружаются. Дождитесь завершения."}
               onClick={() => void loadFleet()}
               size="sm"
               variant="outline"
@@ -590,6 +606,17 @@ export function DriverLocationTracker() {
                   updatingTripStatus ||
                   gps.authRequired
                 }
+                disabledReason={
+                  loading
+                    ? "Дождитесь загрузки рейса."
+                    : !identity || gps.authRequired
+                      ? "Войдите в аккаунт, чтобы передавать координаты."
+                      : !selectedVehicle?.activeTrip
+                        ? "Для передачи GPS нужен назначенный активный рейс."
+                        : sending
+                          ? "Координаты уже передаются. Дождитесь завершения."
+                          : "Статус рейса меняется. Дождитесь завершения."
+                }
                 onClick={gps.sendOnce}
                 size="lg"
                 variant="outline"
@@ -605,6 +632,17 @@ export function DriverLocationTracker() {
                     sending ||
                     updatingTripStatus ||
                     gps.authRequired)
+                }
+                disabledReason={
+                  loading
+                    ? "Дождитесь загрузки рейса."
+                    : !identity || gps.authRequired
+                      ? "Войдите в аккаунт, чтобы передавать координаты."
+                      : !selectedVehicle?.activeTrip
+                        ? "Для передачи GPS нужен назначенный активный рейс."
+                        : sending
+                          ? "Координаты уже передаются. Дождитесь завершения."
+                          : "Статус рейса меняется. Дождитесь завершения."
                 }
                 onClick={tracking ? gps.stop : gps.start}
                 size="lg"

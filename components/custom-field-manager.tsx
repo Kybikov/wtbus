@@ -317,7 +317,12 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
             Настройте данные отдельно для клиентов, рейсов и бронирований.
           </p>
         </div>
-        <Button disabled={disabled} onClick={startCreate} variant="outline">
+        <Button
+          disabled={disabled}
+          disabledReason={"Изменение дополнительных полей сейчас недоступно."}
+          onClick={startCreate}
+          variant="outline"
+        >
           <HugeiconsIcon icon={Add01Icon} size={16} />
           Добавить поле {entityMeta(entity).singular}
         </Button>
@@ -473,6 +478,7 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
             <div className="flex justify-end gap-2 sm:col-span-2">
               <Button
                 disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
                 onClick={close}
                 type="button"
                 variant="ghost"
@@ -480,7 +486,11 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
                 {editingID ? "Готово" : "Отмена"}
               </Button>
               {!editingID && (
-                <Button disabled={saving} type="submit">
+                <Button
+                  disabled={saving}
+                  disabledReason={"Данные сохраняются. Дождитесь завершения."}
+                  type="submit"
+                >
                   {saving
                     ? "Сохраняем…"
                     : editingID
@@ -557,6 +567,9 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
                     size="icon"
                     variant="ghost"
                     disabled={disabled}
+                    disabledReason={
+                      "Изменение дополнительных полей сейчас недоступно."
+                    }
                     onClick={() => startEdit(field)}
                   >
                     <HugeiconsIcon icon={Edit02Icon} size={16} />

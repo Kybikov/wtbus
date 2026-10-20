@@ -880,6 +880,11 @@ export function AppShell({
                     <Button
                       className="w-full"
                       disabled={!identityReady || createDisabled}
+                      disabledReason={
+                        !identityReady
+                          ? "Дождитесь загрузки данных аккаунта."
+                          : "Дождитесь загрузки данных для создания записи."
+                      }
                       onClick={() => {
                         setMobileActionsOpen(false)
                         onCreate()
@@ -906,6 +911,7 @@ export function AppShell({
                     <Button
                       variant="outline"
                       disabled={isRefreshing}
+                      disabledReason={"Дождитесь завершения текущей операции."}
                       onClick={() => void refreshPage()}
                     >
                       <HugeiconsIcon icon={RefreshIcon} />
@@ -964,6 +970,9 @@ export function AppShell({
                         aria-label="Обновить данные"
                         aria-busy={isRefreshing}
                         disabled={isRefreshing}
+                        disabledReason={
+                          "Дождитесь завершения текущей операции."
+                        }
                         onClick={() => void refreshPage()}
                         className="size-9 rounded-lg"
                         size="icon-lg"

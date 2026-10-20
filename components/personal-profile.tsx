@@ -263,6 +263,13 @@ export function PersonalProfile({
               {profile && email.trim().toLowerCase() !== profile.email && (
                 <Button
                   disabled={loading || saving || !currentPassword}
+                  disabledReason={
+                    loading
+                      ? "Дождитесь загрузки профиля."
+                      : saving
+                        ? "Дождитесь сохранения изменений."
+                        : "Введите текущий пароль, чтобы подтвердить смену email."
+                  }
                   type="submit"
                 >
                   Подтвердить смену email
@@ -332,6 +339,17 @@ export function PersonalProfile({
                   !currentPassword ||
                   !newPassword ||
                   !confirmation
+                }
+                disabledReason={
+                  loading
+                    ? "Дождитесь загрузки профиля."
+                    : saving
+                      ? "Дождитесь сохранения изменений."
+                      : !currentPassword
+                        ? "Введите текущий пароль."
+                        : !newPassword
+                          ? "Введите новый пароль."
+                          : "Повторите новый пароль."
                 }
               >
                 {saving ? "Сохраняем…" : "Изменить пароль"}

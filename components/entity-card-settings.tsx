@@ -174,6 +174,9 @@ function CardSettingsForm({
                   <Button
                     aria-label="Убрать строку"
                     disabled={draft.rows.length === 1}
+                    disabledReason={
+                      "В карточке должно оставаться хотя бы одно поле."
+                    }
                     onClick={() => {
                       setRowIds((current) =>
                         current.filter((_, itemIndex) => itemIndex !== index)
@@ -197,6 +200,11 @@ function CardSettingsForm({
           </ReorderableList>
           <Button
             disabled={draft.rows.length >= 12 || columns.length === 0}
+            disabledReason={
+              columns.length === 0
+                ? "Нет доступных полей."
+                : "В карточке может быть не больше 12 строк."
+            }
             onClick={() => {
               setRowIds((current) => [...current, crypto.randomUUID()])
               setDraft((current) => ({

@@ -174,6 +174,15 @@ export function IntegrationSecretsSettings({
               disabled={
                 disabled || loading || !!saving || !state.monobankConfigured
               }
+              disabledReason={
+                disabled
+                  ? "Настройки интеграций сейчас недоступны."
+                  : loading
+                    ? "Дождитесь загрузки интеграций."
+                    : saving
+                      ? "Дождитесь сохранения ключа."
+                      : "Сначала подключите Monobank в настройках компании."
+              }
               hint={
                 !state.monobankConfigured ? "Сначала сохраните ключ" : undefined
               }
@@ -197,6 +206,15 @@ export function IntegrationSecretsSettings({
               name="Telegram API"
               disabled={
                 disabled || loading || !!saving || !state.telegramBotConfigured
+              }
+              disabledReason={
+                disabled
+                  ? "Настройки интеграций сейчас недоступны."
+                  : loading
+                    ? "Дождитесь загрузки интеграций."
+                    : saving
+                      ? "Дождитесь сохранения ключа."
+                      : "Сначала подключите Telegram-бота в настройках компании."
               }
               hint={
                 !state.telegramBotConfigured

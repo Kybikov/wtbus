@@ -468,7 +468,14 @@ export function OperationsDashboard() {
                         <HugeiconsIcon icon={ArrowUpRight01Icon} size={15} />
                       </a>
                     ) : (
-                      <Button disabled size="sm" variant="outline">
+                      <Button
+                        disabled
+                        disabledReason={
+                          "Координаты этого автомобиля ещё не получены."
+                        }
+                        size="sm"
+                        variant="outline"
+                      >
                         Нет GPS
                       </Button>
                     )}

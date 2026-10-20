@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { DisabledActionReasonContext } from "@/components/disabled-action-scope"
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu"
 import { cn } from "@/lib/utils"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -113,13 +114,16 @@ function ContextMenuLabel({
 
 function ContextMenuItem({
   className,
+  disabledReason,
   inset,
   variant = "default",
   ...props
 }: ContextMenuPrimitive.Item.Props & {
   inset?: boolean
   variant?: "default" | "destructive"
+  disabledReason?: string
 }) {
+  const scopeReason = React.useContext(DisabledActionReasonContext)
   return (
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
@@ -130,6 +134,9 @@ function ContextMenuItem({
         className
       )}
       {...props}
+      data-disabled-reason={
+        props.disabled ? (scopeReason ?? disabledReason) : undefined
+      }
     />
   )
 }

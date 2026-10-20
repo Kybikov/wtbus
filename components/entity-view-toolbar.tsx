@@ -679,13 +679,22 @@ export function EntityViewToolbar<T>({
         )}
         <ContextMenuItem
           disabled={busy || !scope}
+          disabledReason={
+            busy
+              ? "Дождитесь завершения текущей операции."
+              : "Дождитесь загрузки сохранённых видов."
+          }
           onClick={() => open("create", view ?? null)}
         >
           <Copy />
           Создать копию
         </ContextMenuItem>
         {view?.canEdit && (
-          <ContextMenuItem disabled={busy} onClick={() => open("edit", view)}>
+          <ContextMenuItem
+            disabled={busy}
+            disabledReason={"Дождитесь завершения текущей операции."}
+            onClick={() => open("edit", view)}
+          >
             <Settings2 />
             Настройки вида
           </ContextMenuItem>
@@ -695,12 +704,23 @@ export function EntityViewToolbar<T>({
             <ContextMenuSeparator />
             <ContextMenuItem
               disabled={!view?.canEdit || busy}
+              disabledReason={
+                busy
+                  ? "Дождитесь завершения текущей операции."
+                  : !view
+                    ? "Стандартный вид нельзя перезаписать. Создайте новый вид."
+                    : "У вас нет прав на изменение этого вида."
+              }
               onClick={() => void saveCurrent()}
             >
               <Save />
               Сохранить изменения
             </ContextMenuItem>
-            <ContextMenuItem disabled={busy} onClick={resetDraft}>
+            <ContextMenuItem
+              disabled={busy}
+              disabledReason={"Дождитесь завершения текущей операции."}
+              onClick={resetDraft}
+            >
               <RotateCcw />
               Сбросить изменения
             </ContextMenuItem>
@@ -712,6 +732,7 @@ export function EntityViewToolbar<T>({
             <ContextMenuItem
               variant="destructive"
               disabled={busy}
+              disabledReason={"Дождитесь завершения текущей операции."}
               onClick={() => open("delete", view)}
             >
               <Trash2 />
@@ -784,6 +805,11 @@ export function EntityViewToolbar<T>({
               size="sm"
               className={control}
               disabled={!scope || busy}
+              disabledReason={
+                busy
+                  ? "Дождитесь завершения текущей операции."
+                  : "Дождитесь загрузки сохранённых видов."
+              }
               onClick={() => open("create")}
             >
               <Plus />
@@ -848,6 +874,7 @@ export function EntityViewToolbar<T>({
                     <DropdownMenuLabel>Видимые колонки</DropdownMenuLabel>
                     {columns.map((column) => (
                       <DropdownMenuCheckboxItem
+                        disabledReason="В таблице должна оставаться хотя бы одна видимая колонка."
                         key={column.id}
                         checked={config.columns.includes(column.id)}
                         disabled={
@@ -1027,6 +1054,13 @@ export function EntityViewToolbar<T>({
                 size="sm"
                 variant="outline"
                 disabled={busy || !current?.canEdit}
+                disabledReason={
+                  busy
+                    ? "Дождитесь завершения сохранения."
+                    : !current
+                      ? "Стандартный вид нельзя перезаписать. Нажмите «Создать новый», чтобы сохранить свои настройки."
+                      : "У вас нет прав на изменение этого вида. Сохраните настройки как новый вид."
+                }
                 title={
                   !current
                     ? "Стандартный вид: сохраните изменения как новый вид"
@@ -1042,6 +1076,11 @@ export function EntityViewToolbar<T>({
               <Button
                 size="sm"
                 disabled={busy || !scope}
+                disabledReason={
+                  busy
+                    ? "Дождитесь завершения текущей операции."
+                    : "Дождитесь загрузки сохранённых видов."
+                }
                 onClick={() => open("create")}
               >
                 <Plus />
@@ -1052,6 +1091,7 @@ export function EntityViewToolbar<T>({
                 variant="ghost"
                 aria-label="Отменить изменения вида"
                 disabled={busy}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onClick={resetDraft}
               >
                 <RotateCcw />
@@ -1131,6 +1171,7 @@ export function EntityViewToolbar<T>({
                   size="sm"
                   variant="outline"
                   disabled={busy}
+                  disabledReason={"Дождитесь завершения текущей операции."}
                   onClick={() => {
                     setDialog(null)
                     setRevision((value) => value + 1)
@@ -1145,6 +1186,7 @@ export function EntityViewToolbar<T>({
             <Button
               variant="outline"
               disabled={busy}
+              disabledReason={"Дождитесь завершения текущей операции."}
               onClick={() => setDialog(null)}
             >
               {dialog === "edit" ? "Готово" : "Отмена"}
@@ -1152,6 +1194,7 @@ export function EntityViewToolbar<T>({
             {dialog === "delete" ? (
               <HoldActionButton
                 disabled={busy}
+                disabledReason={"Дождитесь завершения текущей операции."}
                 onConfirm={() => void write("delete")}
               >
                 Удалить
@@ -1161,6 +1204,7 @@ export function EntityViewToolbar<T>({
                 <Button
                   variant="default"
                   disabled={busy}
+                  disabledReason={"Дождитесь завершения текущей операции."}
                   onClick={() => dialog && void write(dialog)}
                 >
                   {busy ? "Сохраняем…" : "Создать вид"}

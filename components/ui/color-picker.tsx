@@ -48,6 +48,7 @@ export function ColorPicker({
             id={id}
             type="button"
             disabled={disabled}
+            disabledReason={"Изменение оформления сейчас недоступно."}
             variant="outline"
             className="w-full justify-start font-normal"
             aria-label="Выбрать основной цвет"

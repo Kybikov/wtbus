@@ -773,13 +773,19 @@ export function TeamManager() {
           <DialogFooter>
             <Button
               disabled={saving}
+              disabledReason={"Данные сохраняются. Дождитесь завершения."}
               onClick={() => setShowForm(false)}
               type="button"
               variant="outline"
             >
               Отмена
             </Button>
-            <Button disabled={saving} form="team-member-form" type="submit">
+            <Button
+              disabled={saving}
+              disabledReason={"Данные сохраняются. Дождитесь завершения."}
+              form="team-member-form"
+              type="submit"
+            >
               {saving ? "Добавляем…" : "Выдать доступ"}
             </Button>
           </DialogFooter>
@@ -805,6 +811,11 @@ export function TeamManager() {
             <HoldActionButton
               disabled={
                 !deleteTarget || changingId === deleteTarget.membershipId
+              }
+              disabledReason={
+                !deleteTarget
+                  ? "Выберите сотрудника для удаления."
+                  : "Доступ сотрудника уже изменяется. Дождитесь завершения."
               }
               onConfirm={() => {
                 if (!deleteTarget) return

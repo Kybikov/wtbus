@@ -917,6 +917,7 @@ export function CustomerDirectory() {
             <DialogFooter className="mt-5">
               <Button
                 disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
                 onClick={() => {
                   setOpen(false)
                   setEditingID(null)
@@ -926,7 +927,11 @@ export function CustomerDirectory() {
               >
                 Отмена
               </Button>
-              <Button disabled={saving} type="submit">
+              <Button
+                disabled={saving}
+                disabledReason={"Данные сохраняются. Дождитесь завершения."}
+                type="submit"
+              >
                 {saving
                   ? "Сохраняем…"
                   : editingID

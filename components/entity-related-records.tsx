@@ -272,6 +272,11 @@ export function EntityRelatedRecords({
                   : "Сначала включите маршрут для новых рейсов"
               }
               disabled={!canCreate}
+              disabledReason={
+                createBusy
+                  ? "Дождитесь сохранения маршрута."
+                  : "Маршрут недоступен для новых рейсов. Сначала измените его статус."
+              }
               size="icon"
               variant="outline"
               className="size-8 rounded-lg"

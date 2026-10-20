@@ -264,7 +264,6 @@ export function FinanceDashboard() {
       refreshing={loading}
       pageDescription="Выручка, касса водителей и расходы"
       pageTitle="Деньги в работе"
-
     >
       <div className="w-full min-w-0 space-y-5">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
@@ -351,7 +350,12 @@ export function FinanceDashboard() {
             </p>
           </section>
         </div>
-        {summary && !summary.conversionComplete ? <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">Итог в {summary.currency} неполный: задайте курс для {summary.missingExchangeRates.join(", ")} в настройках компании.</p> : null}
+        {summary && !summary.conversionComplete ? (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+            Итог в {summary.currency} неполный: задайте курс для{" "}
+            {summary.missingExchangeRates.join(", ")} в настройках компании.
+          </p>
+        ) : null}
         <section className="overflow-hidden rounded-[calc(var(--radius)*1.35)] border border-border bg-background/25">
           <div className="border-b border-border px-5 py-4">
             <h2 className="font-bold">По валютам</h2>
@@ -532,6 +536,11 @@ export function FinanceDashboard() {
             </label>
             <Button
               disabled={saving || !drivers.length}
+              disabledReason={
+                saving
+                  ? "Выплата сохраняется. Дождитесь завершения."
+                  : "Сначала добавьте водителя, чтобы записать выплату."
+              }
               size="lg"
               type="submit"
             >
@@ -605,7 +614,12 @@ export function FinanceDashboard() {
                 value={expenseDescription}
               />
             </label>
-            <Button disabled={expenseSaving} size="lg" type="submit">
+            <Button
+              disabled={expenseSaving}
+              disabledReason={"Расход сохраняется. Дождитесь завершения."}
+              size="lg"
+              type="submit"
+            >
               {expenseSaving ? "Сохраняем…" : "Добавить расход"}
             </Button>
           </form>

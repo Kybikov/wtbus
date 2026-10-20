@@ -19,8 +19,8 @@ export default function Wizard2({ step, title, children, summary, onBack, onNext
       <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_260px]"><div className="min-w-0">{children}</div><aside aria-label="Ваш рейс" className="min-w-0 border-t border-border pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-7">{summary}</aside></div>
     </div>
     <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/30 px-5 py-4 sm:px-8">
-      <Button className="h-11 px-4" variant="outline" disabled={busy} onClick={onBack}><ArrowLeft />{step === 1 || step === 3 ? "До пошуку" : "Назад"}</Button>
-      <Button className="h-11 px-4" onClick={onNext} disabled={busy || disabled} aria-busy={busy}>{busy ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <ArrowRight />}{nextLabel}</Button>
+      <Button className="h-11 px-4" variant="outline" disabled={busy} disabledReason={"Триває обробка. Зачекайте."} onClick={onBack}><ArrowLeft />{step === 1 || step === 3 ? "До пошуку" : "Назад"}</Button>
+      <Button className="h-11 px-4" onClick={onNext} disabled={busy || disabled} disabledReason={busy ? "Триває обробка. Зачекайте." : "Заповніть обов’язкові поля та підтвердьте згоду на обробку даних."} aria-busy={busy}>{busy ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <ArrowRight />}{nextLabel}</Button>
     </footer>
   </section>
 }

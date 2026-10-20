@@ -218,6 +218,7 @@ function StatusList({
               type="button"
               key={status.key}
               disabled={disabled}
+              data-disabled-reason={"Настройки статусов сейчас недоступны."}
               onClick={() => setSelected(status)}
               aria-label={`Изменить статус: ${status.label}`}
               className="grid min-h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60 sm:grid-cols-[1fr_1fr_1.2fr_1rem]"
@@ -247,6 +248,13 @@ function StatusList({
         className="mt-4"
         variant="outline"
         disabled={disabled || loading || Boolean(error)}
+        disabledReason={
+          loading
+            ? "Дождитесь загрузки статусов."
+            : error
+              ? "Не удалось загрузить статусы. Обновите настройки и повторите попытку."
+              : "Настройки статусов сейчас недоступны."
+        }
         onClick={() => setSelected(null)}
       >
         <Plus />
@@ -453,6 +461,13 @@ function StatusEditor({
             type="submit"
             form="workflow-status-form"
             disabled={disabled || saving || !form.label.trim()}
+            disabledReason={
+              disabled
+                ? "Настройки статусов сейчас недоступны."
+                : saving
+                  ? "Статус сохраняется. Дождитесь завершения."
+                  : "Введите название статуса."
+            }
           >
             {saving ? "Добавляем…" : "Добавить статус"}
           </Button>

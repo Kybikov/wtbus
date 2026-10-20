@@ -33,6 +33,7 @@ export interface HoldButtonProps {
   glow?: boolean
   resetAfter?: number
   disabled?: boolean
+  disabledReason?: string
   onHold?: () => void
   onTap?: () => void
   className?: string
@@ -114,6 +115,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
   glow = true,
   resetAfter = 1200,
   disabled = false,
+  disabledReason,
   onHold,
   onTap,
   className = "",
@@ -344,6 +346,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
       data-slot="button"
       data-hold-button
       disabled={disabled}
+      data-disabled-reason={disabled ? disabledReason : undefined}
       className={`hb-root group relative isolate m-0 inline-grid cursor-pointer touch-manipulation place-items-center [border-radius:var(--hb-radius)] border-0 leading-none font-medium tracking-[0.01em] [color:var(--hb-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] outline-none select-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [background:var(--hb-bg)] [transition:transform_160ms_var(--hb-ease-out),background-color_160ms_ease,box-shadow_var(--hb-release)_var(--hb-ease-out)] data-[phase=holding]:data-[input=pointer]:[transform:scale(var(--hb-press))] [@media(hover:hover)_and_(pointer:fine)]:enabled:hover:[background:color-mix(in_srgb,var(--hb-bg)_92%,#fff)] data-[glow=true]:data-[phase=holding]:shadow-[${GLOW}] data-[glow=true]:data-[phase=done]:shadow-[${GLOW}] focus-visible:[outline:2px_solid_var(--hb-fill)] focus-visible:outline-offset-[3px] disabled:pointer-events-none disabled:cursor-default disabled:opacity-50 data-[glow=true]:data-[phase=holding]:[transition:transform_160ms_var(--hb-ease-out),background-color_160ms_ease,box-shadow_var(--hb-hold)_linear] contrast-more:[outline:1px_solid_var(--hb-text)] ${SIZES[size] || SIZES.md}${className ? ` ${className}` : ""}`}
       data-phase={phase}
       data-input={input ?? undefined}

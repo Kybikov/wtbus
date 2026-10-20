@@ -732,6 +732,9 @@ export default function ReactBitsKanban<T>({
                       {onHideColumn && (
                         <ContextMenuItem
                           disabled={visibleColumns.length <= 1}
+                          disabledReason={
+                            "На доске должен оставаться хотя бы один видимый столбец."
+                          }
                           onClick={() => onHideColumn(column.id)}
                         >
                           <EyeOff />

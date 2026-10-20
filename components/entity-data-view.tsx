@@ -130,6 +130,7 @@ export type EntityAction<T> = {
   onSelect: (item: T) => void
   destructive?: boolean
   disabled?: (item: T) => boolean
+  disabledReason?: string | ((item: T) => string)
   icon?: React.ComponentType<{ className?: string }>
 }
 
@@ -190,6 +191,12 @@ function EntityMenu<T>({
         {actions.map((action) => (
           <ContextMenuItem
             disabled={action.disabled?.(item)}
+            disabledReason={
+              typeof action.disabledReason === "function"
+                ? action.disabledReason(item)
+                : (action.disabledReason ??
+                  "Действие недоступно в текущем состоянии записи.")
+            }
             key={action.label}
             onClick={() => action.onSelect(item)}
             variant={action.destructive ? "destructive" : "default"}
@@ -244,6 +251,12 @@ function EntityActionButtons<T>({
                         "text-destructive hover:bg-destructive/10 hover:text-destructive"
                     )}
                     disabled={action.disabled?.(item)}
+                    disabledReason={
+                      typeof action.disabledReason === "function"
+                        ? action.disabledReason(item)
+                        : (action.disabledReason ??
+                          "Действие недоступно в текущем состоянии записи.")
+                    }
                     onClick={() => action.onSelect(item)}
                     size="icon"
                     variant="ghost"
@@ -623,6 +636,8 @@ export function EntityDataView<T>({
       label: "Выбрать / снять выбор",
       onSelect: (item: T) => toggleOne(item, !selected.has(getId(item))),
       disabled: (item: T) => !isSelectable(item),
+      disabledReason:
+        "Эту запись нельзя выбирать для групповых действий в её текущем состоянии.",
     },
   ]
   const columnWidth = (id: string) => columnWidths[id] ?? 180
@@ -1257,6 +1272,9 @@ export function EntityDataView<T>({
                                       </ContextMenuSub>
                                       <ContextMenuItem
                                         disabled={visibleColumns.length === 1}
+                                        disabledReason={
+                                          "В таблице должна оставаться хотя бы одна видимая колонка."
+                                        }
                                         onClick={() => {
                                           setVisible((current) => {
                                             const next = new Set(current)

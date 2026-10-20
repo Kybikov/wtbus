@@ -167,6 +167,11 @@ export function UniversalHeaderActions({
                     size="icon-lg"
                     variant="ghost"
                     disabled={!canOperate}
+                    disabledReason={
+                      !ready
+                        ? "Дождитесь загрузки данных аккаунта."
+                        : "Создание и перенос записей недоступны в кабинете водителя."
+                    }
                   />
                 }
               />
@@ -191,6 +196,9 @@ export function UniversalHeaderActions({
                 <DropdownMenuItem
                   key={target.href}
                   disabled={target.href === pathname && createDisabled}
+                  disabledReason={
+                    "Дождитесь загрузки данных для создания записи."
+                  }
                   onClick={() => {
                     if (target.href === pathname && onCreate) onCreate()
                     else router.push(target.href + "?create=1")
@@ -204,6 +212,9 @@ export function UniversalHeaderActions({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={busy !== null || dataActions?.importing}
+            disabledReason={
+              "Импорт или экспорт уже выполняется. Дождитесь завершения."
+            }
             onClick={() =>
               dataActions ? dataActions.onImport() : fileInput.current?.click()
             }
@@ -222,6 +233,7 @@ export function UniversalHeaderActions({
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger
+              disabledReason="Экспорт уже выполняется. Дождитесь завершения."
               disabled={busy !== null || dataActions?.exporting}
             >
               {busy === "export" || dataActions?.exporting ? (
@@ -235,6 +247,11 @@ export function UniversalHeaderActions({
               {viewExport && (
                 <DropdownMenuItem
                   disabled={viewExport.loading || !viewExport.rows}
+                  disabledReason={
+                    viewExport.loading
+                      ? "Дождитесь загрузки записей для экспорта."
+                      : "В текущем виде нет записей для экспорта."
+                  }
                   onClick={() =>
                     download(
                       new Blob([viewExport.csv], {

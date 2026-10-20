@@ -28,7 +28,7 @@ export function DatePicker({ id, label, value, onValueChange, min, max, disabled
   const earliest = civilDate(min)
   const latest = civilDate(max)
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger render={<Button id={id} type="button" variant="outline" disabled={disabled} aria-label={label} aria-required={required} aria-invalid={invalid} aria-describedby={describedBy} className={cn("h-11 w-full justify-between rounded-xl bg-control px-3 font-normal text-foreground aria-expanded:bg-control dark:bg-control dark:hover:bg-control-hover", className)} />}>
+    <PopoverTrigger render={<Button id={id} type="button" variant="outline" disabled={disabled} disabledReason={"Выбор даты недоступен во время загрузки или сохранения формы."} aria-label={label} aria-required={required} aria-invalid={invalid} aria-describedby={describedBy} className={cn("h-11 w-full justify-between rounded-xl bg-control px-3 font-normal text-foreground aria-expanded:bg-control dark:bg-control dark:hover:bg-control-hover", className)} />}>
       <span className="truncate">{selected ? new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(selected) : "Выберите дату"}</span><CalendarDays className="size-4 shrink-0" />
     </PopoverTrigger>
     <PopoverContent align="start" aria-label={label} className="w-auto max-w-[calc(100vw-2rem)] gap-0 rounded-xl p-0 motion-reduce:animate-none">

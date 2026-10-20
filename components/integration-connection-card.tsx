@@ -166,6 +166,11 @@ export function IntegrationConnectionCard({
               size="icon-sm"
               variant="ghost"
               disabled={disabled || saving}
+              disabledReason={
+                saving
+                  ? "Ключ сохраняется. Дождитесь завершения."
+                  : "Настройки интеграций сейчас недоступны."
+              }
               aria-label={
                 revealed ? `Скрыть токен ${name}` : `Показать токен ${name}`
               }
@@ -201,6 +206,11 @@ export function IntegrationConnectionCard({
                 variant="ghost"
                 className="text-destructive hover:text-destructive"
                 disabled={disabled || saving}
+                disabledReason={
+                  saving
+                    ? "Ключ сохраняется. Дождитесь завершения."
+                    : "Настройки интеграций сейчас недоступны."
+                }
                 onClick={() => setConfirmRemove(true)}
               >
                 <Trash2 />
@@ -223,12 +233,14 @@ export function IntegrationConnectionCard({
             <Button
               variant="outline"
               disabled={saving}
+              disabledReason={"Данные сохраняются. Дождитесь завершения."}
               onClick={() => setConfirmRemove(false)}
             >
               Отмена
             </Button>
             <HoldActionButton
               disabled={saving}
+              disabledReason={"Данные сохраняются. Дождитесь завершения."}
               onConfirm={() =>
                 void onRemove().then((removed) => {
                   if (removed) setConfirmRemove(false)

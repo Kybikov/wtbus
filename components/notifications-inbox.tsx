@@ -340,10 +340,16 @@ function InboxFilter({
   return (
     <Tabs value={value} onValueChange={(next) => onChange(String(next))}>
       <TabsList className="rounded-lg">
-        <TabsTrigger value="all" className="flex-none rounded-md px-2.5 text-xs">
+        <TabsTrigger
+          value="all"
+          className="flex-none rounded-md px-2.5 text-xs"
+        >
           Все
         </TabsTrigger>
-        <TabsTrigger value="unread" className="flex-none rounded-md px-2.5 text-xs">
+        <TabsTrigger
+          value="unread"
+          className="flex-none rounded-md px-2.5 text-xs"
+        >
           Непрочитанные
         </TabsTrigger>
       </TabsList>
@@ -401,6 +407,11 @@ export function NotificationsBell() {
             variant="ghost"
             size="sm"
             disabled={!inbox.unread || inbox.reading}
+            disabledReason={
+              inbox.reading
+                ? "Отметки о прочтении сохраняются. Дождитесь завершения."
+                : "Все уведомления уже прочитаны."
+            }
             aria-label="Прочитать все уведомления"
             title="Прочитать все"
             onClick={() => void inbox.read()}
@@ -424,6 +435,7 @@ export function NotificationsBell() {
               size="sm"
               variant="ghost"
               disabled={inbox.moreLoading}
+              disabledReason={"Данные ещё загружаются. Дождитесь завершения."}
               onClick={() => void inbox.more()}
             >
               {inbox.moreLoading ? "Загружаем…" : "Показать ещё"}
@@ -467,6 +479,11 @@ export function NotificationsInboxContent() {
         <Button
           variant="outline"
           disabled={!inbox.unread || inbox.reading}
+          disabledReason={
+            inbox.reading
+              ? "Отметки о прочтении сохраняются. Дождитесь завершения."
+              : "Все уведомления уже прочитаны."
+          }
           onClick={() => void inbox.read()}
         >
           <CheckCheck />
@@ -478,6 +495,7 @@ export function NotificationsInboxContent() {
         <Button
           variant="outline"
           disabled={inbox.moreLoading}
+          disabledReason={"Данные ещё загружаются. Дождитесь завершения."}
           onClick={() => void inbox.more()}
         >
           {inbox.moreLoading ? "Загружаем…" : "Показать ещё"}
