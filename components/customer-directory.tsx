@@ -216,6 +216,50 @@ export function CustomerDirectory() {
   }, [query])
 
   const loadController = React.useRef<AbortController | null>(null)
+  const [nextOffset, setNextOffset] = React.useState(0)
+  const [loadingMore, setLoadingMore] = React.useState(false)
+  const moreBusy = React.useRef(false)
+  const loadMore = async () => {
+    if (
+      loadController.current?.signal.aborted ||
+      moreBusy.current ||
+      loading ||
+      nextOffset >= total
+    )
+      return
+    moreBusy.current = true
+    setLoadingMore(true)
+    const generation = loadController.current
+    try {
+      const response = await sessionFetch(
+        `/api/customers?q=${encodeURIComponent(appliedQuery)}&limit=50&offset=${nextOffset}`,
+        {
+          cache: "no-store",
+          signal: AbortSignal.any([
+            generation?.signal ?? new AbortController().signal,
+            AbortSignal.timeout(10_000),
+          ]),
+        }
+      )
+      const payload = await response.json()
+      if (!response.ok || !isCustomerCollection(payload))
+        throw Error("Не удалось подгрузить клиентов.")
+      if (loadController.current !== generation || generation?.signal.aborted)
+        return
+      setCustomers((current) => {
+        const ids = new Set(current.map((item) => item.id))
+        return [
+          ...current,
+          ...payload.items.filter((item) => !ids.has(item.id)),
+        ]
+      })
+      setNextOffset((current) => current + payload.items.length)
+      setTotal(payload.items.length ? payload.total : customers.length)
+    } finally {
+      moreBusy.current = false
+      setLoadingMore(false)
+    }
+  }
   const load = React.useCallback(async () => {
     loadController.current?.abort()
     const controller = new AbortController()
@@ -255,6 +299,7 @@ export function CustomerDirectory() {
         throw new Error("Не удалось загрузить клиентов.")
       if (controller.signal.aborted) return
       setCustomers(payload.items)
+      setNextOffset(payload.items.length)
       setTotal(payload.total)
       setCustomFields(fieldsPayload.items.filter((field) => field.isActive))
     } catch (reason) {
@@ -555,7 +600,6 @@ export function CustomerDirectory() {
         }}
         pageDescription="Контакты, поездки и история обращений"
         pageTitle="Клиенты"
-
       >
         <input
           accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -597,6 +641,9 @@ export function CustomerDirectory() {
           <EntityDataView
             collection="customers"
             totalCount={total}
+            hasMore={nextOffset < total}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
             filters={[
               {
                 id: "telegram",

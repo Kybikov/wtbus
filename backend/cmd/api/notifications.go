@@ -461,6 +461,11 @@ func (app *application) notificationWorker(ctx context.Context) {
 	// Two push workers are enough to deliver concurrently; the partial indexes make
 	// each idle probe cheap, while the longer cadence avoids dozens of transactions
 	// per second when there is no work.
+	run("check integration health", 30*time.Second, app.refreshIntegrationHealth)
+	run("retain API request history", time.Minute, func(ctx context.Context) error {
+		_, err := app.db.Exec(ctx, `DELETE FROM api_request_logs WHERE id IN (SELECT id FROM api_request_logs WHERE created_at<now()-interval '30 days' ORDER BY created_at LIMIT 5000)`)
+		return err
+	})
 	run("publish realtime events", 750*time.Millisecond, app.publishRealtime)
 	for range 2 {
 		run("deliver push job", time.Second, app.deliverPush)

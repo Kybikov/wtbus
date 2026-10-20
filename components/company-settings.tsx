@@ -8,6 +8,7 @@ import { AdminNotice } from "@/components/admin-notice"
 import { CustomFieldManager } from "@/components/custom-field-manager"
 import { PaymentSettings } from "@/components/payment-settings"
 import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
+import { ActivityHistory } from "@/components/activity-history"
 import { ExchangeRateSettings } from "@/components/exchange-rate-settings"
 import { useFieldAutosave } from "@/components/use-field-autosave"
 import { Palette } from "lucide-react"
@@ -47,7 +48,7 @@ function isBranding(value: unknown): value is Branding {
 }
 
 export type CompanySettingsSection =
-  "company" | "payments" | "finance" | "fields" | "integrations"
+  "company" | "payments" | "finance" | "fields" | "integrations" | "activity"
 export function CompanySettings({
   section = "company",
 }: {
@@ -135,6 +136,7 @@ export function CompanySettings({
   return (
     <div className="company-settings w-full min-w-0 space-y-4">
       <AdminNotice message={error} variant="error" />
+      {section === "activity" && <ActivityHistory role={role} />}
       {section === "company" ? (
         <section className="settings-panel" aria-label="Визуальный стиль">
           <div className="flex flex-wrap items-start justify-between gap-3">

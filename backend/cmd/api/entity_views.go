@@ -13,6 +13,7 @@ import (
 )
 
 type entityViewConfig struct {
+	Query         *entityQueryNode        `json:"query,omitempty"`
 	Mode          string                  `json:"mode"`
 	Columns       []string                `json:"columns"`
 	Filters       map[string]string       `json:"filters"`
@@ -107,6 +108,15 @@ func validBoardIDs(ids []string) bool {
 }
 
 func validateEntityView(entity string, input *entityViewInput) bool {
+	if input.Config.Query != nil {
+		if input.Config.Query.Combinator == "" {
+			return false
+		}
+		count := 0
+		if !validEntityQuery(input.Config.Query, 0, &count) {
+			return false
+		}
+	}
 	if !validEntityCollection(entity) {
 		return false
 	}
@@ -408,4 +418,48 @@ func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
 		status = 201
 	}
 	writeJSON(w, status, map[string]any{"item": item})
+}
+
+type entityQueryNode struct {
+	ID         string            `json:"id"`
+	Combinator string            `json:"combinator,omitempty"`
+	Rules      []entityQueryNode `json:"rules,omitempty"`
+	Field      string            `json:"field,omitempty"`
+	Operator   string            `json:"operator,omitempty"`
+	Value      []string          `json:"value,omitempty"`
+}
+
+func validEntityQuery(node *entityQueryNode, depth int, count *int) bool {
+	*count++
+	if *count > 40 || depth > 3 || len(node.ID) > 100 || node.ID == "" {
+		return false
+	}
+	if node.Combinator != "" {
+		if node.Combinator != "and" && node.Combinator != "or" {
+			return false
+		}
+		if node.Field != "" || node.Operator != "" {
+			return false
+		}
+		for i := range node.Rules {
+			if !validEntityQuery(&node.Rules[i], depth+1, count) {
+				return false
+			}
+		}
+		return true
+	}
+	if !entityColumnID.MatchString(node.Field) || len(node.Rules) > 0 || len(node.Value) > 50 {
+		return false
+	}
+	switch node.Operator {
+	case "eq", "neq", "in", "notIn", "contains", "notContains", "empty", "notEmpty", "gt", "gte", "lt", "lte", "before", "after":
+	default:
+		return false
+	}
+	for _, value := range node.Value {
+		if len([]rune(value)) > 500 {
+			return false
+		}
+	}
+	return true
 }

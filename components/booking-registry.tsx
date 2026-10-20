@@ -333,13 +333,64 @@ export function BookingRegistry() {
     React.useState<RequestPrefill | null>(null)
 
   const loadController = React.useRef<AbortController | null>(null)
+  const [nextOffset, setNextOffset] = React.useState(0)
+  const [loadingMore, setLoadingMore] = React.useState(false)
+  const moreBusy = React.useRef(false)
+  const loadMore = async () => {
+    if (
+      loadController.current?.signal.aborted ||
+      moreBusy.current ||
+      loading ||
+      nextOffset >= total
+    )
+      return
+    moreBusy.current = true
+    setLoadingMore(true)
+    const generation = loadController.current
+    const params = new URLSearchParams({
+      limit: "100",
+      offset: String(nextOffset),
+    })
+    if (status) params.set("status", status)
+    if (query.trim()) params.set("q", query.trim())
+    if (date) params.set("date", date)
+    if (source) params.set("source", source)
+    if (tripStatus) params.set("trip_status", tripStatus)
+    if (paymentMethod) params.set("payment_method", paymentMethod)
+    try {
+      const response = await sessionFetch(`/api/bookings?${params}`, {
+        cache: "no-store",
+        signal: AbortSignal.any([
+          generation?.signal ?? new AbortController().signal,
+          AbortSignal.timeout(10_000),
+        ]),
+      })
+      const payload = await response.json()
+      if (!response.ok || !isCollection(payload))
+        throw Error("Не удалось подгрузить бронирования.")
+      if (loadController.current !== generation || generation?.signal.aborted)
+        return
+      setItems((current) => {
+        const ids = new Set(current.map((item) => item.id))
+        return [
+          ...current,
+          ...payload.items.filter((item) => !ids.has(item.id)),
+        ]
+      })
+      setNextOffset((current) => current + payload.items.length)
+      setTotal(payload.items.length ? (payload.total ?? total) : items.length)
+    } finally {
+      moreBusy.current = false
+      setLoadingMore(false)
+    }
+  }
   const load = React.useCallback(async () => {
     loadController.current?.abort()
     const controller = new AbortController()
     loadController.current = controller
     setLoading(true)
     setError(null)
-    const params = new URLSearchParams({ limit: "200" })
+    const params = new URLSearchParams({ limit: "100" })
     if (status) params.set("status", status)
     if (query.trim()) params.set("q", query.trim())
     if (date) params.set("date", date)
@@ -364,6 +415,7 @@ export function BookingRegistry() {
         )
       if (controller.signal.aborted) return
       setItems(payload.items)
+      setNextOffset(payload.items.length)
       setTotal(payload.total ?? payload.items.length)
       setTimezone(payload.timezone)
     } catch (reason) {
@@ -950,6 +1002,9 @@ export function BookingRegistry() {
           <EntityDataView
             collection="bookings"
             totalCount={total}
+            hasMore={nextOffset < total}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
             filterValues={{ status, date, source, tripStatus, paymentMethod }}
             onFiltersChange={(values) => {
               setStatus((values.status ?? "") as "" | BookingStatus)

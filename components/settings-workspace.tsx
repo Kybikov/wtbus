@@ -11,6 +11,7 @@ import {
   Plug,
   CircleDollarSign,
   SlidersHorizontal,
+  History,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 const sections = [
@@ -64,6 +65,13 @@ const sections = [
     href: "/settings/fields",
     label: "Дополнительные поля",
     icon: SlidersHorizontal,
+    roles: ["owner", "admin", "developer"],
+  },
+  {
+    group: "Компания",
+    href: "/settings/activity",
+    label: "Журнал действий",
+    icon: History,
     roles: ["owner", "admin", "developer"],
   },
   {

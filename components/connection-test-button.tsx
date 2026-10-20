@@ -23,6 +23,18 @@ export function ConnectionTestButton({
       setStatus("done")
       toast.success(message)
     } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "retryLater" in error &&
+        error.retryLater
+      ) {
+        setStatus("idle")
+        toast.info(
+          error instanceof Error ? error.message : "Повторите проверку позже."
+        )
+        return
+      }
       setStatus("error")
       toast.error(
         error instanceof Error ? error.message : "Не удалось выполнить проверку"

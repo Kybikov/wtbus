@@ -1,6 +1,7 @@
 "use client"
 // Activity timeline extracted from React Bits Pro billing-8.
 // Demo invoice data and actions are replaced by tenant-scoped recorded events.
+import { activityActions, activityFieldNames } from "@/lib/activity-labels"
 import { Badge } from "@/components/ui/badge"
 import { formatEntityDate } from "@/lib/entity-columns"
 
@@ -8,6 +9,7 @@ export type EntityActivityEvent = {
   action: string
   actor: string
   kind: string
+  changedFields?: string[]
   createdAt: string
 }
 
@@ -39,10 +41,13 @@ export default function EntityActivityTimeline({
           </span>
           <div className="min-w-0 pb-0.5 [overflow-wrap:anywhere]">
             <p className="text-sm font-medium">
-              {event.action === "public_booking_created"
-                ? "Бронирование создано на сайте"
-                : event.action.replaceAll("_", " ")}
+              {activityActions[event.action] ?? "Действие с записью"}
             </p>
+            {!!event.changedFields?.length && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {activityFieldNames(event.changedFields)}
+              </p>
+            )}
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{event.actor}</span>
               {event.kind === "system" && (

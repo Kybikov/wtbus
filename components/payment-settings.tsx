@@ -222,12 +222,6 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
           </span>
         </span>
       </label>
-      <div className="settings-footer">
-        <p className="max-w-xl text-xs leading-5 text-muted-foreground">
-          Гроші надходять напряму на рахунок ФОП. Для автоматичної звірки
-          потрібен персональний API-токен Monobank у блоці інтеграцій.
-        </p>
-      </div>
     </section>
   )
 }

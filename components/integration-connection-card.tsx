@@ -4,6 +4,8 @@ import { HoldActionButton } from "@/components/ui/hold-action-button"
 import * as React from "react"
 import {
   Check,
+  CircleAlert,
+  Clock3,
   Eye,
   EyeOff,
   KeyRound,
@@ -39,7 +41,9 @@ export function IntegrationConnectionCard({
   preview,
   test,
   children,
+  health,
 }: {
+  health?: { status: string; checkedAt?: string; lastSuccessAt?: string }
   preview?: string
   test: React.ReactNode
   children?: React.ReactNode
@@ -77,10 +81,49 @@ export function IntegrationConnectionCard({
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-semibold">{name}</h3>
         </div>
-        <Badge variant="secondary">
-          {configured ? <Check /> : <KeyRound />}
-          {configured ? "Ключ сохранён" : "Не настроено"}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge
+            variant="secondary"
+            className={
+              health?.status === "working"
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                : health?.status === "error"
+                  ? "bg-destructive/15 text-destructive"
+                  : ""
+            }
+          >
+            {!configured ? (
+              <KeyRound />
+            ) : health?.status === "working" ? (
+              <Check />
+            ) : health?.status === "error" ? (
+              <CircleAlert />
+            ) : (
+              <Clock3 />
+            )}
+            {!configured
+              ? "Не подключено"
+              : health?.status === "working"
+                ? "Работает"
+                : health?.status === "error"
+                  ? "Ошибка"
+                  : "Ожидает проверки"}
+          </Badge>
+          {configured && health?.lastSuccessAt && (
+            <time
+              dateTime={health.lastSuccessAt}
+              title="Последняя успешная проверка"
+              className="text-[11px] text-muted-foreground tabular-nums"
+            >
+              {new Date(health.lastSuccessAt).toLocaleString("ru-RU", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </time>
+          )}
+        </div>
       </div>
       <p className="mt-3 min-h-10 text-sm leading-5 text-muted-foreground">
         {description}

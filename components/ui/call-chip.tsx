@@ -130,11 +130,7 @@ const CallChip: React.FC<CallChipProps> = ({
     } else if (s === "done") {
       setFraction(1, !animate)
     } else if (s === "error") {
-      const fill = fillRef.current
-      const live = fill
-        ? new DOMMatrix(getComputedStyle(fill).transform).a
-        : fraction.current
-      setFraction(Math.min(1, Math.max(0, live)), true)
+      setFraction(1, !animate)
       if (animate && shake > 0 && !reduceMotion() && rootRef.current) {
         shakeAnim.current = rootRef.current.animate(
           SHAKE.map((k) => ({
@@ -196,9 +192,9 @@ const CallChip: React.FC<CallChipProps> = ({
     const ms = showTimer && clock.current.ms ? Math.round(clock.current.ms) : 0
     const when =
       status === "done" && ms
-        ? ` in ${ms} ms`
+        ? ` за ${ms} мс`
         : status === "error" && ms
-          ? ` after ${ms} ms`
+          ? ` через ${ms} мс`
           : ""
     setAnnounce(`${name} ${argument}, ${WORDS[status] ?? status}${when}`)
     // eslint-disable-next-line react-hooks/exhaustive-deps

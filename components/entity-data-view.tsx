@@ -1,6 +1,27 @@
 "use client"
 
+import {
+  countQuery,
+  matchesQuery,
+  type QueryField,
+  type FilterGroup,
+} from "@/lib/entity-query"
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable"
+import { SortableColumn, columnMotion, CSS } from "@/components/sortable-column"
 import * as React from "react"
+import { InfiniteSentinel } from "@/components/infinite-sentinel"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { entityDetailHref } from "@/lib/entity-details"
@@ -109,6 +130,9 @@ type Props<T> = {
   items: T[]
   renderSchedule?: (items: T[]) => React.ReactNode
   toolbarExtras?: React.ReactNode
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => Promise<void>
   totalCount?: number
   getId: (item: T) => string
   getLabel: (item: T) => string
@@ -250,6 +274,9 @@ export function EntityDataView<T>({
   isSelectable = () => true,
   renderSchedule,
   toolbarExtras,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: Props<T>) {
   const router = useRouter()
   const detailEnabled = collection !== "cash-balances"
@@ -288,11 +315,15 @@ export function EntityDataView<T>({
     right: string[]
   }>({ left: [], right: [] })
   const [sort, setSort] = React.useState<EntityViewConfig["sort"]>(null)
+  const [queryGroup, setQueryGroup] = React.useState<FilterGroup | undefined>()
   const [cardLayout, setCardLayout] = React.useState<CardLayout | undefined>()
   const [board, setBoard] = React.useState<BoardLayout | undefined>()
   const [cardSettingsOpen, setCardSettingsOpen] = React.useState(false)
   const [filterRequest, setFilterRequest] = React.useState<string | null>(null)
-  const dragColumn = React.useRef<string | null>(null)
+  const columnSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
   const [localFilters, setLocalFilters] = React.useState<
     Record<string, string>
   >({})
@@ -312,6 +343,60 @@ export function EntityDataView<T>({
           ]
         : []
   )
+  const queryFields: QueryField<T>[] = columns.map((column) => {
+    const facet = filters.find((filter) => filter.id === column.id)
+    const kind =
+      facet?.options?.length ||
+      column.metric?.options?.length ||
+      column.metric?.kind === "boolean"
+        ? "select"
+        : column.metric?.kind === "number" || column.metric?.kind === "money"
+          ? "number"
+          : column.metric?.kind === "date" || facet?.type === "date"
+            ? "date"
+            : "text"
+    return {
+      id: column.id,
+      label: column.label,
+      kind,
+      options:
+        facet?.options ??
+        column.metric?.options ??
+        (column.metric?.kind === "boolean"
+          ? [
+              { value: "true", label: "Да" },
+              { value: "false", label: "Нет" },
+            ]
+          : undefined),
+      matches: facet?.matches,
+      read: (item: T) => {
+        if (facet?.matches && facet.options?.length)
+          return facet.options
+            .filter((option) => facet.matches!(item, option.value))
+            .map((option) => option.value)
+        const value =
+          column.metric?.getValue(item) ??
+          column.sortValue?.(item) ??
+          column.text?.(item)
+        if (value && typeof value === "object" && "amountMinor" in value)
+          return value.amountMinor / 100
+        return value
+      },
+    }
+  })
+  for (const filter of filters)
+    if (!queryFields.some((field) => field.id === filter.id))
+      queryFields.push({
+        id: filter.id,
+        label: filter.label,
+        kind: filter.type === "date" ? "date" : "select",
+        options: filter.options,
+        matches: filter.matches,
+        read: (item) =>
+          filter.options
+            ?.filter((option) => filter.matches?.(item, option.value))
+            .map((option) => option.value),
+      })
   const items = sourceItems
     .filter((item) =>
       filters.every(
@@ -321,6 +406,7 @@ export function EntityDataView<T>({
           filter.matches(item, values[filter.id])
       )
     )
+    .filter((item) => matchesQuery(item, queryGroup, queryFields))
     .sort((a, b) => {
       if (!sort) return 0
       const column = columns.find((candidate) => candidate.id === sort.columnId)
@@ -358,6 +444,13 @@ export function EntityDataView<T>({
             )
       return sort.direction === "asc" ? result : -result
     })
+  const [renderLimit, setRenderLimit] = React.useState(60)
+  const renderKey = JSON.stringify([mode, queryGroup, values, sort])
+  React.useEffect(() => {
+    const timer = setTimeout(() => setRenderLimit(60), 0)
+    return () => clearTimeout(timer)
+  }, [renderKey])
+  const shownItems = items.slice(0, renderLimit)
   const defaultColumns = columns
     .filter((column) => column.defaultVisible !== false)
     .map((column) => column.id)
@@ -374,6 +467,7 @@ export function EntityDataView<T>({
     mode,
     columns: columnOrder.filter((id) => visible.has(id)),
     filters: values,
+    query: queryGroup,
     metrics,
     columnWidths,
     pinnedColumns,
@@ -400,6 +494,7 @@ export function EntityDataView<T>({
     setColumnWidths(safe.columnWidths ?? {})
     setPinnedColumns(safe.pinnedColumns ?? { left: [], right: [] })
     setSort(safe.sort ?? null)
+    setQueryGroup(safe.query)
     setCardLayout(safe.card)
     setBoard(safe.board)
     setMetrics(normalizeMetrics(safe.metrics, metricFields))
@@ -645,6 +740,11 @@ export function EntityDataView<T>({
         resultCount={items.length}
         loading={loading}
         filters={filters}
+        queryFields={queryFields}
+        queryCount={(query) =>
+          sourceItems.filter((item) => matchesQuery(item, query, queryFields))
+            .length
+        }
         extras={toolbarExtras}
         bulkActions={bulkActions}
         selectedCount={selected.size}
@@ -715,7 +815,7 @@ export function EntityDataView<T>({
                 />
                 Выбрать все
               </label>
-              {items.map((item) => (
+              {shownItems.map((item) => (
                 <MobileSwipeActions
                   key={getId(item)}
                   label={getLabel(item)}
@@ -816,280 +916,341 @@ export function EntityDataView<T>({
               ))}
             </div>
             <div className="surface-card hidden overflow-hidden md:block">
-              <Table
-                className="table-fixed"
-                style={{
-                  minWidth:
-                    48 +
-                    visibleColumns.reduce(
-                      (sum, column) => sum + columnWidth(column.id),
-                      0
-                    ) +
-                    (actions.length ? 112 : 0),
+              <DndContext
+                sensors={columnSensors}
+                collisionDetection={closestCenter}
+                accessibility={{
+                  announcements: {
+                    onDragStart: ({ active }) =>
+                      `Перемещение колонки ${columns.find((c) => c.id === active.id)?.label ?? ""}`,
+                    onDragOver: ({ active, over }) =>
+                      over
+                        ? `Колонка ${columns.find((c) => c.id === active.id)?.label ?? ""} рядом с ${columns.find((c) => c.id === over.id)?.label ?? ""}`
+                        : undefined,
+                    onDragEnd: ({ active, over }) =>
+                      over
+                        ? `Колонка ${columns.find((c) => c.id === active.id)?.label ?? ""} перемещена`
+                        : "Перемещение отменено",
+                    onDragCancel: () => "Перемещение отменено",
+                  },
+                  screenReaderInstructions: {
+                    draggable:
+                      "Чтобы переместить колонку, нажмите пробел, затем стрелки влево или вправо. Пробел — подтвердить, Escape — отменить.",
+                  },
+                }}
+                onDragEnd={({ active, over }) => {
+                  if (over && active.id !== over.id)
+                    moveColumn(String(active.id), String(over.id))
                 }}
               >
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 z-[4] w-12 bg-card pl-4">
-                      <Checkbox
-                        aria-label="Выбрать все записи"
-                        checked={allSelected}
-                        disabled={selectableItems.length === 0}
-                        onCheckedChange={toggleAll}
-                      />
-                    </TableHead>
-                    {visibleColumns.map((column) => {
-                      const activeSort = sort?.columnId === column.id
-                      const matchingFilter = filters.find(
-                        (filter) => filter.id === column.id
-                      )
-                      return (
-                        <ContextMenu key={column.id}>
-                          <ContextMenuTrigger
-                            render={
-                              <TableHead
-                                aria-sort={
-                                  activeSort
-                                    ? sort.direction === "asc"
-                                      ? "ascending"
-                                      : "descending"
-                                    : "none"
-                                }
-                                className={cn(
-                                  "group/header relative bg-card p-0",
-                                  column.className,
-                                  (pinnedColumns.left.includes(column.id) ||
-                                    pinnedColumns.right.includes(column.id)) &&
-                                    "shadow-[inset_-1px_0_hsl(var(--border))]"
-                                )}
-                                style={{
-                                  width: columnWidth(column.id),
-                                  minWidth: columnWidth(column.id),
-                                  maxWidth: columnWidth(column.id),
-                                  ...pinStyle(column.id),
-                                }}
-                              />
-                            }
-                          >
-                            <button
-                              aria-label={`${column.label}: сортировать и перетащить`}
-                              className="flex h-10 w-full cursor-grab items-center gap-1.5 overflow-hidden px-2 text-left active:cursor-grabbing"
-                              draggable
-                              onClick={() =>
-                                setSort((current) => ({
-                                  columnId: column.id,
-                                  direction:
-                                    current?.columnId === column.id &&
-                                    current.direction === "asc"
-                                      ? "desc"
-                                      : "asc",
-                                }))
-                              }
-                              onDragStart={() =>
-                                (dragColumn.current = column.id)
-                              }
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={() => {
-                                if (dragColumn.current)
-                                  moveColumn(dragColumn.current, column.id)
-                                dragColumn.current = null
-                              }}
-                              type="button"
-                            >
-                              <GripVertical className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/header:opacity-100" />
-                              <span className="truncate">{column.label}</span>
-                              {activeSort ? (
-                                sort.direction === "asc" ? (
-                                  <ArrowDownAZ className="size-3.5 shrink-0 text-primary" />
-                                ) : (
-                                  <ArrowUpAZ className="size-3.5 shrink-0 text-primary" />
-                                )
-                              ) : null}
-                            </button>
-                            <button
-                              aria-label={`Изменить ширину колонки ${column.label}`}
-                              className="absolute top-1/2 right-0 z-10 h-4 w-3 -translate-y-1/2 cursor-col-resize after:absolute after:top-0 after:left-1/2 after:h-4 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border after:content-[''] hover:after:w-0.5 hover:after:bg-primary focus-visible:after:w-0.5 focus-visible:after:bg-primary"
-                              onPointerDown={(event) =>
-                                startResize(event, column.id)
-                              }
-                              type="button"
-                            />
-                          </ContextMenuTrigger>
-                          <ContextMenuContent className="w-56">
-                            <ContextMenuGroup>
-                              <ContextMenuLabel>
-                                {column.label}
-                              </ContextMenuLabel>
-                              <ContextMenuItem
-                                onClick={() =>
-                                  setSort({
-                                    columnId: column.id,
-                                    direction: "asc",
-                                  })
-                                }
-                              >
-                                <ArrowDownAZ /> По возрастанию
-                              </ContextMenuItem>
-                              <ContextMenuItem
-                                onClick={() =>
-                                  setSort({
-                                    columnId: column.id,
-                                    direction: "desc",
-                                  })
-                                }
-                              >
-                                <ArrowUpAZ /> По убыванию
-                              </ContextMenuItem>
-                              {activeSort ? (
-                                <ContextMenuItem onClick={() => setSort(null)}>
-                                  <X /> Сбросить сортировку
-                                </ContextMenuItem>
-                              ) : null}
-                              {matchingFilter ? (
-                                <ContextMenuItem
-                                  onClick={() => setFilterRequest(column.id)}
-                                >
-                                  <Filter /> Добавить фильтр
-                                </ContextMenuItem>
-                              ) : null}
-                              <ContextMenuSeparator />
-                              <ContextMenuSub>
-                                <ContextMenuSubTrigger>
-                                  <PanelLeft className="mr-2" /> Закрепить
-                                </ContextMenuSubTrigger>
-                                <ContextMenuSubContent>
-                                  <ContextMenuGroup>
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        pinColumn(column.id, "left")
-                                      }
-                                    >
-                                      <PanelLeft /> Слева
-                                    </ContextMenuItem>
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        pinColumn(column.id, "right")
-                                      }
-                                    >
-                                      <PanelRight /> Справа
-                                    </ContextMenuItem>
-                                    <ContextMenuItem
-                                      onClick={() => pinColumn(column.id, null)}
-                                    >
-                                      <PinOff /> Открепить
-                                    </ContextMenuItem>
-                                  </ContextMenuGroup>
-                                </ContextMenuSubContent>
-                              </ContextMenuSub>
-                              <ContextMenuItem
-                                disabled={visibleColumns.length === 1}
-                                onClick={() => {
-                                  setVisible((current) => {
-                                    const next = new Set(current)
-                                    next.delete(column.id)
-                                    return next
-                                  })
-                                  pinColumn(column.id, null)
-                                  if (sort?.columnId === column.id)
-                                    setSort(null)
-                                }}
-                              >
-                                <Eye /> Скрыть колонку
-                              </ContextMenuItem>
-                            </ContextMenuGroup>
-                          </ContextMenuContent>
-                        </ContextMenu>
-                      )
-                    })}
-                    {actions?.length ? (
-                      <TableHead className="sticky right-0 z-[4] w-28 bg-card text-right">
-                        Действия
-                      </TableHead>
-                    ) : null}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => {
-                    const id = getId(item)
-                    return (
-                      <ContextMenu key={id}>
-                        <ContextMenuTrigger
-                          render={
-                            <TableRow
-                              data-state={
-                                selected.has(id) ? "selected" : undefined
-                              }
-                            />
-                          }
-                        >
-                          <TableCell className="sticky left-0 z-[3] w-12 bg-card pl-4">
-                            <Checkbox
-                              aria-label={`Выбрать ${getLabel(item)}`}
-                              checked={selected.has(id)}
-                              disabled={!isSelectable(item)}
-                              onCheckedChange={(checked) =>
-                                toggleOne(item, checked)
-                              }
-                            />
-                          </TableCell>
-                          {visibleColumns.map((column) => (
-                            <TableCell
-                              className={cn(
-                                "overflow-hidden bg-card",
-                                column.className
-                              )}
+                <SortableContext
+                  items={visibleColumns.map((column) => column.id)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  <Table
+                    className="table-fixed"
+                    style={{
+                      minWidth:
+                        48 +
+                        visibleColumns.reduce(
+                          (sum, column) => sum + columnWidth(column.id),
+                          0
+                        ) +
+                        (actions.length ? 112 : 0),
+                    }}
+                  >
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="sticky left-0 z-[4] w-12 bg-card pl-4">
+                          <Checkbox
+                            aria-label="Выбрать все записи"
+                            checked={allSelected}
+                            disabled={selectableItems.length === 0}
+                            onCheckedChange={toggleAll}
+                          />
+                        </TableHead>
+                        {visibleColumns.map((column) => {
+                          const activeSort = sort?.columnId === column.id
+                          const matchingFilter = filters.find(
+                            (filter) => filter.id === column.id
+                          )
+                          return (
+                            <SortableColumn
                               key={column.id}
-                              style={{
-                                width: columnWidth(column.id),
-                                minWidth: columnWidth(column.id),
-                                maxWidth: columnWidth(column.id),
-                                ...pinStyle(column.id),
-                              }}
-                            >
-                              {detailEnabled &&
-                              column.id ===
-                                (collection === "bookings"
-                                  ? "passenger"
-                                  : "name") ? (
-                                <Link
-                                  href={entityDetailHref(
-                                    collection,
-                                    getId(item)
-                                  )}
-                                  className="block rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
-                                >
-                                  {column.value(item)}
-                                </Link>
-                              ) : (
-                                column.value(item)
+                              id={column.id}
+                              index={columns.findIndex(
+                                (c) => c.id === column.id
                               )}
-                            </TableCell>
-                          ))}
-                          {actions?.length ? (
-                            <TableCell className="sticky right-0 z-[3] w-28 bg-card text-right">
-                              <EntityActionButtons
-                                actions={actions}
-                                item={item}
-                                label={getLabel(item)}
-                              />
-                            </TableCell>
-                          ) : null}
-                        </ContextMenuTrigger>
-                        <EntityMenu
-                          actions={actions}
-                          item={item}
-                          label={getLabel(item)}
-                        />
-                      </ContextMenu>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+                            >
+                              {(drag) => (
+                                <ContextMenu>
+                                  <ContextMenuTrigger
+                                    render={
+                                      <TableHead
+                                        ref={drag.setNodeRef}
+                                        aria-sort={
+                                          activeSort
+                                            ? sort.direction === "asc"
+                                              ? "ascending"
+                                              : "descending"
+                                            : "none"
+                                        }
+                                        className={cn(
+                                          "group/header relative bg-card p-0",
+                                          column.className,
+                                          (pinnedColumns.left.includes(
+                                            column.id
+                                          ) ||
+                                            pinnedColumns.right.includes(
+                                              column.id
+                                            )) &&
+                                            "shadow-[inset_-1px_0_hsl(var(--border))]"
+                                        )}
+                                        style={{
+                                          width: columnWidth(column.id),
+                                          minWidth: columnWidth(column.id),
+                                          maxWidth: columnWidth(column.id),
+                                          ...pinStyle(column.id),
+                                          transform: CSS.Translate.toString(
+                                            drag.transform
+                                          ),
+                                          transition: drag.transition,
+                                          zIndex: drag.isDragging
+                                            ? 10
+                                            : undefined,
+                                        }}
+                                      />
+                                    }
+                                  >
+                                    <button
+                                      aria-label={`${column.label}: сортировать и перетащить`}
+                                      className="flex h-10 w-full cursor-grab items-center gap-1.5 overflow-hidden px-2 text-left active:cursor-grabbing"
+                                      {...drag.attributes}
+                                      {...drag.listeners}
+                                      onClick={() =>
+                                        setSort((current) => ({
+                                          columnId: column.id,
+                                          direction:
+                                            current?.columnId === column.id &&
+                                            current.direction === "asc"
+                                              ? "desc"
+                                              : "asc",
+                                        }))
+                                      }
+                                      type="button"
+                                    >
+                                      <GripVertical className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/header:opacity-100" />
+                                      <span className="truncate">
+                                        {column.label}
+                                      </span>
+                                      {activeSort ? (
+                                        sort.direction === "asc" ? (
+                                          <ArrowDownAZ className="size-3.5 shrink-0 text-primary" />
+                                        ) : (
+                                          <ArrowUpAZ className="size-3.5 shrink-0 text-primary" />
+                                        )
+                                      ) : null}
+                                    </button>
+                                    <button
+                                      aria-label={`Изменить ширину колонки ${column.label}`}
+                                      className="absolute top-1/2 right-0 z-10 h-4 w-3 -translate-y-1/2 cursor-col-resize after:absolute after:top-0 after:left-1/2 after:h-4 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border after:content-[''] hover:after:w-0.5 hover:after:bg-primary focus-visible:after:w-0.5 focus-visible:after:bg-primary"
+                                      onPointerDown={(event) =>
+                                        startResize(event, column.id)
+                                      }
+                                      type="button"
+                                    />
+                                  </ContextMenuTrigger>
+                                  <ContextMenuContent className="w-56">
+                                    <ContextMenuGroup>
+                                      <ContextMenuLabel>
+                                        {column.label}
+                                      </ContextMenuLabel>
+                                      <ContextMenuItem
+                                        onClick={() =>
+                                          setSort({
+                                            columnId: column.id,
+                                            direction: "asc",
+                                          })
+                                        }
+                                      >
+                                        <ArrowDownAZ /> По возрастанию
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        onClick={() =>
+                                          setSort({
+                                            columnId: column.id,
+                                            direction: "desc",
+                                          })
+                                        }
+                                      >
+                                        <ArrowUpAZ /> По убыванию
+                                      </ContextMenuItem>
+                                      {activeSort ? (
+                                        <ContextMenuItem
+                                          onClick={() => setSort(null)}
+                                        >
+                                          <X /> Сбросить сортировку
+                                        </ContextMenuItem>
+                                      ) : null}
+                                      {matchingFilter ? (
+                                        <ContextMenuItem
+                                          onClick={() =>
+                                            setFilterRequest(column.id)
+                                          }
+                                        >
+                                          <Filter /> Добавить фильтр
+                                        </ContextMenuItem>
+                                      ) : null}
+                                      <ContextMenuSeparator />
+                                      <ContextMenuSub>
+                                        <ContextMenuSubTrigger>
+                                          <PanelLeft className="mr-2" />{" "}
+                                          Закрепить
+                                        </ContextMenuSubTrigger>
+                                        <ContextMenuSubContent>
+                                          <ContextMenuGroup>
+                                            <ContextMenuItem
+                                              onClick={() =>
+                                                pinColumn(column.id, "left")
+                                              }
+                                            >
+                                              <PanelLeft /> Слева
+                                            </ContextMenuItem>
+                                            <ContextMenuItem
+                                              onClick={() =>
+                                                pinColumn(column.id, "right")
+                                              }
+                                            >
+                                              <PanelRight /> Справа
+                                            </ContextMenuItem>
+                                            <ContextMenuItem
+                                              onClick={() =>
+                                                pinColumn(column.id, null)
+                                              }
+                                            >
+                                              <PinOff /> Открепить
+                                            </ContextMenuItem>
+                                          </ContextMenuGroup>
+                                        </ContextMenuSubContent>
+                                      </ContextMenuSub>
+                                      <ContextMenuItem
+                                        disabled={visibleColumns.length === 1}
+                                        onClick={() => {
+                                          setVisible((current) => {
+                                            const next = new Set(current)
+                                            next.delete(column.id)
+                                            return next
+                                          })
+                                          pinColumn(column.id, null)
+                                          if (sort?.columnId === column.id)
+                                            setSort(null)
+                                        }}
+                                      >
+                                        <Eye /> Скрыть колонку
+                                      </ContextMenuItem>
+                                    </ContextMenuGroup>
+                                  </ContextMenuContent>
+                                </ContextMenu>
+                              )}
+                            </SortableColumn>
+                          )
+                        })}
+                        {actions?.length ? (
+                          <TableHead className="sticky right-0 z-[4] w-28 bg-card text-right">
+                            Действия
+                          </TableHead>
+                        ) : null}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {shownItems.map((item) => {
+                        const id = getId(item)
+                        return (
+                          <ContextMenu key={id}>
+                            <ContextMenuTrigger
+                              render={
+                                <TableRow
+                                  data-state={
+                                    selected.has(id) ? "selected" : undefined
+                                  }
+                                />
+                              }
+                            >
+                              <TableCell className="sticky left-0 z-[3] w-12 bg-card pl-4">
+                                <Checkbox
+                                  aria-label={`Выбрать ${getLabel(item)}`}
+                                  checked={selected.has(id)}
+                                  disabled={!isSelectable(item)}
+                                  onCheckedChange={(checked) =>
+                                    toggleOne(item, checked)
+                                  }
+                                />
+                              </TableCell>
+                              {visibleColumns.map((column) => (
+                                <TableCell
+                                  className={cn(
+                                    "relative overflow-hidden bg-card motion-reduce:transition-none!",
+                                    column.className
+                                  )}
+                                  key={column.id}
+                                  style={{
+                                    width: columnWidth(column.id),
+                                    minWidth: columnWidth(column.id),
+                                    maxWidth: columnWidth(column.id),
+                                    ...pinStyle(column.id),
+                                    ...columnMotion(
+                                      columns.findIndex(
+                                        (c) => c.id === column.id
+                                      )
+                                    ),
+                                  }}
+                                >
+                                  {detailEnabled &&
+                                  column.id ===
+                                    (collection === "bookings"
+                                      ? "passenger"
+                                      : "name") ? (
+                                    <Link
+                                      href={entityDetailHref(
+                                        collection,
+                                        getId(item)
+                                      )}
+                                      className="block rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                                    >
+                                      {column.value(item)}
+                                    </Link>
+                                  ) : (
+                                    column.value(item)
+                                  )}
+                                </TableCell>
+                              ))}
+                              {actions?.length ? (
+                                <TableCell className="sticky right-0 z-[3] w-28 bg-card text-right">
+                                  <EntityActionButtons
+                                    actions={actions}
+                                    item={item}
+                                    label={getLabel(item)}
+                                  />
+                                </TableCell>
+                              ) : null}
+                            </ContextMenuTrigger>
+                            <EntityMenu
+                              actions={actions}
+                              item={item}
+                              label={getLabel(item)}
+                            />
+                          </ContextMenu>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </SortableContext>
+              </DndContext>
             </div>
           </>
         ) : mode === "list" ? (
           <div className="surface-card divide-y">
-            {items.map((item) => (
+            {shownItems.map((item) => (
               <MobileSwipeActions
                 key={getId(item)}
                 label={getLabel(item)}
@@ -1213,7 +1374,7 @@ export function EntityDataView<T>({
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {items.map((item) => (
+            {shownItems.map((item) => (
               <ContextMenu key={getId(item)}>
                 <ContextMenuTrigger
                   render={
@@ -1235,6 +1396,27 @@ export function EntityDataView<T>({
           </div>
         )}
       </FadeContent>
+      <InfiniteSentinel
+        key={renderKey}
+        version={`${sourceItems.length}:${renderLimit}:${renderKey}`}
+        loading={loading || loadingMore}
+        hasMore={Boolean(
+          (onLoadMore && hasMore) ||
+          (["table", "list", "gallery"].includes(mode) &&
+            items.length > renderLimit)
+        )}
+        auto={Boolean(countQuery(queryGroup) && onLoadMore && hasMore)}
+        onMore={async () => {
+          if (
+            ["table", "list", "gallery"].includes(mode) &&
+            items.length > renderLimit
+          ) {
+            setRenderLimit((current) => current + 60)
+            return
+          }
+          await onLoadMore?.()
+        }}
+      />
       {(() => {
         const bar = (
           <EntityMetricsBar

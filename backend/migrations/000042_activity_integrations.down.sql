@@ -1,0 +1,10 @@
+DROP TRIGGER audit_integration_health ON integration_health;
+DROP FUNCTION audit_integration_health();
+DROP TRIGGER realtime_exchange_rates ON tenant_exchange_rates;
+DROP TRIGGER realtime_integration_secrets ON tenant_integration_secrets;
+DROP TRIGGER realtime_integration_health ON integration_health;
+DROP TRIGGER integration_key_changed ON tenant_integration_secrets;
+DROP FUNCTION reset_integration_health();
+DROP INDEX activity_events_entity_idx;
+DROP TABLE api_request_logs;
+DROP TABLE integration_health;

@@ -1,6 +1,12 @@
 "use client"
 
 import * as React from "react"
+import {
+  operatorLabels,
+  countQuery,
+  type QueryFieldChoice,
+  type FilterGroup,
+} from "@/lib/entity-query"
 import { EntityFilters } from "@/components/entity-filters"
 import { HoldActionButton } from "@/components/ui/hold-action-button"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -8,6 +14,7 @@ import { sessionFetch } from "@/lib/session-navigation"
 import { adminControlClassName } from "@/lib/admin-ui"
 import { cn } from "@/lib/utils"
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   CheckSquare2,
@@ -326,6 +333,8 @@ type Props<T> = {
   onChange: (config: EntityViewConfig) => void
   modes: EntityViewMode[]
   columns: { id: string; label: string }[]
+  queryFields: QueryFieldChoice[]
+  queryCount?: (query: FilterGroup) => number
   filters: EntityFilter<T>[]
   ready: boolean
   resultCount: number
@@ -348,9 +357,9 @@ export function EntityViewToolbar<T>({
   modes,
   columns,
   filters,
+  queryFields,
+  queryCount,
   ready,
-  resultCount,
-  loading,
   bulkActions,
   selectedCount = 0,
   onClearSelection,
@@ -752,30 +761,67 @@ export function EntityViewToolbar<T>({
                         className: "size-4",
                       })}
                       {entityModeLabels[mode]}
-                      {mode === config.mode ? " ✓" : ""}
+                      {mode === config.mode && (
+                        <Check className="ml-auto text-emerald-500!" />
+                      )}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-            {filters.length > 0 && (
+            {queryFields.length > 0 && (
               <EntityFilters
-                collection={collection}
-                filters={filters}
+                fields={queryFields}
                 values={config.filters}
+                query={config.query}
+                count={queryCount}
                 open={filtersOpen || Boolean(filterRequest)}
                 onOpenChange={(open) => {
                   setFiltersOpen(open)
                   if (!open) onFilterRequestHandled?.()
                 }}
-                onChange={(filters) => onChange({ ...config, filters })}
-                filterRequest={filterRequest}
-                resultCount={resultCount}
-                loading={loading}
+                onChange={(query) =>
+                  onChange({
+                    ...config,
+                    filters: {},
+                    query: countQuery(query) ? query : undefined,
+                  })
+                }
               />
             )}
           </div>
         </div>
+        {countQuery(config.query) > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-border/70 pt-2">
+            {config.query?.rules.map((node, index) => (
+              <React.Fragment key={node.id}>
+                {index > 0 && (
+                  <span className="px-1 text-xs text-muted-foreground">
+                    {config.query?.combinator === "or" ? "ИЛИ" : "И"}
+                  </span>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="max-w-full gap-1.5 rounded-lg text-xs font-normal"
+                  onClick={() => setFiltersOpen(true)}
+                >
+                  {"rules" in node
+                    ? `${node.combinator === "or" ? "Любое" : "Все"} из ${countQuery(node)} условий`
+                    : `${queryFields.find((field) => field.id === node.field)?.label ?? "Колонка"} · ${operatorLabels[node.operator].toLocaleLowerCase("ru")} ${node.value.map((value) => queryFields.find((field) => field.id === node.field)?.options?.find((option) => option.value === value)?.label ?? value).join(", ")}`}
+                </Button>
+              </React.Fragment>
+            ))}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Сбросить условия"
+              onClick={() => onChange({ ...config, query: undefined })}
+            >
+              <X />
+            </Button>
+          </div>
+        )}
         {activeFilters.length ? (
           <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-border/70 pt-2">
             <span className="px-1 text-xs text-muted-foreground">

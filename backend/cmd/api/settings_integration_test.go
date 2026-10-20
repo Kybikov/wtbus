@@ -152,6 +152,44 @@ func TestSettingsPostgres(t *testing.T) {
 			t.Fatal("cooldown missing", w.Code)
 		}
 	})
+	t.Run("health persists errors, respects cooldown, and rejects old key results", func(t *testing.T) {
+		w := request("GET", base+"integration-secrets", current.SessionToken, nil)
+		if !strings.Contains(w.Body.String(), `"status":"working"`) {
+			t.Fatal("missing persisted success", w.Body)
+		}
+		good := integrationTestClient
+		defer func() { integrationTestClient = good }()
+		_ = cache.Del(ctx, "integration-test:"+company+":monobank").Err()
+		integrationTestClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{"error":"private bank response"}`))}, nil
+		})}
+		w = request("POST", base+"integration-secrets/test", current.SessionToken, map[string]string{"provider": "monobank"})
+		if w.Code != 422 {
+			t.Fatal(w.Code, w.Body)
+		}
+		if app.loadIntegrationHealth(ctx, company, "monobank", mono).Status != "error" {
+			t.Fatal("provider failure not persisted")
+		}
+		w = request("POST", base+"integration-secrets/test", current.SessionToken, map[string]string{"provider": "monobank"})
+		if w.Code != 429 || app.loadIntegrationHealth(ctx, company, "monobank", mono).Status != "error" {
+			t.Fatal("cooldown rewrote status")
+		}
+		_ = cache.Del(ctx, "integration-test:"+company+":monobank").Err()
+		integrationTestClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			_, err := db.Exec(ctx, `UPDATE tenant_integration_secrets SET monobank_token='replacement-key' WHERE tenant_id=$1`, company)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"clientId":"ok"}`))}, nil
+		})}
+		request("POST", base+"integration-secrets/test", current.SessionToken, map[string]string{"provider": "monobank"})
+		if app.loadIntegrationHealth(ctx, company, "monobank", "replacement-key").Status != "pending" {
+			t.Fatal("old key result attached to replacement")
+		}
+		if _, err := db.Exec(ctx, `UPDATE tenant_integration_secrets SET monobank_token=$2 WHERE tenant_id=$1`, company, mono); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("currency preview cached without changing saved rates", func(t *testing.T) {
 		before := row(`SELECT count(*)::text FROM tenant_exchange_rates WHERE tenant_id=$1`, company)
 		count := calls

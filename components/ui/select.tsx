@@ -148,7 +148,7 @@ function SelectItem({
         <HugeiconsIcon
           icon={Tick02Icon}
           strokeWidth={2}
-          className="pointer-events-none"
+          className="pointer-events-none text-emerald-500!"
         />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ArrowUpRight, Check, LoaderCircle } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import EntityDetailContent from "@/components/app-dialog-6"
+import { realtimeEvent, type RealtimeMessage } from "@/lib/realtime"
 import EntityActivityTimeline from "@/components/billing-8"
 import {
   EntityRelatedRecords,
@@ -339,6 +340,46 @@ export function EntityDetailPage({
       requestController.current?.abort()
     }
   }, [load])
+  React.useEffect(() => {
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let busy = false
+    const refresh = () => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        if (busy || document.visibilityState !== "visible") return
+        busy = true
+        try {
+          const response = await sessionFetch(
+            `/api/entity-details/${entity}/${encodeURIComponent(id)}`,
+            { cache: "no-store", signal: controller.signal }
+          )
+          const payload = await response.json()
+          if (response.ok && isDetail(payload) && !controller.signal.aborted)
+            setDetail((current) =>
+              current ? { ...current, activity: payload.activity } : current
+            )
+        } catch {
+          /* Keep the current form and history during a reconnect. */
+        } finally {
+          busy = false
+        }
+      }, 400)
+    }
+    const realtime = (event: Event) => {
+      const message = (event as CustomEvent<RealtimeMessage>).detail
+      if (message?.type === "ready" || message?.entity === "activity_events")
+        refresh()
+    }
+    window.addEventListener(realtimeEvent, realtime)
+    window.addEventListener("focus", refresh)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+      window.removeEventListener(realtimeEvent, realtime)
+      window.removeEventListener("focus", refresh)
+    }
+  }, [entity, id])
   const changeField = (key: string, value: unknown, commit = true) => {
     if (!detail) return
     setDetail({ ...detail, item: { ...detail.item, [key]: value } })

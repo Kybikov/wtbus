@@ -1,3 +1,4 @@
+import Image from "next/image"
 import { BellRing } from "lucide-react"
 export function ProviderLogo({
   provider,
@@ -20,7 +21,13 @@ export function ProviderLogo({
       ) : provider === "push" ? (
         <BellRing className="size-5 text-primary" />
       ) : (
-        <span className="text-xl font-bold">m</span>
+        <Image
+          src="/brand/monobank.png"
+          width={40}
+          height={40}
+          alt=""
+          className="size-10 rounded-xl"
+        />
       )}
     </span>
   )

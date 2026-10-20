@@ -1,4 +1,5 @@
 "use client"
+import { DeliverySwitch } from "@/components/ui/delivery-switch"
 import { useActionConfirmation } from "@/components/action-confirmation"
 
 import { sessionFetch } from "@/lib/session-navigation"
@@ -160,6 +161,27 @@ export function RouteCatalog() {
     textColumn<Route>("currency", "Валюта", (item) => item.currency, false),
     textColumn<Route>("id", "ID", (item) => item.id, false),
   ]
+  const statusCell = columns.find((column) => column.id === "status")
+  if (statusCell) {
+    const badge = statusCell.value
+    statusCell.value = (item: Route) => (
+      <div
+        data-no-drag
+        className="flex items-center gap-2"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DeliverySwitch
+          label={`Доступность маршрута ${item.name}`}
+          checked={item.isActive}
+          disabled={saving || selection.pending}
+          onChange={(checked) =>
+            void moveStatus(item, checked ? "active" : "inactive")
+          }
+        />
+        {badge(item)}
+      </div>
+    )
+  }
   async function bulkStatus(status: "active" | "inactive") {
     await selection.run(
       routes,
@@ -384,46 +406,7 @@ export function RouteCatalog() {
   }
 
   async function toggle(route: Route) {
-    setSaving(true)
-    setError(null)
-
-    try {
-      const response = await sessionFetch(
-        `/api/routes?id=${encodeURIComponent(route.id)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: route.name,
-            origin: route.origin,
-            destination: route.destination,
-            currency: route.currency,
-            defaultPriceMinor: route.defaultPriceMinor,
-            defaultPricingMode: route.defaultPricingMode,
-            driverPayMinor: route.driverPayMinor,
-            tariffMode: route.tariffMode,
-            distanceKm: route.distanceKm,
-            vehicleClassRates: route.vehicleClassRates,
-            status: route.status === "active" ? "inactive" : "active",
-          }),
-        }
-      )
-      const payload: unknown = await response.json()
-
-      if (!response.ok) {
-        throw new Error(getError(payload, "Не удалось обновить маршрут."))
-      }
-
-      await load()
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось обновить маршрут."
-      )
-    } finally {
-      setSaving(false)
-    }
+    await moveStatus(route, route.isActive ? "inactive" : "active")
   }
 
   return (

@@ -1,3 +1,4 @@
+import { normalizeQuery, type FilterGroup } from "./entity-query.ts"
 import type { EntityMetric } from "./entity-metrics.ts"
 export const entityCollections = [
   "customers",
@@ -28,6 +29,7 @@ export type EntityViewConfig = {
   mode: EntityViewMode
   columns: string[]
   filters: Record<string, string>
+  query?: FilterGroup
   metrics?: EntityMetric[]
   columnWidths?: Record<string, number>
   pinnedColumns?: { left: string[]; right: string[] }
@@ -182,6 +184,9 @@ export function normalizeViewConfig(
         }
       : undefined
   return {
+    ...(normalizeQuery(config.query, [...columnIds, ...filterIds])
+      ? { query: normalizeQuery(config.query, [...columnIds, ...filterIds]) }
+      : {}),
     mode: modes.includes(config.mode) ? config.mode : modes[0],
     columns: columns.length ? columns : defaults,
     filters: Object.fromEntries(
@@ -206,6 +211,7 @@ export function sameViewConfig(a: EntityViewConfig, b: EntityViewConfig) {
       filters: Object.entries(value.filters)
         .filter(([, v]) => v !== "")
         .sort(([a], [b]) => a.localeCompare(b)),
+      query: value.query ?? null,
       metrics: value.metrics ?? [],
       columnWidths: Object.entries(value.columnWidths ?? {}).sort(([a], [b]) =>
         a.localeCompare(b)

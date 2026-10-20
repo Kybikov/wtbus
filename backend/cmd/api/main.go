@@ -243,13 +243,14 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/integration-secrets", owners(app.getIntegrationSecrets))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/integration-secrets/test", owners(app.testIntegration))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.requireActiveSubscription(app.updateIntegrationSecrets)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/activity", managers(app.activityHistory))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.requireActiveSubscription(app.createTeamMember)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.updateTeamMember)))
 	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.deleteTeamMember)))
 	mux.HandleFunc("POST /api/v1/control/tenants", app.provisionTenant)
 	mux.HandleFunc("PUT /api/v1/tenants/{slug}/subscription", app.updateSubscription)
-	return app.recover(app.securityHeaders(app.cors(mux)))
+	return app.securityHeaders(app.cors(app.requestAudit(app.recover(mux))))
 }
 
 type tenantContextKey struct{}
@@ -590,6 +591,9 @@ func companySelectionKey(tokenHash []byte) string {
 }
 
 func (app *application) createSession(ctx context.Context, result identity) (loginResponse, error) {
+	if capture, ok := ctx.Value(auditContextKey{}).(*auditCapture); ok {
+		capture.actor = &result
+	}
 	token, tokenHash, err := sessionToken()
 	if err != nil {
 		return loginResponse{}, fmt.Errorf("create session token: %w", err)
@@ -652,6 +656,9 @@ func (app *application) authenticate(r *http.Request) (identity, string, error) 
 	if err != nil {
 		return identity{}, "", err
 	}
+	if capture, ok := r.Context().Value(auditContextKey{}).(*auditCapture); ok {
+		capture.actor = &result
+	}
 	return result, token, nil
 }
 
@@ -677,6 +684,7 @@ func (app *application) requireRoles(roles ...string) func(http.HandlerFunc) htt
 				writeJSON(w, http.StatusForbidden, map[string]string{"error": "role access is denied"})
 				return
 			}
+			app.beginAudit(r, identity)
 			next(w, r.WithContext(context.WithValue(r.Context(), identityContextKey{}, identity)))
 		}
 	}
@@ -5150,6 +5158,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment method is invalid"})
 		return
 	}
+	offset := boundedQueryInt(r, "offset", 0, 0, 100_000)
 	limit := 100
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
@@ -5191,9 +5200,9 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		    OR ($8 = 'cash_on_boarding' AND (b.status = 'cash_on_boarding' OR COALESCE(b.custom_data->>'payment_method', '') = 'cash_on_boarding'))
 		    OR ($8 = 'none' AND COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = '')
 		    OR COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = $8)
-		ORDER BY t.starts_at DESC, b.created_at DESC
-		LIMIT $9
-	`, tenant.ID, status, query, day, tenant.Timezone, source, tripStatus, paymentMethod, limit)
+		ORDER BY t.starts_at DESC, b.created_at DESC, b.id DESC
+		LIMIT $9 OFFSET $10
+	`, tenant.ID, status, query, day, tenant.Timezone, source, tripStatus, paymentMethod, limit, offset)
 	if err != nil {
 		app.log.Error("list bookings", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load bookings"})
@@ -5916,13 +5925,15 @@ func (app *application) updatePaymentConfig(w http.ResponseWriter, r *http.Reque
 }
 
 type integrationSecretsResponse struct {
-	MonobankConfigured    bool       `json:"monobankConfigured"`
-	TelegramBotConfigured bool       `json:"telegramBotConfigured"`
-	MonobankPreview       string     `json:"monobankPreview,omitempty"`
-	TelegramBotPreview    string     `json:"telegramBotPreview,omitempty"`
-	MonobankLastAttemptAt *time.Time `json:"monobankLastAttemptAt,omitempty"`
-	MonobankLastSuccessAt *time.Time `json:"monobankLastSuccessAt,omitempty"`
-	MonobankLastError     string     `json:"monobankLastError,omitempty"`
+	MonobankHealth        integrationHealth `json:"monobankHealth"`
+	TelegramHealth        integrationHealth `json:"telegramHealth"`
+	MonobankConfigured    bool              `json:"monobankConfigured"`
+	TelegramBotConfigured bool              `json:"telegramBotConfigured"`
+	MonobankPreview       string            `json:"monobankPreview,omitempty"`
+	TelegramBotPreview    string            `json:"telegramBotPreview,omitempty"`
+	MonobankLastAttemptAt *time.Time        `json:"monobankLastAttemptAt,omitempty"`
+	MonobankLastSuccessAt *time.Time        `json:"monobankLastSuccessAt,omitempty"`
+	MonobankLastError     string            `json:"monobankLastError,omitempty"`
 }
 
 type updateIntegrationSecretsRequest struct {
@@ -5955,6 +5966,8 @@ func (app *application) getIntegrationSecrets(w http.ResponseWriter, r *http.Req
 		app.publicFailure(w, err)
 		return
 	}
+	response.MonobankHealth = app.loadIntegrationHealth(r.Context(), tenant.ID, "monobank", mono)
+	response.TelegramHealth = app.loadIntegrationHealth(r.Context(), tenant.ID, "telegram", telegram)
 	response.MonobankConfigured = mono != ""
 	response.TelegramBotConfigured = telegram != ""
 	response.MonobankPreview = maskedIntegrationSecret(mono)

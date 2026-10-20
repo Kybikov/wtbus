@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +130,22 @@ func TestEntityViewMetricValidation(t *testing.T) {
 		if validateEntityView("team", &input) {
 			t.Fatal("invalid metrics accepted")
 		}
+	}
+}
+
+func TestEntityQueryValidation(t *testing.T) {
+	rule := entityQueryNode{ID: "r", Field: "status", Operator: "in", Value: []string{"active", "inactive"}}
+	input := entityViewInput{Name: "Query", Visibility: "private", Config: entityViewConfig{Mode: "table", Columns: []string{"name"}, Query: &entityQueryNode{ID: "g", Combinator: "and", Rules: []entityQueryNode{rule, {ID: "nested", Combinator: "or", Rules: []entityQueryNode{{ID: "empty", Field: "name", Operator: "empty"}}}}}}}
+	if !validateEntityView("routes", &input) {
+		t.Fatal("valid nested query rejected")
+	}
+	input.Config.Query.Rules[0].Operator = "execute_sql"
+	if validateEntityView("routes", &input) {
+		t.Fatal("unknown operator accepted")
+	}
+	input.Config.Query.Rules[0] = rule
+	input.Config.Query.Rules[0].Value = []string{strings.Repeat("x", 501)}
+	if validateEntityView("routes", &input) {
+		t.Fatal("unbounded query value accepted")
 	}
 }

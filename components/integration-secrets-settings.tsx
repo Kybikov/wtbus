@@ -1,15 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { Clock3, KeyRound, ShieldCheck } from "lucide-react"
+import { KeyRound } from "lucide-react"
 import { toast } from "sonner"
 import { ConnectionTestButton } from "@/components/connection-test-button"
 import { ProviderLogo } from "@/components/provider-logo"
 import { IntegrationConnectionCard } from "@/components/integration-connection-card"
-import { Badge } from "@/components/ui/badge"
+import { realtimeEvent, type RealtimeMessage } from "@/lib/realtime"
 import { sessionFetch } from "@/lib/session-navigation"
 
+type Health = { status: string; checkedAt?: string; lastSuccessAt?: string }
 type State = {
+  monobankHealth?: Health
+  telegramHealth?: Health
   monobankPreview?: string
   telegramBotPreview?: string
   monobankConfigured: boolean
@@ -22,45 +25,80 @@ const emptyState: State = {
   monobankConfigured: false,
   telegramBotConfigured: false,
 }
-const dateLabel = (value?: string) =>
-  value ? new Date(value).toLocaleString("uk-UA") : "ещё не выполнялась"
-
 export function IntegrationSecretsSettings({
   disabled,
 }: {
   disabled: boolean
 }) {
   const [state, setState] = React.useState(emptyState)
+  const [available, setAvailable] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState<string | null>(null)
+  const revision = React.useRef(0)
+  const writing = React.useRef(false)
+  const reload = React.useCallback(async (signal?: AbortSignal) => {
+    if (writing.current) return
+    const current = ++revision.current
+    const response = await sessionFetch("/api/integration-secrets", {
+      signal,
+      cache: "no-store",
+    })
+    const next = (await response.json().catch(() => null)) as
+      (State & { error?: string }) | null
+    if (!response.ok || !next)
+      throw Error(next?.error ?? "Не удалось загрузить интеграции.")
+    if (current === revision.current && !signal?.aborted) {
+      setState(next)
+      setAvailable(true)
+    }
+  }, [])
   React.useEffect(() => {
     const controller = new AbortController()
-    void sessionFetch("/api/integration-secrets", { signal: controller.signal })
-      .then(async (response) => {
-        const payload = (await response.json().catch(() => null)) as
-          (State & { error?: string }) | null
-        if (!response.ok || !payload)
-          throw new Error(payload?.error ?? "Не удалось загрузить интеграции.")
-        setState(payload)
-      })
-      .catch((reason: unknown) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const refresh = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (document.visibilityState === "visible")
+          void reload(controller.signal).catch(() => {})
+      }, 350)
+    }
+    const realtime = (event: Event) => {
+      const message = (event as CustomEvent<RealtimeMessage>).detail
+      if (
+        message?.type === "ready" ||
+        ["integration_health", "tenant_integration_secrets"].includes(
+          message?.entity ?? ""
+        )
+      )
+        refresh()
+    }
+    void reload(controller.signal)
+      .catch(() => {
         if (!controller.signal.aborted)
-          toast.error("Не удалось загрузить интеграции", {
-            description: reason instanceof Error ? reason.message : undefined,
-          })
+          toast.error("Не удалось загрузить интеграции.")
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
-
-    return () => controller.abort()
-  }, [])
+    const interval = setInterval(refresh, 60_000)
+    window.addEventListener(realtimeEvent, realtime)
+    window.addEventListener("focus", refresh)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+      clearInterval(interval)
+      window.removeEventListener(realtimeEvent, realtime)
+      window.removeEventListener("focus", refresh)
+    }
+  }, [reload])
 
   async function save(
     provider: string,
     payload: Record<string, unknown>,
     removed = false
   ) {
+    writing.current = true
+    ++revision.current
     setSaving(provider)
     try {
       const response = await sessionFetch("/api/integration-secrets", {
@@ -82,6 +120,7 @@ export function IntegrationSecretsSettings({
       )
       return false
     } finally {
+      writing.current = false
       setSaving(null)
     }
   }
@@ -94,10 +133,17 @@ export function IntegrationSecretsSettings({
       signal: AbortSignal.timeout(10_000),
     })
     const p = await r.json().catch(() => null)
-    if (!r.ok || !p)
-      throw Error(
-        p?.error ?? "Подключение временно недоступно. Повторите проверку позже."
+    await reload().catch(() => {})
+    if (!r.ok || !p) {
+      const error = Object.assign(
+        new Error(
+          p?.error ??
+            "Подключение временно недоступно. Повторите проверку позже."
+        ),
+        { retryLater: r.status === 429 }
       )
+      throw error
+    }
     return p.message
   }
 
@@ -134,63 +180,13 @@ export function IntegrationSecretsSettings({
               onTest={() => test("monobank")}
             />
           }
+          health={state.monobankHealth}
           configured={state.monobankConfigured}
-          disabled={disabled || loading || !!saving}
+          disabled={disabled || loading || !available || !!saving}
           saving={saving === "monobank"}
           onSave={(token) => save("monobank", { monobankToken: token })}
           onRemove={() => save("monobank", { clearMonobank: true }, true)}
-        >
-          {state.monobankConfigured ? (
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Сверка Monobank</h3>
-                <Badge
-                  variant="secondary"
-                  className={
-                    state.monobankLastError
-                      ? "bg-amber-500/12 text-amber-700 dark:text-amber-400"
-                      : ""
-                  }
-                >
-                  {state.monobankLastError
-                    ? "Требует внимания"
-                    : state.monobankLastSuccessAt
-                      ? "Проверка выполнена"
-                      : "Ожидает первой проверки"}
-                </Badge>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Платёж подтверждается по точной сумме и уникальному назначению.
-              </p>
-              <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
-                <div>
-                  <dt className="flex items-center gap-1.5 text-muted-foreground">
-                    <Clock3 className="size-3.5" />
-                    Последняя проверка
-                  </dt>
-                  <dd className="mt-1 tabular-nums">
-                    {dateLabel(state.monobankLastAttemptAt)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="flex items-center gap-1.5 text-muted-foreground">
-                    <ShieldCheck className="size-3.5" />
-                    Последняя успешная сверка
-                  </dt>
-                  <dd className="mt-1 tabular-nums">
-                    {dateLabel(state.monobankLastSuccessAt)}
-                  </dd>
-                </div>
-              </dl>
-              {state.monobankLastError ? (
-                <p className="mt-3 text-sm break-words text-destructive">
-                  Не удалось сверить платежи. Проверьте подключение и повторите
-                  позже.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </IntegrationConnectionCard>
+        />
         <IntegrationConnectionCard
           name="Telegram"
           description="Бронирование и уведомления через бота"
@@ -210,8 +206,9 @@ export function IntegrationSecretsSettings({
               onTest={() => test("telegram")}
             />
           }
+          health={state.telegramHealth}
           configured={state.telegramBotConfigured}
-          disabled={disabled || loading || !!saving}
+          disabled={disabled || loading || !available || !!saving}
           saving={saving === "telegram"}
           onSave={(token) => save("telegram", { telegramBotToken: token })}
           onRemove={() => save("telegram", { clearTelegramBot: true }, true)}

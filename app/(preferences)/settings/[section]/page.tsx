@@ -12,9 +12,14 @@ export default async function SettingsSectionPage({
 }) {
   const { section } = await params
   if (
-    !["company", "payments", "finance", "fields", "integrations"].includes(
-      section
-    )
+    ![
+      "company",
+      "payments",
+      "finance",
+      "fields",
+      "integrations",
+      "activity",
+    ].includes(section)
   )
     notFound()
   const role = await getSessionRole()

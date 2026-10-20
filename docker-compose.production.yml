@@ -33,6 +33,11 @@ services:
       SESSION_COOKIE_SECURE: "true"
     depends_on:
       api:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
         condition: service_started
     restart: unless-stopped
 
