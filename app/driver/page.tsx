@@ -4,6 +4,6 @@ import { getSessionRole } from "@/lib/server-role"
 
 export default async function DriverPage() {
   const role = await getSessionRole()
-  if (role && role !== "driver") redirect("/")
+  if (role && role !== "driver" && role !== "developer") redirect("/")
   return <DriverLocationTracker />
 }

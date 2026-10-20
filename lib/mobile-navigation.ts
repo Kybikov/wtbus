@@ -24,10 +24,16 @@ export const mobileDestinations = [
     roles: management,
   },
   {
+    href: "/availability",
+    label: "Блокировки дат",
+    icon: "calendar",
+    roles: ["developer"] as StaffRole[],
+  },
+  {
     href: "/driver",
     label: "Мой рейс",
     icon: "car",
-    roles: ["driver"] as StaffRole[],
+    roles: ["driver", "developer"] as StaffRole[],
   },
   {
     href: "/notifications",

@@ -171,7 +171,8 @@ export function DriverLocationTracker() {
       if (
         sessionResponse.ok &&
         typeof session?.role === "string" &&
-        session.role !== "driver"
+        session.role !== "driver" &&
+        session.role !== "developer"
       ) {
         setIdentity(null)
         setVehicles([])
@@ -180,14 +181,16 @@ export function DriverLocationTracker() {
       }
       if (
         !sessionResponse.ok ||
-        session?.role !== "driver" ||
+        (session?.role !== "driver" && session?.role !== "developer") ||
         typeof session?.membershipId !== "string" ||
         typeof session?.tenantSlug !== "string"
       ) {
         if (
           sessionResponse.status === 401 ||
           sessionResponse.status === 403 ||
-          (sessionResponse.ok && session?.role !== "driver")
+          (sessionResponse.ok &&
+            session?.role !== "driver" &&
+            session?.role !== "developer")
         ) {
           setIdentity(null)
           setVehicles([])

@@ -16,9 +16,10 @@ import (
 
 type auditContextKey struct{}
 type auditCapture struct {
-	actor      *identity
-	before     map[string]any
-	entity, id string
+	activityRecorded bool
+	actor            *identity
+	before           map[string]any
+	entity, id       string
 }
 type auditResponse struct {
 	http.ResponseWriter
@@ -63,6 +64,9 @@ func auditTarget(r *http.Request) (string, string) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) > 4 && parts[2] == "tenants" {
 		entity := parts[4]
+		if entity == "entity-details" && len(parts) > 6 && entityRecordID.MatchString(parts[6]) {
+			return parts[5], parts[6]
+		}
 		id := ""
 		if len(parts) > 5 && entityRecordID.MatchString(parts[5]) {
 			id = parts[5]
@@ -160,7 +164,7 @@ func (app *application) requestAudit(next http.Handler) http.Handler {
 		}
 		defer tx.Rollback(ctx)
 		_, err = tx.Exec(ctx, `INSERT INTO api_request_logs(tenant_id,actor_membership_id,request_id,method,route,status,duration_ms) VALUES($1,$2,$3,$4,$5,$6,$7)`, actor.TenantID, actor.MembershipID, requestID, r.Method, route, status, duration)
-		if err == nil && mutation && status >= 200 && status < 300 {
+		if err == nil && mutation && status >= 200 && status < 300 && !state.activityRecorded {
 			entity, id := state.entity, state.id
 			if entity == "" {
 				entity, id = auditTarget(r)

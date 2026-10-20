@@ -196,7 +196,18 @@ const navigation: NavigationItem[] = [
     label: "Команда",
     roles: managementRoles,
   },
-  { href: "/driver", icon: Car01Icon, label: "Мой рейс", roles: ["driver"] },
+  {
+    href: "/availability",
+    icon: Calendar01Icon,
+    label: "Блокировки дат",
+    roles: ["developer"],
+  },
+  {
+    href: "/driver",
+    icon: Car01Icon,
+    label: "Мой рейс",
+    roles: ["driver", "developer"],
+  },
 ]
 const defaultShellBrand: ShellBrand = {
   logoUrl: "/brand/vivat-bus.png",
@@ -692,6 +703,15 @@ export function AppShell({
       )
     router.push(href)
   }
+  React.useEffect(() => {
+    const refresh = () => {
+      if (onRefresh) void onRefresh()
+      else router.refresh()
+    }
+    window.addEventListener("vivat-record-deleted", refresh)
+    return () => window.removeEventListener("vivat-record-deleted", refresh)
+  }, [onRefresh, router])
+
   const signOut = async () => {
     await sessionFetch("/api/auth/logout", { method: "POST" }).catch(
       () => undefined

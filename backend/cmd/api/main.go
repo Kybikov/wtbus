@@ -181,6 +181,9 @@ func (app *application) routes() http.Handler {
 	managers := app.requireRoles("owner", "admin")
 	owners := app.requireRoles("owner")
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))
+	for _, method := range []string{"GET", "DELETE"} {
+		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}/deletion", app.requireRoles("developer")(app.entityDeletion))
+	}
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-views", operations(app.entityViews))
 	}
@@ -262,7 +265,8 @@ func (app *application) requireActiveSubscription(next http.HandlerFunc) http.Ha
 		if !ok {
 			return
 		}
-		if !subscriptionAllowsOperations(tenant.SubscriptionStatus) {
+		actor, _ := identityFromContext(r.Context())
+		if actor.Role != "developer" && !subscriptionAllowsOperations(tenant.SubscriptionStatus) {
 			writeJSON(w, http.StatusPaymentRequired, map[string]string{
 				"error":              "subscription is inactive; update payment to continue",
 				"code":               "subscription_inactive",
@@ -1349,7 +1353,7 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "create a new driver account with a phone number instead of changing this role"})
 		return
 	}
-	if current.Role == "owner" && current.IsActive && (nextRole != "owner" || !nextActive) {
+	if actor.Role != "developer" && current.Role == "owner" && current.IsActive && (nextRole != "owner" || !nextActive) {
 		var owners int
 		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM memberships WHERE tenant_id = $1 AND role = 'owner' AND is_active`, tenant.ID).Scan(&owners); err != nil {
 			app.log.Error("count owners", "error", err)
@@ -1470,7 +1474,7 @@ func (app *application) deleteTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot delete this team member"})
 		return
 	}
-	if memberRole == "owner" && memberActive {
+	if actor.Role != "developer" && memberRole == "owner" && memberActive {
 		var activeOwners int
 		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM memberships WHERE tenant_id = $1 AND role = 'owner' AND is_active`, tenant.ID).Scan(&activeOwners); err != nil {
 			app.log.Error("count owners before deletion", "error", err)

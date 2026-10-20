@@ -1,4 +1,7 @@
 "use client"
+import { useRecordDeletion } from "@/components/use-record-deletion"
+import { useRouter } from "next/navigation"
+import { Trash2 } from "lucide-react"
 import { useFieldAutosave } from "@/components/use-field-autosave"
 import * as React from "react"
 import Link from "next/link"
@@ -263,6 +266,8 @@ export function EntityDetailPage({
     "idle" | "saving" | "saved" | "error"
   >("idle")
   const persistedItem = React.useRef<Record<string, unknown> | null>(null)
+  const router = useRouter()
+  const deletion = useRecordDeletion(entity, () => router.replace(`/${entity}`))
   const autosave = useFieldAutosave<Record<string, unknown>>(async (next) => {
     if (!detail) throw Error("Запись ещё не загружена.")
     setSaveState("saving")
@@ -688,6 +693,7 @@ export function EntityDetailPage({
       onRefresh={load}
       refreshing={loading}
     >
+      {deletion.dialog}
       <AdminNotice
         message={error}
         variant="error"
@@ -706,26 +712,41 @@ export function EntityDetailPage({
       ) : detail ? (
         <EntityDetailContent
           overviewMeta={
-            updateRequest(entity, id, detail.item, detail.timezone) &&
-            saveState !== "idle" ? (
-              <span
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-                aria-live="polite"
-              >
-                {saveState === "saving" ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : saveState === "saved" ? (
-                  <Check className="size-3.5 text-emerald-500" />
-                ) : null}
-                {saveState === "saving"
-                  ? "Сохраняем…"
-                  : saveState === "saved"
-                    ? "Сохранено"
-                    : saveState === "error"
-                      ? "Ошибка сохранения"
-                      : null}
-              </span>
-            ) : null
+            <div className="flex shrink-0 items-center gap-2">
+              {deletion.available && (
+                <Button
+                  aria-label="Удалить запись"
+                  title="Удалить запись"
+                  size="icon-sm"
+                  variant="destructive"
+                  disabled={saveState === "saving"}
+                  disabledReason="Дождитесь сохранения изменений перед удалением."
+                  onClick={() => deletion.open(id, title)}
+                >
+                  <Trash2 />
+                </Button>
+              )}
+              {updateRequest(entity, id, detail.item, detail.timezone) &&
+              saveState !== "idle" ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {saveState === "saving" ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                  ) : saveState === "saved" ? (
+                    <Check className="size-3.5 text-emerald-500" />
+                  ) : null}
+                  {saveState === "saving"
+                    ? "Сохраняем…"
+                    : saveState === "saved"
+                      ? "Сохранено"
+                      : saveState === "error"
+                        ? "Ошибка сохранения"
+                        : null}
+                </span>
+              ) : null}
+            </div>
           }
           overview={
             <dl className="min-w-0 divide-y divide-border/70">

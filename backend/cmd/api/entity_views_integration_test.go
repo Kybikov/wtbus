@@ -85,7 +85,7 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 	if len(private.Config.Metrics) != 2 || private.Config.Metrics[0].Operation != "sum" {
 		t.Fatal("created metrics not preserved")
 	}
-	for _, who := range []identity{reader, manager, outsider} {
+	for _, who := range []identity{reader, outsider} {
 		w := request("GET", "customers", "", nil, who, 200)
 		var payload struct{ Items []savedEntityView }
 		json.Unmarshal(w.Body.Bytes(), &payload)
@@ -94,11 +94,17 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 		}
 		request("DELETE", "customers", private.ID, nil, who, 404)
 	}
+	w := request("GET", "customers", "", nil, manager, 200)
+	var fullAccess struct{ Items []savedEntityView }
+	json.Unmarshal(w.Body.Bytes(), &fullAccess)
+	if len(fullAccess.Items) != 1 || !fullAccess.Items[0].CanEdit {
+		t.Fatal("developer cannot access private view")
+	}
 	request("POST", "customers", "", input, author, 409)
 	input.Name = "Team view"
 	input.Visibility = "shared"
 	shared := decode(request("POST", "customers", "", input, author, 201))
-	w := request("GET", "customers", "", nil, reader, 200)
+	w = request("GET", "customers", "", nil, reader, 200)
 	var list struct{ Items []savedEntityView }
 	json.Unmarshal(w.Body.Bytes(), &list)
 	if len(list.Items) != 1 || list.Items[0].CanEdit || list.Items[0].Config.Mode != "list" {
@@ -119,7 +125,7 @@ func TestEntityViewsDatabasePrivacyAndCRUD(t *testing.T) {
 	request("PATCH", "customers", shared.ID, input, author, 409)
 	input.Version = 2
 	input.Visibility = "private"
-	request("PATCH", "customers", shared.ID, input, manager, 409)
+	request("PATCH", "customers", shared.ID, input, manager, 200)
 	request("GET", "team", "", nil, author, 403)
 	request("GET", "team", "", nil, manager, 200)
 	request("GET", "cash-balances", "", nil, author, 403)

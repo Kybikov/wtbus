@@ -39,7 +39,7 @@ test("scrollable dock exposes all permitted sections with no duplicate destinati
     assert.equal(new Set(pages).size, pages.length)
     for (const href of ["/routes", "/fleet", "/customers"])
       assert.ok(pages.includes(href))
-    assert.equal(pages.includes("/availability"), false)
+    assert.equal(pages.includes("/availability"), role === "developer")
   }
   assert.ok(mobileNavigation("owner").some((item) => item.href === "/settings"))
 })
@@ -48,4 +48,13 @@ test("dock selection uses complete route segments rather than prefix collisions"
   assert.equal(isMobileDestinationActive("/bookings-other", "/bookings"), false)
   assert.equal(isMobileDestinationActive("/trips", "/"), false)
   assert.equal(isMobileDestinationActive("/", "/"), true)
+})
+
+test("developer can reach every registered destination", () => {
+  const developer = new Set(
+    mobileNavigation("developer").map((item) => item.href)
+  )
+  for (const role of ["owner", "admin", "dispatcher", "driver"])
+    for (const page of mobileNavigation(role))
+      assert.ok(developer.has(page.href), page.href)
 })

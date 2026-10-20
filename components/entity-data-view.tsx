@@ -1,4 +1,5 @@
 "use client"
+import { useRecordDeletion } from "@/components/use-record-deletion"
 
 import {
   countQuery,
@@ -319,6 +320,15 @@ export function EntityDataView<T>({
   onLoadMore,
 }: Props<T>) {
   const router = useRouter()
+  const [removedIds, setRemovedIds] = React.useState<Set<string>>(
+    () => new Set()
+  )
+  const deletion = useRecordDeletion(collection, (id) => {
+    setRemovedIds((current) => new Set([...current, id]))
+    onSelectedChange(
+      new Set([...selected].filter((selectedId) => selectedId !== id))
+    )
+  })
   const detailEnabled = collection !== "cash-balances"
   const actions: EntityAction<T>[] = [
     ...(detailEnabled
@@ -331,6 +341,16 @@ export function EntityDataView<T>({
         ]
       : []),
     ...(sourceActions ?? []),
+    ...(deletion.available &&
+    !sourceActions?.some((action) => action.label.startsWith("Удалить"))
+      ? [
+          {
+            label: "Удалить запись",
+            destructive: true,
+            onSelect: (item: T) => deletion.open(getId(item), getLabel(item)),
+          },
+        ]
+      : []),
   ]
   const footerContext = React.useContext(EntityFooterContext)
   const [mode, setMode] = React.useState<EntityViewMode>(
@@ -440,6 +460,7 @@ export function EntityDataView<T>({
             .map((option) => option.value),
       })
   const items = sourceItems
+    .filter((item) => !removedIds.has(getId(item)))
     .filter((item) =>
       filters.every(
         (filter) =>
@@ -808,6 +829,7 @@ export function EntityDataView<T>({
   const hiddenBoardGroups = new Set(board?.hidden ?? [])
   return (
     <section className={cn("space-y-3", className)} aria-busy={loading}>
+      {deletion.dialog}
       <EntityViewToolbar
         key={collection}
         ready={!loading}

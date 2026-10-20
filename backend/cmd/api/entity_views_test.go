@@ -115,7 +115,7 @@ func TestEntityViewEditingPermissions(t *testing.T) {
 		if !canEditEntityView(identity{MembershipID: owner, Role: role}, &owner, "private") {
 			t.Fatal("author cannot edit")
 		}
-		if canEditEntityView(identity{MembershipID: "other", Role: role}, &owner, "private") {
+		if canEditEntityView(identity{MembershipID: "other", Role: role}, &owner, "private") != (role == "developer") {
 			t.Fatal("other user's private view editable")
 		}
 		if canEditEntityView(identity{MembershipID: "other", Role: role}, &owner, "shared") != (role != "dispatcher") {

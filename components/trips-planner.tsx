@@ -1,12 +1,12 @@
 "use client"
-import { useActionConfirmation } from "@/components/action-confirmation"
-import { HoldActionButton } from "@/components/ui/hold-action-button"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
+import { useActionConfirmation } from "@/components/action-confirmation"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
+import { entityDetailHref } from "@/lib/entity-details"
 import { AdminNotice } from "@/components/admin-notice"
 import { Input } from "@/components/ui/input"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -381,6 +381,7 @@ const tripStatusLabels: Record<string, string> = {
 }
 
 export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
+  const router = useRouter()
   const openedRoute = React.useRef<string | undefined>(undefined)
   const confirmAction = useActionConfirmation()
   const { statuses: workflowStatuses } = useWorkflowStatuses("trips")
@@ -402,14 +403,6 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
   const [requestVersion, setRequestVersion] = React.useState(0)
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
   const [editingTripID, setEditingTripID] = React.useState<string | null>(null)
-  const [selectedTrip, setSelectedTrip] = React.useState<CalendarTrip | null>(
-    null
-  )
-  const [isStatusSubmitting, setIsStatusSubmitting] = React.useState(false)
-  const [selectedTripError, setSelectedTripError] = React.useState<
-    string | null
-  >(null)
-  const [isCancelConfirmation, setIsCancelConfirmation] = React.useState(false)
   const [resources, setResources] = React.useState<{
     vehicles: TripResource[]
     drivers: TripResource[]
@@ -809,54 +802,6 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
     }
   }
 
-  async function changeSelectedTripStatus(status: string) {
-    if (!selectedTrip) return
-
-    setSelectedTripError(null)
-    setIsStatusSubmitting(true)
-    try {
-      const response = await sessionFetch(
-        `/api/trips?id=${encodeURIComponent(selectedTrip.id)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        }
-      )
-      const payload: unknown = await response.json()
-      if (!response.ok) {
-        const message =
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof payload.error === "string"
-            ? payload.error
-            : "Не удалось обновить статус рейса."
-        throw new Error(message)
-      }
-
-      const action =
-        status === "in_progress"
-          ? "Рейс начат."
-          : status === "completed"
-            ? "Рейс завершен."
-            : status === "cancelled"
-              ? "Рейс отменен."
-              : "Статус рейса обновлен."
-      setNotice(`${selectedTrip.title}: ${action}`)
-      setSelectedTrip(null)
-      setRequestVersion((version) => version + 1)
-    } catch (error) {
-      setSelectedTripError(
-        error instanceof Error && error.message
-          ? error.message
-          : "Не удалось обновить статус рейса."
-      )
-    } finally {
-      setIsStatusSubmitting(false)
-    }
-  }
-
   async function rescheduleTrip(
     event: React.DragEvent<HTMLDivElement>,
     lane: Lane
@@ -1028,16 +973,6 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                 timeZone: scheduleTimeZone,
               }).format(new Date(item.startsAt))
             }
-            actions={[
-              {
-                label: "Управление рейсом",
-                onSelect: (trip) => {
-                  setSelectedTripError(null)
-                  setIsCancelConfirmation(false)
-                  setSelectedTrip(trip)
-                },
-              },
-            ]}
             renderSchedule={(viewTrips) => (
               <section className="surface-card overflow-hidden">
                 <div className="flex flex-col gap-4 border-b border-border p-4 xl:flex-row xl:items-center xl:justify-between">
@@ -1199,11 +1134,11 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                                       )
                                       setDraggingTripID(trip.id)
                                     }}
-                                    onClick={() => {
-                                      setSelectedTripError(null)
-                                      setIsCancelConfirmation(false)
-                                      setSelectedTrip(trip)
-                                    }}
+                                    onClick={() =>
+                                      router.push(
+                                        entityDetailHref("trips", trip.id)
+                                      )
+                                    }
                                     style={{
                                       left: trip.left,
                                       width: trip.width,
@@ -1243,11 +1178,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                           <button
                             className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/50"
                             key={trip.id}
-                            onClick={() => {
-                              setSelectedTripError(null)
-                              setIsCancelConfirmation(false)
-                              setSelectedTrip(trip)
-                            }}
+                            onClick={() =>
+                              router.push(entityDetailHref("trips", trip.id))
+                            }
                             type="button"
                           >
                             <span
@@ -1712,177 +1645,6 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               </Button>
             </div>
           </form>
-        </div>
-      ) : null}
-      {selectedTrip ? (
-        <div
-          aria-labelledby="trip-card-title"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-end bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !isStatusSubmitting) {
-              setSelectedTrip(null)
-              setIsCancelConfirmation(false)
-            }
-          }}
-          role="dialog"
-        >
-          <section className="w-full rounded-t-[var(--app-radius)] border border-border bg-card p-5 shadow-2xl sm:max-w-lg sm:rounded-[var(--app-radius)] sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-primary">
-                  {selectedTrip.kindLabel}
-                </p>
-                <h2
-                  className="mt-1 truncate text-xl font-bold tracking-[-0.03em]"
-                  id="trip-card-title"
-                >
-                  {selectedTrip.title}
-                </h2>
-              </div>
-              <Badge variant="secondary" className="bg-secondary">
-                {tripOptions.find(
-                  (option) => option.value === selectedTrip.status
-                )?.label ?? selectedTrip.status}
-              </Badge>
-            </div>
-            <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5 border-y border-border py-5 text-sm">
-              <div>
-                <dt className="text-xs text-muted-foreground">Время</dt>
-                <dd className="mt-1 font-bold tabular-nums">
-                  {selectedTrip.time}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">Места</dt>
-                <dd className="mt-1 font-bold">{selectedTrip.capacity}</dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs text-muted-foreground">Транспорт</dt>
-                <dd className="mt-1 truncate font-bold">
-                  {selectedTrip.vehicle}
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs text-muted-foreground">Водитель</dt>
-                <dd className="mt-1 truncate font-bold">
-                  {selectedTrip.driver}
-                </dd>
-              </div>
-            </dl>
-            {selectedTripError ? (
-              <p
-                className="mt-4 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2 text-sm"
-                role="alert"
-              >
-                {selectedTripError}
-              </p>
-            ) : null}
-            {isCancelConfirmation ? (
-              <div className="mt-5 rounded-2xl border border-destructive/35 bg-destructive/10 p-4">
-                <p className="text-sm font-bold">Отменить этот рейс?</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Рейс исчезнет из активного расписания. Вернуть его обратно
-                  нельзя.
-                </p>
-                <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <Button
-                    disabled={isStatusSubmitting}
-                    disabledReason={
-                      "Действие с рейсом выполняется. Дождитесь завершения."
-                    }
-                    onClick={() => setIsCancelConfirmation(false)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    Не отменять
-                  </Button>
-                  <HoldActionButton
-                    disabled={isStatusSubmitting}
-                    disabledReason={
-                      "Действие с рейсом выполняется. Дождитесь завершения."
-                    }
-                    onConfirm={() => void changeSelectedTripStatus("cancelled")}
-                    size="sm"
-                  >
-                    {isStatusSubmitting ? "Отменяем…" : "Подтвердить отмену"}
-                  </HoldActionButton>
-                </div>
-              </div>
-            ) : null}
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <Button
-                className="order-2 sm:order-1"
-                disabled={isStatusSubmitting}
-                disabledReason={
-                  "Действие с рейсом выполняется. Дождитесь завершения."
-                }
-                onClick={() => {
-                  setSelectedTrip(null)
-                  setIsCancelConfirmation(false)
-                }}
-                type="button"
-                variant="outline"
-              >
-                Закрыть
-              </Button>
-              {selectedTrip.status === "new" ? (
-                <Button
-                  className="order-1 sm:order-2"
-                  disabled={isStatusSubmitting}
-                  disabledReason={
-                    "Действие с рейсом выполняется. Дождитесь завершения."
-                  }
-                  onClick={() => void changeSelectedTripStatus("assigned")}
-                  type="button"
-                >
-                  {isStatusSubmitting ? "Сохраняем…" : "Подтвердить назначение"}
-                </Button>
-              ) : null}
-              {selectedTrip.status === "assigned" ? (
-                <Button
-                  className="order-1 sm:order-2"
-                  disabled={isStatusSubmitting}
-                  disabledReason={
-                    "Действие с рейсом выполняется. Дождитесь завершения."
-                  }
-                  onClick={() => void changeSelectedTripStatus("in_progress")}
-                  type="button"
-                >
-                  {isStatusSubmitting ? "Запускаем…" : "Начать рейс"}
-                </Button>
-              ) : null}
-              {selectedTrip.status === "in_progress" ? (
-                <Button
-                  className="order-1 sm:order-2"
-                  disabled={isStatusSubmitting}
-                  disabledReason={
-                    "Действие с рейсом выполняется. Дождитесь завершения."
-                  }
-                  onClick={() => void changeSelectedTripStatus("completed")}
-                  type="button"
-                >
-                  {isStatusSubmitting ? "Завершаем…" : "Завершить рейс"}
-                </Button>
-              ) : null}
-              {!["completed", "cancelled"].includes(selectedTrip.status) &&
-              !isCancelConfirmation ? (
-                <Button
-                  className="order-3"
-                  disabled={isStatusSubmitting}
-                  disabledReason={
-                    "Действие с рейсом выполняется. Дождитесь завершения."
-                  }
-                  onClick={() => setIsCancelConfirmation(true)}
-                  type="button"
-                  variant="destructive"
-                >
-                  Отменить рейс
-                </Button>
-              ) : null}
-            </div>
-          </section>
         </div>
       ) : null}
     </>

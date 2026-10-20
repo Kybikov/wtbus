@@ -248,7 +248,7 @@ func validateEntityView(entity string, input *entityViewInput) bool {
 }
 
 func canEditEntityView(actor identity, owner *string, visibility string) bool {
-	return (owner != nil && *owner == actor.MembershipID) || (visibility == "shared" && (actor.Role == "owner" || actor.Role == "admin" || actor.Role == "developer"))
+	return actor.Role == "developer" || (owner != nil && *owner == actor.MembershipID) || (visibility == "shared" && (actor.Role == "owner" || actor.Role == "admin" || actor.Role == "developer"))
 }
 
 func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +276,7 @@ func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		rows, err := app.db.Query(r.Context(), `SELECT id::text,name,visibility,config,version,owner_membership_id::text FROM entity_views WHERE tenant_id=$1 AND entity=$2 AND (visibility='shared' OR owner_membership_id=$3) ORDER BY lower(name),id`, company.ID, entity, actor.MembershipID)
+		rows, err := app.db.Query(r.Context(), `SELECT id::text,name,visibility,config,version,owner_membership_id::text FROM entity_views WHERE tenant_id=$1 AND entity=$2 AND (visibility='shared' OR owner_membership_id=$3 OR $4='developer') ORDER BY lower(name),id`, company.ID, entity, actor.MembershipID, actor.Role)
 		if err != nil {
 			app.publicFailure(w, err)
 			return
@@ -345,7 +345,7 @@ func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "Оберіть вид."})
 			return
 		}
-		err = tx.QueryRow(r.Context(), `SELECT visibility,owner_membership_id::text,version FROM entity_views WHERE id=$1 AND tenant_id=$2 AND entity=$3 AND (visibility='shared' OR owner_membership_id=$4) FOR UPDATE`, id, company.ID, entity, actor.MembershipID).Scan(&visibility, &owner, &version)
+		err = tx.QueryRow(r.Context(), `SELECT visibility,owner_membership_id::text,version FROM entity_views WHERE id=$1 AND tenant_id=$2 AND entity=$3 AND (visibility='shared' OR owner_membership_id=$4 OR $5='developer') FOR UPDATE`, id, company.ID, entity, actor.MembershipID, actor.Role).Scan(&visibility, &owner, &version)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, 404, map[string]string{"error": "Вид більше недоступний."})
 			return
@@ -358,7 +358,7 @@ func (app *application) entityViews(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 403, map[string]string{"error": "Ви не можете змінювати цей вид. Створіть власну копію."})
 			return
 		}
-		if r.Method == "PATCH" && (input.Version != version || (visibility == "shared" && input.Visibility == "private" && (owner == nil || *owner != actor.MembershipID))) {
+		if r.Method == "PATCH" && (input.Version != version || (actor.Role != "developer" && visibility == "shared" && input.Visibility == "private" && (owner == nil || *owner != actor.MembershipID))) {
 			writeJSON(w, 409, map[string]string{"error": "Вид змінено іншим користувачем. Оновіть список або створіть копію."})
 			return
 		}
