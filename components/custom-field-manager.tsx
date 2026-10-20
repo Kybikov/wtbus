@@ -8,7 +8,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon, Edit02Icon } from "@hugeicons/core-free-icons"
 
 import { Input } from "@/components/ui/input"
-import { Checkbox } from "@/components/ui/checkbox"
+import { DeliverySwitch } from "@/components/ui/delivery-switch"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -417,10 +417,11 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
               />
             </label>
             <label className="flex items-center gap-3 self-end pb-3 text-sm font-semibold">
-              <Checkbox
+              <DeliverySwitch
+                label="Обязательное поле"
                 checked={form.isRequired}
                 disabled={saving}
-                onCheckedChange={(checked) => {
+                onChange={(checked) => {
                   if (editingID) autosave.commit({ isRequired: checked })
                   setForm((current) => ({
                     ...current,
@@ -454,10 +455,11 @@ export function CustomFieldManager({ disabled }: { disabled: boolean }) {
             ) : null}
             {editingID ? (
               <label className="flex items-center gap-3 text-sm font-semibold sm:col-span-2">
-                <Checkbox
+                <DeliverySwitch
+                  label="Показывать это поле сотрудникам"
                   checked={form.isActive}
                   disabled={saving}
-                  onCheckedChange={(checked) => {
+                  onChange={(checked) => {
                     autosave.commit({ isActive: checked })
                     setForm((current) => ({
                       ...current,

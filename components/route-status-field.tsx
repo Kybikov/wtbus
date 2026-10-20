@@ -1,4 +1,5 @@
 "use client"
+import { useActionConfirmation } from "@/components/action-confirmation"
 
 import * as React from "react"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -6,7 +7,7 @@ import { Plus, Settings2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+import { DeliverySwitch } from "@/components/ui/delivery-switch"
 import {
   Dialog,
   DialogContent,
@@ -197,6 +198,20 @@ export function WorkflowStatusField({
   onValueChange: (value: string) => void
 }) {
   const { statuses, setStatuses } = useWorkflowStatuses(entity)
+  const confirmAction = useActionConfirmation()
+  async function chooseStatus(key: string) {
+    if (
+      key !== value &&
+      statuses.find((item) => item.key === key)?.semanticPhase === "archived" &&
+      !(await confirmAction({
+        title: "Переместить в архив?",
+        label: "В архив",
+        tone: "archive",
+      }))
+    )
+      return
+    onValueChange(key)
+  }
   const [open, setOpen] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [selectedKey, setSelectedKey] = React.useState<string | undefined>()
@@ -325,7 +340,15 @@ export function WorkflowStatusField({
       window.dispatchEvent(
         new CustomEvent(`workflow-statuses-changed:${entity}`, { detail: item })
       )
-      onValueChange(item.key)
+      if (
+        item.semanticPhase !== "archived" ||
+        (await confirmAction({
+          title: "Переместить в архив?",
+          label: "В архив",
+          tone: "archive",
+        }))
+      )
+        onValueChange(item.key)
       setOpen(false)
       toast.success(editing ? "Статус обновлён" : "Статус добавлен", {
         description: item.label,
@@ -355,7 +378,7 @@ export function WorkflowStatusField({
             label: status.label,
           }))}
           value={value}
-          onValueChange={onValueChange}
+          onValueChange={(key) => void chooseStatus(key)}
         />
         <Button
           aria-label="Настроить статусы"
@@ -452,9 +475,10 @@ export function WorkflowStatusField({
               </span>
             </label>
             <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm">
-              <Checkbox
+              <DeliverySwitch
+                label="Доступен для планирования"
                 checked={isAvailable}
-                onCheckedChange={(checked) => {
+                onChange={(checked) => {
                   setIsAvailable(Boolean(checked))
                   if (selectedKey)
                     autosave.commit({ isAvailable: Boolean(checked) })
@@ -470,10 +494,11 @@ export function WorkflowStatusField({
               </span>
             </label>
             <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm">
-              <Checkbox
+              <DeliverySwitch
+                label="Финальный статус"
                 checked={isTerminal}
                 disabled={Boolean(selectedKey)}
-                onCheckedChange={(checked) => setIsTerminal(Boolean(checked))}
+                onChange={(checked) => setIsTerminal(Boolean(checked))}
               />
               <span>
                 <span className="block font-medium">Фінальний статус</span>

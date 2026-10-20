@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { EntityFilters } from "@/components/entity-filters"
+import { HoldActionButton } from "@/components/ui/hold-action-button"
 import { useFieldAutosave } from "@/components/use-field-autosave"
 import { sessionFetch } from "@/lib/session-navigation"
 import { adminControlClassName } from "@/lib/admin-ui"
@@ -902,18 +903,23 @@ export function EntityViewToolbar<T>({
             >
               {dialog === "edit" ? "Готово" : "Отмена"}
             </Button>
-            {dialog !== "edit" && (
-              <Button
-                variant={dialog === "delete" ? "destructive" : "default"}
+            {dialog === "delete" ? (
+              <HoldActionButton
                 disabled={busy}
-                onClick={() => dialog && void write(dialog)}
+                onConfirm={() => void write("delete")}
               >
-                {busy
-                  ? "Сохраняем…"
-                  : dialog === "delete"
-                    ? "Удалить"
-                    : "Создать вид"}
-              </Button>
+                Удалить
+              </HoldActionButton>
+            ) : (
+              dialog !== "edit" && (
+                <Button
+                  variant="default"
+                  disabled={busy}
+                  onClick={() => dialog && void write(dialog)}
+                >
+                  {busy ? "Сохраняем…" : "Создать вид"}
+                </Button>
+              )
             )}
           </div>
         </DialogContent>

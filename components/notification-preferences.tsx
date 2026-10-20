@@ -1,4 +1,5 @@
 "use client"
+import { HoldActionButton } from "@/components/ui/hold-action-button"
 // Adapted from React Bits Pro notifications-3: grouped delivery matrix, group
 // toggles and quiet hours. All controls persist through the membership API.
 import * as React from "react"
@@ -651,10 +652,9 @@ export function NotificationPreferences({
             >
               Отмена
             </Button>
-            <Button
-              variant="destructive"
+            <HoldActionButton
               disabled={!!busy}
-              onClick={() =>
+              onConfirm={() =>
                 void perform("disconnect", async () => {
                   setTelegram((await request("telegram", "DELETE")) as Telegram)
                   setLink(null)
@@ -665,7 +665,7 @@ export function NotificationPreferences({
             >
               <Unplug />
               Отключить
-            </Button>
+            </HoldActionButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

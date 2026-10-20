@@ -25,6 +25,12 @@ export const defaultLayoutPreferences: LayoutPreferences = {
   density: "comfortable",
 }
 
+export const defaultInterfacePreferences = {
+  theme: "dark" as const,
+  accent: "company" as const,
+  ...defaultLayoutPreferences,
+}
+
 export function parseLayoutPreferences(
   value: unknown
 ): LayoutPreferences | null {

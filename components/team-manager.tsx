@@ -1,4 +1,5 @@
 "use client"
+import { HoldActionButton } from "@/components/ui/hold-action-button"
 
 import * as React from "react"
 import { AdminNotice } from "@/components/admin-notice"
@@ -801,11 +802,11 @@ export function TeamManager() {
             <Button onClick={() => setDeleteTarget(null)} variant="outline">
               Отмена
             </Button>
-            <Button
+            <HoldActionButton
               disabled={
                 !deleteTarget || changingId === deleteTarget.membershipId
               }
-              onClick={() => {
+              onConfirm={() => {
                 if (!deleteTarget) return
                 void deleteMember(deleteTarget).then((ok) => {
                   if (ok) {
@@ -814,10 +815,9 @@ export function TeamManager() {
                   }
                 })
               }}
-              variant="destructive"
             >
               Удалить
-            </Button>
+            </HoldActionButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

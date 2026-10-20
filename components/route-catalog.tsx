@@ -1,4 +1,5 @@
 "use client"
+import { useActionConfirmation } from "@/components/action-confirmation"
 
 import { sessionFetch } from "@/lib/session-navigation"
 import { AdminNotice } from "@/components/admin-notice"
@@ -101,6 +102,7 @@ function getError(payload: unknown, fallback: string) {
 }
 
 export function RouteCatalog() {
+  const confirmAction = useActionConfirmation()
   const { statuses } = useRouteStatuses()
   const [routes, setRoutes] = React.useState<Route[]>([])
   const [currency, setCurrency] = React.useState("EUR")
@@ -310,6 +312,16 @@ export function RouteCatalog() {
   }
 
   async function moveStatus(route: Route, status: string) {
+    if (
+      statuses.find((item) => item.key === status)?.semanticPhase ===
+        "archived" &&
+      !(await confirmAction({
+        title: "Переместить в архив?",
+        label: "В архив",
+        tone: "archive",
+      }))
+    )
+      return false
     if (route.status === status) return false
     setRoutes((current) =>
       current.map((item) =>
@@ -454,7 +466,7 @@ export function RouteCatalog() {
             <label className="grid gap-2 text-sm font-semibold">
               Название
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 maxLength={160}
                 onChange={(event) => updateForm("name", event.target.value)}
                 required
@@ -464,7 +476,7 @@ export function RouteCatalog() {
             <label className="grid gap-2 text-sm font-semibold">
               Зарплата водителя за маршрут
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal tabular-nums"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal tabular-nums"
                 inputMode="decimal"
                 min="0"
                 onChange={(event) =>
@@ -481,7 +493,7 @@ export function RouteCatalog() {
             <label className="grid gap-2 text-sm font-semibold">
               Валюта
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal uppercase transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal uppercase transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 maxLength={3}
                 onChange={(event) =>
                   updateForm("currency", event.target.value.toUpperCase())
@@ -573,7 +585,7 @@ export function RouteCatalog() {
                 ? "Цена за всю бронь"
                 : "Цена за пассажира"}
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 inputMode="decimal"
                 min="0"
                 onChange={(event) => updateForm("price", event.target.value)}
@@ -591,7 +603,7 @@ export function RouteCatalog() {
             <label className="grid gap-2 text-sm font-semibold">
               Откуда
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 maxLength={120}
                 onChange={(event) => updateForm("origin", event.target.value)}
                 required
@@ -601,7 +613,7 @@ export function RouteCatalog() {
             <label className="grid gap-2 text-sm font-semibold">
               Куда
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 maxLength={120}
                 onChange={(event) =>
                   updateForm("destination", event.target.value)

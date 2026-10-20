@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { validateCheckout, type CheckoutErrors, type CheckoutPassenger } from "@/lib/booking-checkout"
 import { publicBookingFetch, travelDay, travelDate, travelMoney, travelTime, type PublicCatalog, type PublicConfirmation, type PublicTrip } from "@/lib/public-booking"
 
-const fieldClass = "h-11! w-full rounded-xl border-border bg-background px-3 font-normal text-foreground"
+const fieldClass = "h-11! w-full rounded-xl border-border bg-control px-3 font-normal text-foreground"
 const blankPassenger = (): CheckoutPassenger => ({ firstName: "", lastName: "", birthDate: "" })
 const paymentLabels: Record<string, string> = { cash_on_boarding: "Готівка при посадці", bank_transfer: "Переказ на IBAN" }
 

@@ -1,4 +1,5 @@
 "use client"
+import { useActionConfirmation } from "@/components/action-confirmation"
 import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
@@ -136,6 +137,7 @@ function formatDate(
 }
 
 export function IndividualTransferRequests() {
+  const confirmAction = useActionConfirmation()
   const { statuses } = useWorkflowStatuses("requests")
   const router = useRouter()
   const [items, setItems] = React.useState<TransferRequest[]>([])
@@ -203,6 +205,13 @@ export function IndividualTransferRequests() {
     item: TransferRequest,
     nextStatus: RequestStatus
   ) {
+    if (
+      nextStatus !== item.status &&
+      (statuses.find((status) => status.key === nextStatus)?.semanticPhase ??
+        nextStatus) === "cancelled" &&
+      !(await confirmAction({ title: "Отклонить заявку?", label: "Отклонить" }))
+    )
+      return
     setUpdatingID(item.id)
     setError(null)
     setNotice(null)
@@ -393,6 +402,15 @@ export function IndividualTransferRequests() {
     },
   ]
   async function bulkStatus(next: RequestStatus) {
+    if (
+      (statuses.find((status) => status.key === next)?.semanticPhase ??
+        next) === "cancelled" &&
+      !(await confirmAction({
+        title: "Отклонить выбранные заявки?",
+        label: "Отклонить",
+      }))
+    )
+      return
     await selection.run(
       items.filter((item) => canMoveRequest(item.status, next)),
       async (item) => {

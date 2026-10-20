@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { entityDetailHref } from "@/lib/entity-details"
 import { mergeVisibleCardOrder } from "@/lib/kanban"
+import { MobileSwipeActions } from "@/components/mobile-swipe-actions"
 import { createPortal } from "react-dom"
 import { serializeViewCsv } from "@/lib/admin-actions"
 import { EntityExportContext } from "@/components/entity-export-context"
@@ -715,84 +716,103 @@ export function EntityDataView<T>({
                 Выбрать все
               </label>
               {items.map((item) => (
-                <Card
+                <MobileSwipeActions
                   key={getId(item)}
-                  role="listitem"
-                  className={cn(
-                    "workspace-panel gap-3 py-3",
-                    selected.has(getId(item)) && "ring-1 ring-primary"
-                  )}
+                  label={getLabel(item)}
+                  onOpen={
+                    detailEnabled
+                      ? () =>
+                          router.push(entityDetailHref(collection, getId(item)))
+                      : undefined
+                  }
+                  actions={actions
+                    ?.filter((action) => !action.disabled?.(item))
+                    .map((action) => ({
+                      ...action,
+                      onSelect: () => action.onSelect(item),
+                    }))}
                 >
-                  <CardHeader className="flex flex-row items-start gap-2 px-3">
-                    <label className="flex min-w-11 shrink-0 items-center justify-center">
-                      <Checkbox
-                        aria-label={`Выбрать ${getLabel(item)}`}
-                        checked={selected.has(getId(item))}
-                        disabled={!isSelectable(item)}
-                        onCheckedChange={(checked) => toggleOne(item, checked)}
-                      />
-                    </label>
-                    <div className="flex min-h-11 min-w-0 flex-1 items-center">
+                  <Card
+                    key={getId(item)}
+                    role="listitem"
+                    className={cn(
+                      "workspace-panel gap-3 py-3",
+                      selected.has(getId(item)) && "ring-1 ring-primary"
+                    )}
+                  >
+                    <CardHeader className="flex flex-row items-start gap-2 px-3">
+                      <label className="flex min-w-11 shrink-0 items-center justify-center">
+                        <Checkbox
+                          aria-label={`Выбрать ${getLabel(item)}`}
+                          checked={selected.has(getId(item))}
+                          disabled={!isSelectable(item)}
+                          onCheckedChange={(checked) =>
+                            toggleOne(item, checked)
+                          }
+                        />
+                      </label>
+                      <div className="flex min-h-11 min-w-0 flex-1 items-center">
+                        {detailEnabled ? (
+                          <Link
+                            href={entityDetailHref(collection, getId(item))}
+                            className="flex min-h-11 w-full items-center font-semibold break-words hover:text-primary"
+                          >
+                            {getLabel(item)}
+                          </Link>
+                        ) : (
+                          <span className="font-semibold break-words">
+                            {getLabel(item)}
+                          </span>
+                        )}
+                      </div>
+                      {actions?.length ? (
+                        <EntityActionButtons
+                          actions={actions}
+                          item={item}
+                          label={getLabel(item)}
+                        />
+                      ) : null}
+                    </CardHeader>
+                    <CardContent className="px-3">
+                      <dl className="grid grid-cols-2 gap-3">
+                        {visibleColumns.map((column) => (
+                          <div
+                            key={column.id}
+                            className={cn(
+                              "min-w-0",
+                              [
+                                "name",
+                                "passenger",
+                                "passengers",
+                                "allPassengers",
+                                "route",
+                                "notes",
+                              ].includes(column.id) && "col-span-2"
+                            )}
+                          >
+                            <dt className="mb-1 text-xs text-muted-foreground">
+                              {column.label}
+                            </dt>
+                            <dd className="min-w-0 text-sm break-words [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal [&>*]:max-w-full [&>*]:min-w-0">
+                              {column.value(item)}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
                       {detailEnabled ? (
                         <Link
+                          className={buttonVariants({
+                            variant: "outline",
+                            className: "mt-3 w-full",
+                          })}
                           href={entityDetailHref(collection, getId(item))}
-                          className="flex min-h-11 w-full items-center font-semibold break-words hover:text-primary"
                         >
-                          {getLabel(item)}
+                          Открыть детали
                         </Link>
-                      ) : (
-                        <span className="font-semibold break-words">
-                          {getLabel(item)}
-                        </span>
-                      )}
-                    </div>
-                    {actions?.length ? (
-                      <EntityActionButtons
-                        actions={actions}
-                        item={item}
-                        label={getLabel(item)}
-                      />
-                    ) : null}
-                  </CardHeader>
-                  <CardContent className="px-3">
-                    <dl className="grid grid-cols-2 gap-3">
-                      {visibleColumns.map((column) => (
-                        <div
-                          key={column.id}
-                          className={cn(
-                            "min-w-0",
-                            [
-                              "name",
-                              "passenger",
-                              "passengers",
-                              "allPassengers",
-                              "route",
-                              "notes",
-                            ].includes(column.id) && "col-span-2"
-                          )}
-                        >
-                          <dt className="mb-1 text-xs text-muted-foreground">
-                            {column.label}
-                          </dt>
-                          <dd className="min-w-0 text-sm break-words [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal [&>*]:max-w-full [&>*]:min-w-0">
-                            {column.value(item)}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                    {detailEnabled ? (
-                      <Link
-                        className={buttonVariants({
-                          variant: "outline",
-                          className: "mt-3 w-full",
-                        })}
-                        href={entityDetailHref(collection, getId(item))}
-                      >
-                        Открыть детали
-                      </Link>
-                    ) : null}
-                  </CardContent>
-                </Card>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </MobileSwipeActions>
               ))}
             </div>
             <div className="surface-card hidden overflow-hidden md:block">
@@ -1070,36 +1090,53 @@ export function EntityDataView<T>({
         ) : mode === "list" ? (
           <div className="surface-card divide-y">
             {items.map((item) => (
-              <ContextMenu key={getId(item)}>
-                <ContextMenuTrigger
-                  render={
-                    <article
-                      className="flex cursor-pointer items-start gap-3 px-2 py-1"
-                      onClick={(event) => openCard(item, event)}
+              <MobileSwipeActions
+                key={getId(item)}
+                label={getLabel(item)}
+                onOpen={
+                  detailEnabled
+                    ? () =>
+                        router.push(entityDetailHref(collection, getId(item)))
+                    : undefined
+                }
+                actions={actions
+                  ?.filter((action) => !action.disabled?.(item))
+                  .map((action) => ({
+                    ...action,
+                    onSelect: () => action.onSelect(item),
+                  }))}
+              >
+                <ContextMenu>
+                  <ContextMenuTrigger
+                    render={
+                      <article
+                        className="flex cursor-pointer items-start gap-3 px-2 py-1"
+                        onClick={(event) => openCard(item, event)}
+                      />
+                    }
+                  >
+                    <Checkbox
+                      aria-label={`Выбрать ${getLabel(item)}`}
+                      checked={selected.has(getId(item))}
+                      disabled={!isSelectable(item)}
+                      onCheckedChange={(checked) => toggleOne(item, checked)}
                     />
-                  }
-                >
-                  <Checkbox
-                    aria-label={`Выбрать ${getLabel(item)}`}
-                    checked={selected.has(getId(item))}
-                    disabled={!isSelectable(item)}
-                    onCheckedChange={(checked) => toggleOne(item, checked)}
+                    <div className="min-w-0 flex-1">{card(item)}</div>
+                    {actions?.length ? (
+                      <EntityActionButtons
+                        actions={actions}
+                        item={item}
+                        label={getLabel(item)}
+                      />
+                    ) : null}
+                  </ContextMenuTrigger>
+                  <EntityMenu
+                    actions={actions}
+                    item={item}
+                    label={getLabel(item)}
                   />
-                  <div className="min-w-0 flex-1">{card(item)}</div>
-                  {actions?.length ? (
-                    <EntityActionButtons
-                      actions={actions}
-                      item={item}
-                      label={getLabel(item)}
-                    />
-                  ) : null}
-                </ContextMenuTrigger>
-                <EntityMenu
-                  actions={actions}
-                  item={item}
-                  label={getLabel(item)}
-                />
-              </ContextMenu>
+                </ContextMenu>
+              </MobileSwipeActions>
             ))}
           </div>
         ) : mode === "kanban" ? (

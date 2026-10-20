@@ -523,7 +523,7 @@ export function FinanceDashboard() {
             <label className="text-sm font-semibold">
               Сумма
               <Input
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
+                className="mt-2 h-11 w-full rounded-xl border border-border bg-control px-3 text-sm font-normal"
                 inputMode="decimal"
                 onChange={(event) => setAmount(event.target.value)}
                 placeholder={`0,00 ${cashCurrency || currency}`}
@@ -588,7 +588,7 @@ export function FinanceDashboard() {
             <label className="text-sm font-semibold">
               Сумма
               <Input
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
+                className="mt-2 h-11 w-full rounded-xl border border-border bg-control px-3 text-sm font-normal"
                 inputMode="decimal"
                 onChange={(event) => setExpenseAmount(event.target.value)}
                 placeholder={`0,00 ${expenseCurrency || currency}`}
@@ -598,7 +598,7 @@ export function FinanceDashboard() {
             <label className="text-sm font-semibold">
               Комментарий
               <Input
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"
+                className="mt-2 h-11 w-full rounded-xl border border-border bg-control px-3 text-sm font-normal"
                 maxLength={500}
                 onChange={(event) => setExpenseDescription(event.target.value)}
                 placeholder="Например, заправка перед рейсом"

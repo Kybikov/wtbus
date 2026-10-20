@@ -1,4 +1,5 @@
 "use client"
+import { HoldActionButton } from "@/components/ui/hold-action-button"
 
 import * as React from "react"
 import {
@@ -183,10 +184,9 @@ export function IntegrationConnectionCard({
             >
               Отмена
             </Button>
-            <Button
-              variant="destructive"
+            <HoldActionButton
               disabled={saving}
-              onClick={() =>
+              onConfirm={() =>
                 void onRemove().then((removed) => {
                   if (removed) setConfirmRemove(false)
                 })
@@ -194,7 +194,7 @@ export function IntegrationConnectionCard({
             >
               {saving ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
               Удалить ключ
-            </Button>
+            </HoldActionButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,4 +1,5 @@
 "use client"
+import { useActionConfirmation } from "@/components/action-confirmation"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
@@ -112,6 +113,7 @@ function relativeTime(value: string, now: number) {
 }
 
 export function FleetOperations() {
+  const confirmAction = useActionConfirmation()
   const { statuses } = useWorkflowStatuses("vehicles")
   const [query, setQuery] = usePageSearch()
   const selection = useEntitySelection<Vehicle>((item) => item.id)
@@ -246,6 +248,16 @@ export function FleetOperations() {
   }
 
   async function moveVehicleStatus(vehicle: Vehicle, status: string) {
+    if (
+      statuses.find((item) => item.key === status)?.semanticPhase ===
+        "archived" &&
+      !(await confirmAction({
+        title: "Переместить в архив?",
+        label: "В архив",
+        tone: "archive",
+      }))
+    )
+      return false
     if (!canManage || !statuses.some((item) => item.key === status))
       return false
     setError(null)
@@ -294,6 +306,15 @@ export function FleetOperations() {
   }
 
   async function toggleVehicle(vehicle: Vehicle) {
+    if (
+      vehicle.isActive &&
+      !(await confirmAction({
+        title: `Переместить «${vehicle.name}» в архив?`,
+        label: "В архив",
+        tone: "archive",
+      }))
+    )
+      return
     setSaving(true)
     setError(null)
     try {
@@ -417,6 +438,15 @@ export function FleetOperations() {
     textColumn<Vehicle>("id", "ID", (item) => item.id, false),
   ]
   async function bulkActive(active: boolean) {
+    if (
+      !active &&
+      !(await confirmAction({
+        title: "Переместить выбранные автомобили в архив?",
+        label: "В архив",
+        tone: "archive",
+      }))
+    )
+      return
     await selection.run(
       fleet,
       async (item) => {
@@ -518,7 +548,7 @@ export function FleetOperations() {
             <label className="grid gap-2 text-sm font-semibold">
               Название автомобиля
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={160}
                 onChange={(event) => updateForm("name", event.target.value)}
@@ -530,7 +560,7 @@ export function FleetOperations() {
             <label className="grid gap-2 text-sm font-semibold">
               Госномер
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal uppercase outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal uppercase outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={64}
                 onChange={(event) =>
@@ -544,7 +574,7 @@ export function FleetOperations() {
             <label className="grid gap-2 text-sm font-semibold">
               Класс транспорта
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 maxLength={80}
                 onChange={(event) =>
@@ -558,7 +588,7 @@ export function FleetOperations() {
             <label className="grid gap-2 text-sm font-semibold">
               Количество мест
               <Input
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 disabled={saving}
                 max={150}
                 min={1}

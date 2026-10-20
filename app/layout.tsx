@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next"
 
 import "./globals.css"
 import { InterfacePreferencesProvider } from "@/components/interface-preferences"
+import { ActionConfirmationProvider } from "@/components/action-confirmation"
 import { PWARegistrar } from "@/components/pwa-registrar"
 import { DeviceNotificationMonitor } from "@/components/device-notification-monitor"
 import { LayoutPreferencesProvider } from "@/components/layout-preferences-provider"
@@ -73,7 +74,11 @@ export default async function RootLayout({
               <DeviceNotificationMonitor />
               <SessionMonitor />
               <InterfacePreferencesProvider>
-                <MobileNavigationProvider>{children}</MobileNavigationProvider>
+                <ActionConfirmationProvider>
+                  <MobileNavigationProvider>
+                    {children}
+                  </MobileNavigationProvider>
+                </ActionConfirmationProvider>
               </InterfacePreferencesProvider>
               <Toaster />
             </TooltipProvider>

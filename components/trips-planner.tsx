@@ -1,4 +1,6 @@
 "use client"
+import { useActionConfirmation } from "@/components/action-confirmation"
+import { HoldActionButton } from "@/components/ui/hold-action-button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 
@@ -379,6 +381,7 @@ const tripStatusLabels: Record<string, string> = {
 }
 
 export function TripsPlanner() {
+  const confirmAction = useActionConfirmation()
   const { statuses: workflowStatuses } = useWorkflowStatuses("trips")
   const [weekStart, setWeekStart] = React.useState(() =>
     startOfWeek(new Date())
@@ -744,7 +747,10 @@ export function TripsPlanner() {
     if (
       workflowStatuses.find((item) => item.key === status)?.semanticPhase ===
         "cancelled" &&
-      !window.confirm(`Отменить рейс «${trip.title}»?`)
+      !(await confirmAction({
+        title: `Отменить рейс «${trip.title}»?`,
+        label: "Отменить рейс",
+      }))
     )
       return false
     setLoadError(null)
@@ -1415,7 +1421,7 @@ export function TripsPlanner() {
               <label className="grid gap-2 text-sm font-semibold">
                 Откуда
                 <Input
-                  className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                   disabled={
                     tripForm.kind === "regular" && tripForm.routeId !== ""
                   }
@@ -1434,7 +1440,7 @@ export function TripsPlanner() {
               <label className="grid gap-2 text-sm font-semibold">
                 Куда
                 <Input
-                  className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                   disabled={
                     tripForm.kind === "regular" && tripForm.routeId !== ""
                   }
@@ -1453,7 +1459,7 @@ export function TripsPlanner() {
               <label className="grid gap-2 text-sm font-semibold">
                 Отправление
                 <Input
-                  className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                   onChange={(event) =>
                     setTripForm((current) => ({
                       ...current,
@@ -1468,7 +1474,7 @@ export function TripsPlanner() {
               <label className="grid gap-2 text-sm font-semibold">
                 Прибытие
                 <Input
-                  className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                   onChange={(event) =>
                     setTripForm((current) => ({
                       ...current,
@@ -1502,7 +1508,7 @@ export function TripsPlanner() {
                   : "Цена за пассажира"}{" "}
                 · {resources.currency}
                 <Input
-                  className="h-11 rounded-xl border border-border bg-background px-3 text-sm tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                   disabled={isResourcesLoading}
                   inputMode="decimal"
                   max="100000000"
@@ -1536,7 +1542,7 @@ export function TripsPlanner() {
                   <label className="grid gap-2 text-sm font-semibold sm:max-w-xs">
                     Повторять еженедельно до
                     <Input
-                      className="h-11 rounded-xl border border-border bg-background px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+                      className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                       min={tripForm.startsAt.slice(0, 10)}
                       onChange={(event) =>
                         setTripForm((current) => ({
@@ -1758,15 +1764,13 @@ export function TripsPlanner() {
                   >
                     Не отменять
                   </Button>
-                  <Button
+                  <HoldActionButton
                     disabled={isStatusSubmitting}
-                    onClick={() => void changeSelectedTripStatus("cancelled")}
+                    onConfirm={() => void changeSelectedTripStatus("cancelled")}
                     size="sm"
-                    type="button"
-                    variant="destructive"
                   >
                     {isStatusSubmitting ? "Отменяем…" : "Подтвердить отмену"}
-                  </Button>
+                  </HoldActionButton>
                 </div>
               </div>
             ) : null}

@@ -12,7 +12,7 @@ function CountrySelect({ value, options, onChange, disabled, readOnly }: {
   onChange: (value?: Country) => void; disabled?: boolean; readOnly?: boolean
 }) {
   return <Select value={value ?? "international"} onValueChange={(next) => onChange(next === "international" ? undefined : next as Country)} disabled={disabled || readOnly}>
-    <SelectTrigger aria-label="Країна телефонного номера" className="h-11! w-24 shrink-0 rounded-xl border-border bg-background px-3">
+    <SelectTrigger aria-label="Країна телефонного номера" className="h-11! w-24 shrink-0 rounded-xl border-border bg-control px-3">
       <SelectValue>{value ? `${value} +${getCountryCallingCode(value)}` : "+"}</SelectValue>
     </SelectTrigger>
     <SelectContent alignItemWithTrigger={false} className="max-w-[calc(100vw-2rem)]">
@@ -22,5 +22,5 @@ function CountrySelect({ value, options, onChange, disabled, readOnly }: {
 }
 
 export function PhoneInput({ className, ...props }: ComponentProps<typeof PhoneNumberInput>) {
-  return <PhoneNumberInput defaultCountry="UA" international labels={labels} inputComponent={Input} countrySelectComponent={CountrySelect} className={cn("flex min-w-0 gap-2 [&_input]:h-11 [&_input]:rounded-xl [&_input]:border-border [&_input]:bg-background [&_input]:px-3", className)} {...props} />
+  return <PhoneNumberInput defaultCountry="UA" international labels={labels} inputComponent={Input} countrySelectComponent={CountrySelect} className={cn("flex min-w-0 gap-2 [&_input]:h-11 [&_input]:rounded-xl [&_input]:border-border [&_input]:bg-control [&_input]:px-3", className)} {...props} />
 }

@@ -1,4 +1,5 @@
 "use client"
+import { useActionConfirmation } from "@/components/action-confirmation"
 import { canMoveBookingStatus } from "@/lib/kanban-workflow"
 import { Badge } from "@/components/ui/badge"
 
@@ -228,6 +229,7 @@ function statusClass(status: string) {
 }
 
 export function BookingRegistry() {
+  const confirmAction = useActionConfirmation()
   const { statuses: bookingStatuses } = useWorkflowStatuses("bookings")
   const { statuses: tripStatuses } = useWorkflowStatuses("trips")
   const bookingStatusOptions = bookingStatuses.length
@@ -256,9 +258,10 @@ export function BookingRegistry() {
       "cancelled"
     if (
       cancelling &&
-      !window.confirm(
-        `Отменить бронирование ${booking.customerName ?? booking.customerPhone}?`
-      )
+      !(await confirmAction({
+        title: `Отменить бронирование ${booking.customerName ?? booking.customerPhone}?`,
+        label: "Отменить бронирование",
+      }))
     )
       return false
     setError(null)
@@ -595,9 +598,11 @@ export function BookingRegistry() {
   ) {
     if (
       confirm &&
-      !window.confirm(
-        `Отменить бронирование ${booking.customerName || booking.customerPhone}? Места снова станут доступны.`
-      )
+      !(await confirmAction({
+        title: `Отменить бронирование ${booking.customerName || booking.customerPhone}?`,
+        description: "Места снова станут доступны.",
+        label: "Отменить бронирование",
+      }))
     )
       return
     setCancellingID(booking.id)
@@ -669,7 +674,10 @@ export function BookingRegistry() {
     )
     if (
       !targets.length ||
-      !window.confirm(`Отменить выбранные бронирования: ${targets.length}?`)
+      !(await confirmAction({
+        title: `Отменить выбранные бронирования: ${targets.length}?`,
+        label: "Отменить бронирования",
+      }))
     )
       return
     for (const booking of targets) {

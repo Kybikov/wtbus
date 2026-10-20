@@ -152,7 +152,7 @@ export function LoginForm() {
             <div className="space-y-2" role="list">
               {companySelection.companies.map((company) => (
                 <button
-                  className="flex w-full items-center justify-between rounded-2xl border border-border bg-background px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-primary/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full items-center justify-between rounded-2xl border border-border bg-control px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-primary/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={submitting}
                   key={company.slug}
                   onClick={() => selectCompany(company)}
@@ -188,7 +188,7 @@ export function LoginForm() {
               Email
               <Input
                 autoComplete="email"
-                className="h-11 rounded-xl border border-border bg-background px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="h-11 rounded-xl border border-border bg-control px-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 onChange={(event) => setEmail(event.target.value)}
                 required
                 type="email"
@@ -201,7 +201,7 @@ export function LoginForm() {
                 <Input
                   id="login-password"
                   autoComplete="current-password"
-                  className="h-11 rounded-xl border border-border bg-background pr-12 pl-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  className="h-11 rounded-xl border border-border bg-control pr-12 pl-3 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                   onChange={(event) => setPassword(event.target.value)}
                   required
                   type={showPassword ? "text" : "password"}

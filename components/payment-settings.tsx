@@ -9,7 +9,7 @@ import { Banknote } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { LogoPicker } from "@/components/ui/logo-picker"
-import { Checkbox } from "@/components/ui/checkbox"
+import { DeliverySwitch } from "@/components/ui/delivery-switch"
 import { useFieldAutosave } from "@/components/use-field-autosave"
 
 type PaymentConfig = {
@@ -202,17 +202,17 @@ export function PaymentSettings({ disabled }: { disabled: boolean }) {
         </div>
       </div>
       <label className="mt-5 flex items-start gap-3 rounded-xl bg-control p-4 text-sm">
-        <Checkbox
+        <DeliverySwitch
+          label="Включить оплату в Telegram-боте"
           checked={config.isEnabled}
           disabled={disabled || loading || !loaded}
-          onCheckedChange={(checked) => {
+          onChange={(checked) => {
             autosave.commit({ isEnabled: checked === true })
             setConfig((current) => ({
               ...current,
               isEnabled: checked === true,
             }))
           }}
-          className="mt-0.5"
         />
         <span>
           <span className="font-semibold">Включить оплату в Telegram-боте</span>

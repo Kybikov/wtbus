@@ -7,6 +7,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useLayoutPreferences } from "@/components/layout-preferences-provider"
 import { sessionFetch } from "@/lib/session-navigation"
 import { cn } from "@/lib/utils"
+import { defaultInterfacePreferences } from "@/lib/layout-preferences"
+import { Button } from "@/components/ui/button"
+import { RotateCcw } from "lucide-react"
 type ThemePreset = "company" | "gold" | "ocean" | "emerald" | "violet"
 type Radius = "sm" | "md" | "lg"
 type Scale = "sm" | "md" | "lg"
@@ -138,7 +141,7 @@ function SegmentedControl<T extends string>({
           className={cn(
             "w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
             value === option.value
-              ? "bg-secondary text-foreground"
+              ? "bg-control-hover text-foreground"
               : "text-muted-foreground hover:text-foreground"
           )}
           key={option.value}
@@ -192,7 +195,9 @@ function InterfacePreferencesState({
   // must not rerun and restore the company default after a personal selection.
   const applyTheme = React.useEffectEvent((value: string) => setTheme(value))
   const { preferences: initialLayout } = useLayoutPreferences()
-  const [preset, setPreset] = React.useState<ThemePreset>("company")
+  const [preset, setPreset] = React.useState<ThemePreset>(
+    defaultInterfacePreferences.accent
+  )
   const [companyAccent, setCompanyAccent] = React.useState("#E9B74D")
   const [radius, setRadius] = React.useState<Radius>(initialLayout.radius)
   const [compact, setCompact] = React.useState(
@@ -207,6 +212,18 @@ function InterfacePreferencesState({
   )
   const [preferencesReady, setPreferencesReady] = React.useState(false)
   const hasPersonalThemePreference = React.useRef(false)
+
+  function resetPreferences() {
+    const defaults = defaultInterfacePreferences
+    hasPersonalThemePreference.current = true
+    setPreset(defaults.accent)
+    setRadius(defaults.radius)
+    setCompact(defaults.density === "compact")
+    setScale(defaults.scale)
+    setSidebarVariant(defaults.sidebarVariant)
+    setSidebarMode(defaults.sidebarMode)
+    setTheme(defaults.theme)
+  }
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -478,10 +495,20 @@ function InterfacePreferencesState({
                 />
               </div>
             </div>
-            <p className="mt-5 border-t border-border pt-3 text-xs leading-4 text-muted-foreground">
-              Настройки сохраняются в профиле и синхронизируются между
-              устройствами.
-            </p>
+            <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-4 text-muted-foreground">
+                Настройки сохраняются в профиле и синхронизируются между
+                устройствами.
+              </p>
+              <Button
+                disabled={!preferencesReady}
+                onClick={resetPreferences}
+                variant="outline"
+              >
+                <RotateCcw />
+                По умолчанию
+              </Button>
+            </div>
           </div>
         ),
       }}
