@@ -17,20 +17,15 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/vivat-bus/tms/internal/bookingrules"
 	"github.com/vivat-bus/tms/internal/ibanpayment"
 )
 
 // This predicate is shared by discovery and checkout. No private transfers,
 // drafts, disabled routes/vehicles, departed trips or blocked departures are sold.
-const publicSalePredicate = `t.kind = 'regular' AND t.pricing_mode = 'per_passenger'
- AND workflow_status_phase(t.tenant_id,'trips',t.status) IN ('planned','assigned') AND t.starts_at > now()
- AND (t.route_id IS NULL OR EXISTS (SELECT 1 FROM routes r WHERE r.id=t.route_id AND r.tenant_id=t.tenant_id AND r.is_active))
- AND (t.vehicle_id IS NULL OR EXISTS (SELECT 1 FROM vehicles v WHERE v.id=t.vehicle_id AND v.tenant_id=t.tenant_id AND v.is_active))
- AND NOT EXISTS (SELECT 1 FROM availability_blocks a WHERE a.tenant_id=t.tenant_id
-   AND (a.route_id IS NULL OR a.route_id=t.route_id) AND a.starts_at<t.ends_at AND a.ends_at>t.starts_at)`
+const publicSalePredicate = bookingrules.SalePredicate
 
-const publicOccupiedSQL = `(SELECT COALESCE(sum(b.seats),0) FROM bookings b WHERE b.trip_id=t.id
- AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())))`
+const publicOccupiedSQL = bookingrules.OccupiedSQL
 
 var publicUUID = regexp.MustCompile(`(?i)^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
@@ -385,6 +380,10 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 			app.publicFailure(w, err)
 			return
 		}
+		if err = tx.Commit(r.Context()); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"item": result})
 		return
 	}
@@ -571,6 +570,9 @@ func (app *application) publicPaymentStatus(w http.ResponseWriter, r *http.Reque
 		app.publicFailure(w, err)
 		return
 	}
+	if payment.PaymentStatus != "paid" && payment.BookingStatus == "awaiting_payment" && payment.ExpiresAt != nil && !payment.ExpiresAt.After(time.Now()) {
+		payment.BookingStatus, payment.PaymentStatus = "expired", "cancelled"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"bookingStatus": payment.BookingStatus, "paymentStatus": payment.PaymentStatus, "expiresAt": payment.ExpiresAt, "paidAt": payment.PaidAt})
 }
 
@@ -595,7 +597,7 @@ func (app *application) publicPaymentQR(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "QR unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if payment.ExpiresAt != nil && payment.ExpiresAt.Before(time.Now()) && payment.PaymentStatus != "paid" {
+	if payment.PaymentStatus != "pending" || payment.BookingStatus != "awaiting_payment" || (payment.ExpiresAt != nil && !payment.ExpiresAt.After(time.Now())) {
 		http.Error(w, "Payment expired", http.StatusGone)
 		return
 	}

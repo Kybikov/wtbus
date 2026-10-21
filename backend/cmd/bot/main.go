@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/vivat-bus/tms/internal/bookingrules"
 	"github.com/vivat-bus/tms/internal/ibanpayment"
 	"github.com/vivat-bus/tms/internal/notificationprefs"
 	"github.com/vivat-bus/tms/internal/telegramoutbox"
@@ -670,7 +671,7 @@ func (app *app) deliverPendingTelegramNotifications(ctx context.Context) error {
 				}
 				continue
 			}
-			text = fmt.Sprintf("Оплату отримано: %s. Бронювання %s підтверджено.", formatMoney(payload.AmountMinor, payload.Currency), payload.BookingID)
+			text = fmt.Sprintf("Оплата подтверждена: %s. Бронирование %s подтверждено.", formatMoney(payload.AmountMinor, payload.Currency), payload.BookingID)
 		default:
 			app.log.Error("unsupported telegram notification kind", "kind", notification.Kind, "notification", notification.ID)
 			if err := app.retryTelegramNotification(ctx, notification.ID); err != nil {
@@ -1539,9 +1540,9 @@ func (app *app) handleRouteCallback(chatID int64, data string) {
 		FROM routes route
 		WHERE route.id = $1 AND route.tenant_id = $2 AND route.is_active
 			AND EXISTS (
-				SELECT 1 FROM trips trip
-				WHERE trip.route_id = route.id AND trip.tenant_id = route.tenant_id
-					AND trip.status IN ('new', 'assigned') AND trip.starts_at > now()
+				SELECT 1 FROM trips t
+				WHERE t.route_id = route.id AND t.tenant_id = route.tenant_id
+					AND `+bookingrules.SalePredicate+`
 			)
 	`, routeID, app.tenantID).Scan(&state.Origin, &state.Destination)
 	if err != nil {
@@ -1903,18 +1904,18 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 	var trip tripOption
 	var capacity int
 	err = tx.QueryRow(ctx, `
-		SELECT id::text, origin_name, destination_name, starts_at, ends_at, price_minor, currency, pricing_mode, capacity
-		FROM trips
-		WHERE id = $1 AND tenant_id = $2 AND status IN ('new', 'assigned')
+		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.price_minor, t.currency, t.pricing_mode, t.capacity
+		FROM trips t
+		WHERE t.id = $1 AND t.tenant_id = $2 AND `+bookingrules.SalePredicate+`
 			AND origin_name ILIKE '%' || $3 || '%' AND destination_name ILIKE '%' || $4 || '%'
 			AND starts_at >= $5 AND starts_at < $6
 			AND NOT EXISTS (
 				SELECT 1 FROM availability_blocks block
-				WHERE block.tenant_id = trips.tenant_id
-				  AND block.starts_at < trips.ends_at AND block.ends_at > trips.starts_at
-				  AND (block.route_id IS NULL OR block.route_id = trips.route_id)
+				WHERE block.tenant_id = t.tenant_id
+				  AND block.starts_at < t.ends_at AND block.ends_at > t.starts_at
+				  AND (block.route_id IS NULL OR block.route_id = t.route_id)
 			)
-		FOR UPDATE
+		FOR UPDATE OF t
 	`, tripID, app.tenantID, state.Origin, state.Destination, day, day.AddDate(0, 0, 1)).Scan(&trip.ID, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.PriceMinor, &trip.Currency, &trip.PricingMode, &capacity)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return createdBooking{}, errUnavailableTrip
@@ -1927,14 +1928,14 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 		return createdBooking{}, errUnavailableTrip
 	}
 	var alreadyBooked bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM bookings WHERE trip_id = $1 AND customer_id = $2 AND status IN ('pending', 'awaiting_payment', 'cash_on_boarding', 'confirmed'))`, tripID, customerID).Scan(&alreadyBooked); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM bookings WHERE trip_id = $1 AND customer_id = $2 AND workflow_status_phase(tenant_id,'bookings',status) IN ('pending', 'awaiting_payment', 'confirmed'))`, tripID, customerID).Scan(&alreadyBooked); err != nil {
 		return createdBooking{}, err
 	}
 	if alreadyBooked {
 		return createdBooking{}, errAlreadyBooked
 	}
 	var occupied int
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(seats), 0) FROM bookings WHERE trip_id = $1 AND (status IN ('pending', 'cash_on_boarding', 'confirmed') OR (status = 'awaiting_payment' AND payment_hold_expires_at > now()))`, tripID).Scan(&occupied); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT `+bookingrules.OccupiedSQL+` FROM trips t WHERE t.id=$1 AND t.tenant_id=$2`, tripID, app.tenantID).Scan(&occupied); err != nil {
 		return createdBooking{}, err
 	}
 	if occupied+int(state.PendingSeats) > capacity {
@@ -2065,7 +2066,7 @@ func (app *app) showBankChoices(chatID, telegramID int64, paymentID string) {
 	payment, err := app.loadTelegramPayment(context.Background(), paymentID, telegramID)
 	if err != nil {
 		app.log.Warn("load telegram payment", "error", err, "payment", paymentID)
-		app.send(chatID, "Не удалось открыть оплату. Выберите оплату наличными при посадке или обратитесь к перевозчику.")
+		app.send(chatID, "Оплата больше недоступна. Проверьте статус в разделе «Мои поездки» или обратитесь к перевозчику.")
 		return
 	}
 	if !validUAIBAN(payment.IBAN) || payment.MerchantName == "" || payment.EDRPOU == "" {
@@ -2090,7 +2091,7 @@ func (app *app) showBankChoices(chatID, telegramID int64, paymentID string) {
 func (app *app) showOtherBankChoices(chatID, telegramID int64, paymentID string) {
 	if _, err := app.loadTelegramPayment(context.Background(), paymentID, telegramID); err != nil {
 		app.log.Warn("load telegram payment", "error", err, "payment", paymentID)
-		app.send(chatID, "Оплата больше недоступна. Выберите оплату при посадке.")
+		app.send(chatID, "Оплата больше недоступна. Проверьте статус в разделе «Мои поездки».")
 		return
 	}
 	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(otherBanks)+2)
@@ -2112,7 +2113,7 @@ func (app *app) sendBankPayment(chatID, telegramID int64, bankCode, paymentID st
 	payment, err := app.loadTelegramPayment(context.Background(), paymentID, telegramID)
 	if err != nil {
 		app.log.Warn("load telegram payment", "error", err, "payment", paymentID)
-		app.send(chatID, "Оплата больше недоступна. Выберите оплату при посадке.")
+		app.send(chatID, "Оплата больше недоступна. Проверьте статус в разделе «Мои поездки».")
 		return
 	}
 	if !validUAIBAN(payment.IBAN) || payment.MerchantName == "" || payment.EDRPOU == "" {
@@ -2125,6 +2126,8 @@ func (app *app) sendBankPayment(chatID, telegramID int64, bankCode, paymentID st
 	}
 	if err := app.setTelegramPaymentMethod(context.Background(), paymentID, "bank_transfer", bank.Code); err != nil {
 		app.log.Warn("set telegram payment method", "error", err, "payment", paymentID)
+		app.send(chatID, "Оплата больше недоступна. Обновите список через «Мои поездки».")
+		return
 	}
 	qrData := nbuPaymentQR(payment)
 	png, err := ibanpayment.PNG(paymentIBANDetails(payment), time.Now(), 512)
@@ -2183,6 +2186,11 @@ func (app *app) chooseCashBooking(ctx context.Context, paymentID string) error {
 	}
 	defer tx.Rollback(ctx)
 	var bookingID string
+	// Match reconciliation's lock order: booking first, payment second.
+	if err := tx.QueryRow(ctx, `SELECT b.id::text FROM bookings b JOIN payments p ON p.booking_id=b.id AND p.tenant_id=b.tenant_id
+ WHERE p.id=$1 AND p.tenant_id=$2 AND p.status='pending' AND b.status='awaiting_payment' AND b.payment_hold_expires_at>now() FOR UPDATE OF b`, paymentID, app.tenantID).Scan(&bookingID); err != nil {
+		return err
+	}
 	if err := tx.QueryRow(ctx, `
 		UPDATE payments
 		SET payment_method = 'cash', provider_payload = provider_payload || jsonb_build_object('method', 'cash'), updated_at = now()
@@ -2205,7 +2213,16 @@ func (app *app) chooseCashBooking(ctx context.Context, paymentID string) error {
 }
 
 func (app *app) setTelegramPaymentMethod(ctx context.Context, paymentID, method, bankCode string) error {
-	result, err := app.db.Exec(ctx, `
+	tx, err := app.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var bookingID string
+	if err = tx.QueryRow(ctx, `SELECT b.id::text FROM bookings b JOIN payments p ON p.booking_id=b.id AND p.tenant_id=b.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.status='pending' AND b.status='awaiting_payment' AND b.payment_hold_expires_at>now() FOR UPDATE OF b`, paymentID, app.tenantID).Scan(&bookingID); err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `
 		UPDATE payments
 		SET payment_method = $3::text,
 			provider_payload = provider_payload || jsonb_build_object('method', $3::text, 'bank', NULLIF($4::text, '')),
@@ -2218,7 +2235,7 @@ func (app *app) setTelegramPaymentMethod(ctx context.Context, paymentID, method,
 	if result.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func paymentCashMarkup(paymentID string) tgbotapi.InlineKeyboardMarkup {
@@ -2336,22 +2353,13 @@ func (app *app) findTrips(ctx context.Context, origin, destination string, day t
 		return nil, err
 	}
 	rows, err := app.db.Query(ctx, `
-		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.price_minor, t.currency, t.pricing_mode,
-			t.capacity - COALESCE(SUM(b.seats) FILTER (WHERE b.status IN ('pending', 'cash_on_boarding', 'confirmed') OR (b.status = 'awaiting_payment' AND b.payment_hold_expires_at > now())), 0) AS available
-		FROM trips t
-		LEFT JOIN bookings b ON b.trip_id = t.id
-		WHERE t.tenant_id = $1 AND t.status IN ('new', 'assigned')
-			AND t.origin_name ILIKE '%' || $2 || '%' AND t.destination_name ILIKE '%' || $3 || '%'
-			AND t.starts_at >= $4 AND t.starts_at < $5
-			AND NOT EXISTS (
-				SELECT 1 FROM availability_blocks block
-				WHERE block.tenant_id = t.tenant_id
-				  AND block.starts_at < t.ends_at AND block.ends_at > t.starts_at
-				  AND (block.route_id IS NULL OR block.route_id = t.route_id)
-			)
-		GROUP BY t.id
-		HAVING t.capacity > COALESCE(SUM(b.seats) FILTER (WHERE b.status IN ('pending', 'cash_on_boarding', 'confirmed') OR (b.status = 'awaiting_payment' AND b.payment_hold_expires_at > now())), 0)
-		ORDER BY t.starts_at
+SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,t.pricing_mode,
+ t.capacity-`+bookingrules.OccupiedSQL+` AS available
+ FROM trips t
+ WHERE t.tenant_id=$1 AND `+bookingrules.SalePredicate+`
+ AND t.origin_name ILIKE '%'||$2||'%' AND t.destination_name ILIKE '%'||$3||'%'
+ AND t.starts_at >= $4 AND t.starts_at < $5
+ AND t.capacity > `+bookingrules.OccupiedSQL+` ORDER BY t.starts_at
 	`, app.tenantID, origin, destination, day, day.AddDate(0, 0, 1))
 	if err != nil {
 		return nil, err
@@ -2362,30 +2370,11 @@ func (app *app) findTrips(ctx context.Context, origin, destination string, day t
 
 func (app *app) findAvailableDirections(ctx context.Context) ([]routeDirection, error) {
 	rows, err := app.db.Query(ctx, `
-		SELECT route.id::text, route.origin_name, route.destination_name
-		FROM routes route
-		WHERE route.tenant_id = $1 AND route.is_active
-			AND EXISTS (
-				SELECT 1
-				FROM trips trip
-				WHERE trip.route_id = route.id AND trip.tenant_id = route.tenant_id
-					AND trip.status IN ('new', 'assigned') AND trip.starts_at > now()
-					AND NOT EXISTS (
-						SELECT 1 FROM availability_blocks block
-						WHERE block.tenant_id = trip.tenant_id
-							AND block.starts_at < trip.ends_at AND block.ends_at > trip.starts_at
-							AND (block.route_id IS NULL OR block.route_id = trip.route_id)
-					)
-					AND trip.capacity > (
-						SELECT COALESCE(sum(booking.seats), 0)
-						FROM bookings booking
-						WHERE booking.trip_id = trip.id
-							AND (booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
-								OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now()))
-					)
-			)
-		ORDER BY route.origin_name, route.destination_name
-		LIMIT 20
+SELECT route.id::text,route.origin_name,route.destination_name FROM routes route
+ WHERE route.tenant_id=$1 AND route.is_active AND EXISTS(
+ SELECT 1 FROM trips t WHERE t.route_id=route.id AND t.tenant_id=route.tenant_id
+ AND `+bookingrules.SalePredicate+` AND t.capacity>`+bookingrules.OccupiedSQL+`)
+ ORDER BY route.origin_name,route.destination_name LIMIT 20
 	`, app.tenantID)
 	if err != nil {
 		return nil, err
@@ -2410,28 +2399,11 @@ func (app *app) findUpcomingTrips(ctx context.Context, limit int) ([]tripOption,
 		return nil, err
 	}
 	rows, err := app.db.Query(ctx, `
-		SELECT trip.id::text, trip.origin_name, trip.destination_name, trip.starts_at, trip.ends_at,
-			trip.price_minor, trip.currency, trip.pricing_mode,
-			trip.capacity - COALESCE(sum(booking.seats) FILTER (
-				WHERE booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
-					OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now())
-			), 0) AS available
-		FROM trips trip
-		LEFT JOIN bookings booking ON booking.trip_id = trip.id
-		WHERE trip.tenant_id = $1 AND trip.status IN ('new', 'assigned') AND trip.starts_at > now()
-			AND NOT EXISTS (
-				SELECT 1 FROM availability_blocks block
-				WHERE block.tenant_id = trip.tenant_id
-					AND block.starts_at < trip.ends_at AND block.ends_at > trip.starts_at
-					AND (block.route_id IS NULL OR block.route_id = trip.route_id)
-			)
-		GROUP BY trip.id
-		HAVING trip.capacity > COALESCE(sum(booking.seats) FILTER (
-			WHERE booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
-				OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now())
-		), 0)
-		ORDER BY trip.starts_at
-		LIMIT $2
+SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,t.pricing_mode,
+ t.capacity-`+bookingrules.OccupiedSQL+` AS available
+ FROM trips t
+ WHERE t.tenant_id=$1 AND `+bookingrules.SalePredicate+`
+ AND t.capacity > `+bookingrules.OccupiedSQL+` ORDER BY t.starts_at LIMIT $2
 	`, app.tenantID, limit)
 	if err != nil {
 		return nil, err
@@ -2443,17 +2415,10 @@ func (app *app) findUpcomingTrips(ctx context.Context, limit int) ([]tripOption,
 func (app *app) findTripDirection(ctx context.Context, tripID string) (routeDirection, error) {
 	var direction routeDirection
 	err := app.db.QueryRow(ctx, `
-		SELECT trip.id::text, trip.origin_name, trip.destination_name
-		FROM trips trip
-		WHERE trip.id = $1 AND trip.tenant_id = $2 AND trip.status IN ('new', 'assigned')
-			AND trip.starts_at > now()
-			AND trip.capacity > (
-				SELECT COALESCE(sum(booking.seats), 0)
-				FROM bookings booking
-				WHERE booking.trip_id = trip.id
-					AND (booking.status IN ('pending', 'cash_on_boarding', 'confirmed')
-						OR (booking.status = 'awaiting_payment' AND booking.payment_hold_expires_at > now()))
-			)
+		SELECT t.id::text, t.origin_name, t.destination_name
+		FROM trips t
+		WHERE t.id = $1 AND t.tenant_id = $2 AND `+bookingrules.SalePredicate+`
+			AND t.capacity > `+bookingrules.OccupiedSQL+`
 	`, tripID, app.tenantID).Scan(&direction.ID, &direction.Origin, &direction.Destination)
 	return direction, err
 }

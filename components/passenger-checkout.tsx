@@ -1,8 +1,20 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { uk } from "react-day-picker/locale"
 import Image from "next/image"
-import { Banknote, CheckCircle2, Clock3, Copy, ExternalLink, Plus, QrCode, Ticket, Trash2 } from "lucide-react"
+import {
+  Banknote,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
+  Copy,
+  ExternalLink,
+  Plus,
+  QrCode,
+  Ticket,
+  Trash2,
+} from "lucide-react"
 import { formatPhoneNumberIntl } from "react-phone-number-input"
 import Wizard2 from "@/components/wizard-2"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -10,36 +22,127 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { PhoneInput } from "@/components/ui/phone-input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { validateCheckout, type CheckoutErrors, type CheckoutPassenger } from "@/lib/booking-checkout"
-import { publicBookingFetch, travelDay, travelDate, travelMoney, travelTime, type PublicCatalog, type PublicConfirmation, type PublicTrip } from "@/lib/public-booking"
+import {
+  validateCheckout,
+  type CheckoutErrors,
+  type CheckoutPassenger,
+} from "@/lib/booking-checkout"
+import {
+  publicBookingFetch,
+  travelDay,
+  travelDate,
+  travelMoney,
+  travelTime,
+  type PublicCatalog,
+  type PublicConfirmation,
+  type PublicTrip,
+} from "@/lib/public-booking"
+import {
+  publicPaymentState,
+  restorePublicCheckout,
+} from "@/lib/public-checkout-session"
 
-const fieldClass = "h-11! w-full rounded-xl border-border bg-control px-3 font-normal text-foreground"
-const blankPassenger = (): CheckoutPassenger => ({ firstName: "", lastName: "", birthDate: "" })
-const paymentLabels: Record<string, string> = { cash_on_boarding: "Готівка при посадці", bank_transfer: "Переказ на IBAN" }
-
-function CheckoutSelect({ id, label, value, options, onChange, error }: { id: string; label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; error?: string }) {
-  return <Select value={value} onValueChange={(next) => onChange(next ?? "")}>
-    <SelectTrigger id={id} aria-label={label} aria-required="true" aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined} className={fieldClass}>
-      <SelectValue>{options.find((option) => option.value === value)?.label ?? "Оберіть значення"}</SelectValue>
-    </SelectTrigger>
-    <SelectContent alignItemWithTrigger={false}>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-  </Select>
+const fieldClass =
+  "h-11! w-full rounded-xl border-border bg-control px-3 font-normal text-foreground"
+const blankPassenger = (): CheckoutPassenger => ({
+  firstName: "",
+  lastName: "",
+  birthDate: "",
+})
+const paymentLabels: Record<string, string> = {
+  cash_on_boarding: "Готівка при посадці",
+  bank_transfer: "Переказ на IBAN",
 }
 
-export function PassengerCheckout({ slug, trip, seats, catalog, onBack }: { slug: string; trip: PublicTrip; seats: number; catalog: PublicCatalog; onBack: () => void }) {
-  const [step, setStep] = useState(1)
-  const [passengers, setPassengers] = useState<(CheckoutPassenger & { key: string })[]>([{ ...blankPassenger(), key: "lead" }])
+function CheckoutSelect({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+  error,
+}: {
+  id: string
+  label: string
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (value: string) => void
+  error?: string
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => onChange(next ?? "")}>
+      <SelectTrigger
+        id={id}
+        aria-label={label}
+        aria-required="true"
+        aria-invalid={!!error}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className={fieldClass}
+      >
+        <SelectValue>
+          {options.find((option) => option.value === value)?.label ??
+            "Оберіть значення"}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+export function PassengerCheckout({
+  slug,
+  trip,
+  seats,
+  catalog,
+  initialConfirmation,
+  onBack,
+}: {
+  slug: string
+  trip: PublicTrip
+  seats: number
+  catalog: PublicCatalog
+  initialConfirmation?: PublicConfirmation | null
+  onBack: () => void
+}) {
+  const [step, setStep] = useState(initialConfirmation ? 3 : 1)
+  const [passengers, setPassengers] = useState<
+    (CheckoutPassenger & { key: string })[]
+  >([{ ...blankPassenger(), key: "lead" }])
   const [phone, setPhone] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("")
-  const [custom, setCustom] = useState<Record<string, string | number | boolean>>({})
+  const [paymentMethod, setPaymentMethod] = useState(
+    initialConfirmation
+      ? initialConfirmation.payment
+        ? "bank_transfer"
+        : "cash_on_boarding"
+      : ""
+  )
+  const [custom, setCustom] = useState<
+    Record<string, string | number | boolean>
+  >({})
   const [errors, setErrors] = useState<CheckoutErrors>({})
   const [consent, setConsent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
-  const [confirmation, setConfirmation] = useState<PublicConfirmation | null>(null)
+  const [confirmation, setConfirmation] = useState<PublicConfirmation | null>(
+    initialConfirmation ?? null
+  )
+  const [checkedAt, setCheckedAt] = useState(() => Date.now())
+  const [paymentCheckError, setPaymentCheckError] = useState("")
   const request = useRef<{ fingerprint: string; key: string } | null>(null)
   const inFlight = useRef(false)
   const submissionStarted = useRef(false)
@@ -50,95 +153,857 @@ export function PassengerCheckout({ slug, trip, seats, catalog, onBack }: { slug
   const paymentCheckoutToken = confirmation?.payment?.checkoutToken
   const paymentStatus = confirmation?.payment?.status
   const bookingReference = confirmation?.reference
+  const paymentState = publicPaymentState(confirmation, checkedAt)
+  const canPay = paymentState === "pending"
+  const paymentUnavailable =
+    paymentState === "expired" || paymentState === "cancelled"
+  useEffect(() => {
+    if (!confirmation) return
+    try {
+      const receipt = restorePublicCheckout(
+        JSON.stringify({ savedAt: Date.now(), trip, confirmation })
+      )
+      if (receipt)
+        sessionStorage.setItem(
+          `vivat-checkout:${slug}`,
+          JSON.stringify(receipt)
+        )
+    } catch {
+      /* Storage is optional; no passenger data is persisted. */
+    }
+  }, [confirmation, trip, slug])
 
-  function clearError(id: string) { setErrors((current) => { const next = { ...current }; delete next[id]; return next }) }
-  function updatePerson(index: number, field: keyof CheckoutPassenger, value: string) {
-    setPassengers((current) => current.map((person, position) => position === index ? { ...person, [field]: value } : person))
+  function clearError(id: string) {
+    setErrors((current) => {
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+  }
+  function updatePerson(
+    index: number,
+    field: keyof CheckoutPassenger,
+    value: string
+  ) {
+    setPassengers((current) =>
+      current.map((person, position) =>
+        position === index ? { ...person, [field]: value } : person
+      )
+    )
     clearError(`passenger-${index}-${field}`)
   }
   function review() {
-    const next = validateCheckout({ passengers, seats, phone, paymentMethod, fields: catalog.fields, custom, today })
+    const next = validateCheckout({
+      passengers,
+      seats,
+      phone,
+      paymentMethod,
+      fields: catalog.fields,
+      custom,
+      today,
+    })
     setErrors(next)
     const first = Object.keys(next)[0]
-    if (first) { document.getElementById(first)?.focus(); return }
-    setError(""); setStep(2); window.scrollTo({ top: 0 })
+    if (first) {
+      document.getElementById(first)?.focus()
+      return
+    }
+    setError("")
+    setStep(2)
+    window.scrollTo({ top: 0 })
   }
   async function submit() {
     if (!consent || inFlight.current) return
-    inFlight.current = true; submissionStarted.current = true
-    setBusy(true); setError("")
-    const data = { tripId: trip.id, quotedPriceMinor: trip.priceMinor, seats, passengers: passengers.map(({ firstName, lastName, birthDate }) => ({ firstName: firstName.trim(), lastName: lastName.trim(), birthDate })), passengerPhone: phone, paymentMethod, customData: custom, consent }
+    inFlight.current = true
+    submissionStarted.current = true
+    setBusy(true)
+    setError("")
+    const data = {
+      tripId: trip.id,
+      quotedPriceMinor: trip.priceMinor,
+      seats,
+      passengers: passengers.map(({ firstName, lastName, birthDate }) => ({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        birthDate,
+      })),
+      passengerPhone: phone,
+      paymentMethod,
+      customData: custom,
+      consent,
+    }
     const fingerprint = JSON.stringify(data)
-    if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint, key: crypto.randomUUID() }
+    if (request.current?.fingerprint !== fingerprint)
+      request.current = { fingerprint, key: crypto.randomUUID() }
     try {
-      const response = await publicBookingFetch<{ item: PublicConfirmation }>(slug, "bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, requestKey: request.current.key }) })
-      setConfirmation(response.item); setStep(3); window.scrollTo({ top: 0 })
-    } catch (failure) { setError(failure instanceof Error && !["TimeoutError", "AbortError", "TypeError"].includes(failure.name) ? failure.message : "Не вдалося з’єднатися із сервісом. Спробуйте ще раз.") }
-    finally { inFlight.current = false; setBusy(false) }
+      const response = await publicBookingFetch<{ item: PublicConfirmation }>(
+        slug,
+        "bookings",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...data, requestKey: request.current.key }),
+        }
+      )
+      setConfirmation(response.item)
+      setStep(3)
+      window.scrollTo({ top: 0 })
+    } catch (failure) {
+      setError(
+        failure instanceof Error &&
+          !["TimeoutError", "AbortError", "TypeError"].includes(failure.name)
+          ? failure.message
+          : "Не вдалося з’єднатися із сервісом. Спробуйте ще раз."
+      )
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
   }
   useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => { if (submissionStarted.current && !confirmation) event.preventDefault() }
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (submissionStarted.current && !confirmation) event.preventDefault()
+    }
     window.addEventListener("beforeunload", beforeUnload)
     return () => window.removeEventListener("beforeunload", beforeUnload)
   }, [confirmation])
   useEffect(() => {
-    if (!paymentCheckoutToken || paymentStatus === "paid" || !bookingReference) return
+    if (
+      !paymentCheckoutToken ||
+      paymentStatus !== "pending" ||
+      !bookingReference
+    )
+      return
     let cancelled = false
+    let checking = false
     const check = async () => {
+      if (checking || cancelled) return
+      checking = true
+      setCheckedAt(Date.now())
       try {
-        const response = await publicBookingFetch<{ bookingStatus: string; paymentStatus: string }>(slug, `payments/${bookingReference}?token=${encodeURIComponent(paymentCheckoutToken)}`)
-        if (!cancelled) setConfirmation((current) => current ? { ...current, status: response.bookingStatus, payment: current.payment ? { ...current.payment, status: response.paymentStatus } : undefined } : current)
-      } catch { /* The next poll retries without interrupting checkout. */ }
+        const response = await publicBookingFetch<{
+          bookingStatus: string
+          paymentStatus: string
+        }>(
+          slug,
+          `payments/${bookingReference}?token=${encodeURIComponent(paymentCheckoutToken)}`
+        )
+        if (!cancelled) {
+          setPaymentCheckError("")
+          setConfirmation((current) =>
+            current
+              ? {
+                  ...current,
+                  status: response.bookingStatus,
+                  payment: current.payment
+                    ? { ...current.payment, status: response.paymentStatus }
+                    : undefined,
+                }
+              : current
+          )
+        }
+      } catch {
+        if (!cancelled)
+          setPaymentCheckError(
+            "Не вдалося перевірити платіж. Перевірте інтернет — спробуємо ще раз автоматично."
+          )
+      } finally {
+        checking = false
+      }
     }
     const timer = window.setInterval(() => void check(), 10_000)
     void check()
-    return () => { cancelled = true; window.clearInterval(timer) }
+    const visible = () => {
+      if (document.visibilityState === "visible") void check()
+    }
+    window.addEventListener("online", visible)
+    document.addEventListener("visibilitychange", visible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener("online", visible)
+      document.removeEventListener("visibilitychange", visible)
+    }
   }, [bookingReference, paymentCheckoutToken, paymentStatus, slug])
-  function fieldError(id: string) { return errors[id] ? <p id={`${id}-error`} className="mt-2 text-xs text-destructive">{errors[id]}</p> : null }
-  const summary = <>
-    <div className="mb-4 flex items-center gap-2 text-sm font-semibold"><Ticket className="size-4 text-primary" />Ваш рейс</div>
-    <h2 className="break-words text-lg font-semibold">{trip.origin} → {trip.destination}</h2>
-    <p className="mt-3 text-sm text-muted-foreground">{travelDate(trip.startsAt, catalog.timezone)}{travelDate(trip.startsAt, catalog.timezone) !== travelDate(trip.endsAt, catalog.timezone) ? ` — ${travelDate(trip.endsAt, catalog.timezone)}` : ""}</p>
-    <p className="mt-2 font-semibold tabular-nums">{travelTime(trip.startsAt, catalog.timezone)} — {travelTime(trip.endsAt, catalog.timezone)}</p>
-    <p className="mt-2 text-xs text-muted-foreground">Часовий пояс: {catalog.timezone}</p>
-    <Separator className="my-5" />
-    <dl className="space-y-4 text-sm">
-      <div className="flex justify-between gap-3"><dt>Місць</dt><dd className="font-semibold">{seats}</dd></div>
-      <div><dt className="text-muted-foreground">Спосіб оплати</dt><dd className={`mt-1 ${paymentMethod ? "font-medium" : "text-muted-foreground"}`}>{paymentMethod ? paymentLabel : "Не вибрано"}</dd></div>
-      <div><dt>До сплати</dt><dd className="mt-1 text-2xl font-bold tabular-nums text-primary">{travelMoney(total, confirmation?.currency ?? trip.currency)}</dd></div>
-    </dl>
-  </>
-  return <Wizard2 step={step} title={step === 3 ? "Бронювання створено" : "Оформлення поїздки"} summary={summary} busy={busy} disabled={step === 2 && !consent} nextLabel={step === 1 ? "Перевірити дані" : step === 2 ? "Забронювати місця" : "Знайти інший рейс"} onNext={step === 1 ? review : step === 2 ? () => void submit() : onBack} onBack={() => { if (step === 2) { setStep(1); setConsent(false); setError("") } else onBack() }}>
-    {error && <p role="alert" className="mb-6 rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{error}</p>}
-    {step === 1 ? <form noValidate onSubmit={(event) => { event.preventDefault(); review() }} className="space-y-7">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Пасажири <span className="ml-1 text-sm font-normal text-muted-foreground">{passengers.length} із {seats}</span></h2><Button type="button" variant="ghost" className="h-11 px-2 text-xs text-muted-foreground" onClick={onBack}>Змінити кількість місць</Button></div>
-      <p className="-mt-4 text-sm leading-relaxed text-muted-foreground">Ім’я та прізвище латиницею, як у документі. Контактний телефон — спільний для бронювання.</p>
-      {passengers.map((person, index) => <fieldset key={person.key} className="min-w-0 space-y-4 border-0 p-0">
-        <legend className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-semibold">Пасажир {index + 1}{index === 0 && <span className="ml-auto text-xs font-normal text-muted-foreground">Контактна особа</span>}{index > 0 && <Button type="button" variant="ghost" size="icon" className="size-11 text-muted-foreground" aria-label={`Видалити пасажира ${index + 1}`} onClick={() => { setPassengers((current) => current.filter((item) => item.key !== person.key)); setErrors({}) }}><Trash2 className="size-4" /></Button>}</legend>
-        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-          {(["firstName", "lastName"] as const).map((field) => { const id = `passenger-${index}-${field}`; const label = field === "firstName" ? "Ім’я" : "Прізвище"; return <div key={field}><label htmlFor={id} className="mb-2 block text-sm font-medium">{label}</label><Input id={id} required aria-invalid={!!errors[id]} aria-describedby={errors[id] ? `${id}-error` : undefined} autoComplete={`section-passenger${index} ${field === "firstName" ? "given-name" : "family-name"}`} maxLength={80} value={person[field]} onChange={(event) => updatePerson(index, field, event.target.value)} placeholder={field === "firstName" ? "IVAN" : "PETRENKO"} className={fieldClass} />{fieldError(id)}</div> })}
-          <div className="min-w-0"><label htmlFor={`passenger-${index}-birthDate`} className="mb-2 block text-sm font-medium">Дата народження</label><DatePicker id={`passenger-${index}-birthDate`} label={`Дата народження пасажира ${index + 1}`} required min={oldest} max={today} value={person.birthDate} onValueChange={(value) => updatePerson(index, "birthDate", value)} invalid={!!errors[`passenger-${index}-birthDate`]} describedBy={errors[`passenger-${index}-birthDate`] ? `passenger-${index}-birthDate-error` : undefined} className={fieldClass} />{fieldError(`passenger-${index}-birthDate`)}</div>
+  function fieldError(id: string) {
+    return errors[id] ? (
+      <p id={`${id}-error`} className="mt-2 text-xs text-destructive">
+        {errors[id]}
+      </p>
+    ) : null
+  }
+  const summary = (
+    <>
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold">
+        <Ticket className="size-4 text-primary" />
+        Ваш рейс
+      </div>
+      <h2 className="text-lg font-semibold break-words">
+        {trip.origin} → {trip.destination}
+      </h2>
+      <p className="mt-3 text-sm text-muted-foreground">
+        {travelDate(trip.startsAt, catalog.timezone)}
+        {travelDate(trip.startsAt, catalog.timezone) !==
+        travelDate(trip.endsAt, catalog.timezone)
+          ? ` — ${travelDate(trip.endsAt, catalog.timezone)}`
+          : ""}
+      </p>
+      <p className="mt-2 font-semibold tabular-nums">
+        {travelTime(trip.startsAt, catalog.timezone)} —{" "}
+        {travelTime(trip.endsAt, catalog.timezone)}
+      </p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Часовий пояс: {catalog.timezone}
+      </p>
+      <Separator className="my-5" />
+      <dl className="space-y-4 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt>Місць</dt>
+          <dd className="font-semibold">{seats}</dd>
         </div>
-        {index < passengers.length - 1 && <Separator className="mt-6" />}
-      </fieldset>)}
-      {passengers.length < seats && <div><Button id="passengers" type="button" variant="outline" className="h-11 px-4" aria-describedby={errors.passengers ? "passengers-error" : undefined} onClick={() => { setPassengers((current) => [...current, { ...blankPassenger(), key: crypto.randomUUID() }]); clearError("passengers") }}><Plus />Додати пасажира</Button>{fieldError("passengers")}</div>}
-      <Separator />
-      <div><label htmlFor="passenger-phone" className="mb-2 block text-sm font-medium">Контактний телефон</label><PhoneInput id="passenger-phone" required value={phone || undefined} onChange={(value) => { setPhone(value ?? ""); clearError("passenger-phone") }} aria-invalid={!!errors["passenger-phone"]} aria-describedby={errors["passenger-phone"] ? "passenger-phone-error" : "phone-hint"} autoComplete="tel" placeholder="Номер телефону" />{fieldError("passenger-phone")}<p id="phone-hint" className="mt-2 text-xs text-muted-foreground">Для зв’язку щодо рейсу.</p></div>
-      {catalog.fields.map((field) => { const id = `booking-${field.key}`; return <div key={field.key}><label htmlFor={id} className="mb-2 block text-sm font-medium">{field.label}</label>{field.type === "select" || field.type === "boolean" ? <CheckoutSelect id={id} label={field.label} value={String(custom[field.key] ?? "")} onChange={(value) => { setCustom({ ...custom, [field.key]: field.type === "boolean" ? value === "true" : value }); clearError(id) }} options={field.type === "boolean" ? [{ value: "true", label: "Так" }, { value: "false", label: "Ні" }] : field.options.map((option) => ({ value: option, label: option }))} error={errors[id]} /> : field.type === "date" ? <DatePicker id={id} label={field.label} required value={String(custom[field.key] ?? "")} onValueChange={(value) => { setCustom({ ...custom, [field.key]: value }); clearError(id) }} invalid={!!errors[id]} describedBy={errors[id] ? `${id}-error` : undefined} className={fieldClass} /> : <Input id={id} required aria-invalid={!!errors[id]} aria-describedby={errors[id] ? `${id}-error` : undefined} type={field.type === "number" ? "number" : "text"} step={field.type === "number" ? "any" : undefined} maxLength={4000} value={String(custom[field.key] ?? "")} onChange={(event) => { setCustom({ ...custom, [field.key]: field.type === "number" && event.target.value !== "" ? Number(event.target.value) : event.target.value }); clearError(id) }} className={fieldClass} />}{fieldError(id)}</div> })}
-      <div><label htmlFor="payment-method" className="mb-2 block text-sm font-medium">Спосіб оплати</label><CheckoutSelect id="payment-method" label="Спосіб оплати" value={paymentMethod} onChange={(value) => { setPaymentMethod(value); clearError("payment-method") }} options={[...(catalog.payment.bankTransferAvailable && trip.currency === "UAH" ? [{ value: "bank_transfer", label: paymentLabels.bank_transfer }] : []), { value: "cash_on_boarding", label: paymentLabels.cash_on_boarding }]} error={errors["payment-method"]} />{fieldError("payment-method")}<p className="mt-2 text-xs text-muted-foreground">{catalog.payment.bankTransferAvailable && trip.currency === "UAH" ? "Переказ звіряється автоматично за сумою та призначенням." : "Для цього рейсу доступна оплата при посадці."}</p></div>
-      <button type="submit" className="sr-only" tabIndex={-1}>Перевірити дані</button>
-      {Object.keys(errors).length > 0 && <p role="alert" className="text-sm text-destructive">Перевірте позначені поля перед продовженням.</p>}
-    </form> : step === 2 ? <div>
-      <h2 className="mb-5 text-lg font-semibold">Перевірте перед бронюванням</h2>
-      <ul className="space-y-4">{passengers.map((person, index) => <li key={person.key} className="border-b border-border pb-4 text-sm"><p className="text-xs text-muted-foreground">Пасажир {index + 1}</p><p className="mt-1 break-words font-semibold">{person.firstName.trim()} {person.lastName.trim()}</p><p className="mt-1 text-muted-foreground">{person.birthDate.split("-").reverse().join(".")}</p></li>)}</ul>
-      <dl className="mt-5 space-y-4 text-sm"><div><dt className="text-muted-foreground">Контактний телефон</dt><dd className="mt-1 font-medium">{formatPhoneNumberIntl(phone)}</dd></div><div><dt className="text-muted-foreground">Спосіб оплати</dt><dd className="mt-1 font-medium">{paymentLabel}</dd></div>{catalog.fields.map((field) => <div key={field.key}><dt className="text-muted-foreground">{field.label}</dt><dd className="mt-1 break-words font-medium">{typeof custom[field.key] === "boolean" ? custom[field.key] ? "Так" : "Ні" : String(custom[field.key])}</dd></div>)}</dl>
-      <Separator className="my-6" /><label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed"><Checkbox checked={consent} onCheckedChange={setConsent} className="mt-1" /><span>Підтверджую правильність даних усіх пасажирів і погоджуюся на їх обробку перевізником для цієї поїздки.</span></label>
-    </div> : confirmation ? <div>
-      <div role="status">{confirmation.payment?.status === "pending" ? <Clock3 className="mb-4 size-10 text-primary" /> : <CheckCircle2 className="mb-4 size-10 text-primary" />}<h2 className="text-2xl font-bold">{confirmation.payment?.status === "pending" ? "Завершіть оплату" : ["cash_on_boarding", "confirmed"].includes(confirmation.status) ? "Місця заброньовано!" : "Бронювання знайдено"}</h2><p className="mt-3 text-sm leading-relaxed text-muted-foreground">{confirmation.payment?.status === "pending" ? "Місця утримуються 30 хвилин. Сплатіть точну суму з указаним призначенням — підтвердження з’явиться автоматично." : "Збережіть ID бронювання та покажіть його під час посадки."}</p></div>
-      {confirmation.payment ? <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"><div className="grid gap-0 lg:grid-cols-[1fr_220px]"><div className="space-y-4 p-5"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Оплата на рахунок ФОП</p><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${confirmation.payment.status === "paid" ? "bg-emerald-500/15 text-emerald-600" : "bg-primary/15 text-primary"}`}>{confirmation.payment.status === "paid" ? "Оплачено" : "Очікуємо оплату"}</span></div><dl className="grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-xs text-muted-foreground">Отримувач</dt><dd className="mt-1 font-semibold">{confirmation.payment.merchantName}</dd></div><div><dt className="text-xs text-muted-foreground">ЄДРПОУ / ІПН</dt><dd className="mt-1 font-semibold tabular-nums">{confirmation.payment.edrpou}</dd></div><div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">IBAN</dt><dd className="mt-1 break-all font-mono font-semibold">{confirmation.payment.iban}</dd></div><div><dt className="text-xs text-muted-foreground">Банк</dt><dd className="mt-1 font-semibold">{confirmation.payment.bankName}</dd></div><div><dt className="text-xs text-muted-foreground">МФО / ЄДРПОУ банка</dt><dd className="mt-1 font-semibold tabular-nums">{[confirmation.payment.bankMfo, confirmation.payment.bankEdrpou].filter(Boolean).join(" / ") || "—"}</dd></div><div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Призначення</dt><dd className="mt-1 font-semibold">{confirmation.payment.purpose}</dd></div></dl><div className="rounded-xl bg-primary/10 p-4"><p className="text-xs text-muted-foreground">Сума до сплати</p><p className="mt-1 text-2xl font-bold text-primary">{travelMoney(confirmation.priceMinor, confirmation.currency)}</p></div><div className="flex flex-wrap gap-2"><a aria-disabled={confirmation.payment.status === "paid"} data-disabled-reason={confirmation.payment.status === "paid" ? "Бронювання вже оплачено. Повторна оплата не потрібна." : undefined} tabIndex={0} className={buttonVariants({ className: confirmation.payment.status === "paid" ? "pointer-events-none opacity-50" : "" })} href={confirmation.payment.status === "paid" ? undefined : confirmation.payment.paymentUrl} rel="noreferrer" target="_blank"><Banknote />Оплатити<ExternalLink /></a><Button type="button" variant="outline" onClick={() => void navigator.clipboard.writeText(`${confirmation.payment!.iban}\n${confirmation.payment!.purpose}`).then(() => setCopied(true))}><Copy />Скопіювати реквізити</Button></div></div><div className="flex flex-col items-center justify-center border-t border-border bg-background/60 p-5 lg:border-t-0 lg:border-l"><Image unoptimized width={176} height={176} className="size-44 rounded-xl bg-white p-2" src={`/api/public/${encodeURIComponent(slug)}/payments/${confirmation.reference}/qr?token=${encodeURIComponent(confirmation.payment.checkoutToken)}`} alt="QR-код для оплати за IBAN" /><p className="mt-3 flex items-center gap-1.5 text-center text-xs text-muted-foreground"><QrCode className="size-3.5" />Скануйте в застосунку банку</p></div></div></section> : null}
-      <div className="mt-6 rounded-xl border border-border bg-background p-4"><p className="text-sm font-medium">ID бронювання</p><p data-booking-reference className="mt-2 break-all font-mono text-base font-semibold text-primary select-all">{confirmation.reference}</p><Button type="button" variant="ghost" className="mt-2 h-11 px-2" onClick={() => void navigator.clipboard.writeText(confirmation.reference).then(() => setCopied(true)).catch(() => setError("Не вдалося скопіювати. Виділіть ID і скопіюйте вручну."))}><Copy />{copied ? "Скопійовано" : "Копіювати ID"}</Button></div>
-      <ul aria-label="Пасажири бронювання" className="mt-5 space-y-1 text-sm">{passengers.map((person) => <li key={person.key}>{person.firstName.trim()} {person.lastName.trim()}</li>)}</ul>
-      <Button variant="outline" className="mt-5 h-11 px-4" onClick={() => window.print()}>Зберегти / роздрукувати</Button><p className="mt-5 text-sm text-muted-foreground">{confirmation.payment?.status === "paid" ? "Платіж отримано, бронювання підтверджено." : confirmation.status === "cash_on_boarding" ? "Оплата очікується готівкою при посадці." : "Очікуємо банківський переказ. Статус оновиться автоматично."}</p>
-    </div> : null}
-  </Wizard2>
+        <div>
+          <dt className="text-muted-foreground">Спосіб оплати</dt>
+          <dd
+            className={`mt-1 ${paymentMethod ? "font-medium" : "text-muted-foreground"}`}
+          >
+            {paymentMethod ? paymentLabel : "Не вибрано"}
+          </dd>
+        </div>
+        <div>
+          <dt>{paymentState === "paid" ? "Сплачено" : "Сума бронювання"}</dt>
+          <dd className="mt-1 text-2xl font-bold text-primary tabular-nums">
+            {travelMoney(total, confirmation?.currency ?? trip.currency)}
+          </dd>
+        </div>
+      </dl>
+    </>
+  )
+  return (
+    <Wizard2
+      step={step}
+      title={step === 3 ? "Бронювання створено" : "Оформлення поїздки"}
+      summary={summary}
+      busy={busy}
+      disabled={step === 2 && !consent}
+      nextLabel={
+        step === 1
+          ? "Перевірити дані"
+          : step === 2
+            ? "Забронювати місця"
+            : "Знайти інший рейс"
+      }
+      onNext={step === 1 ? review : step === 2 ? () => void submit() : onBack}
+      onBack={() => {
+        if (step === 2) {
+          setStep(1)
+          setConsent(false)
+          setError("")
+        } else onBack()
+      }}
+    >
+      {error && (
+        <p
+          role="alert"
+          className="mb-6 rounded-xl border border-destructive/40 p-4 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+      {step === 1 ? (
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            review()
+          }}
+          className="space-y-7"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">
+              Пасажири{" "}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                {passengers.length} із {seats}
+              </span>
+            </h2>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11 px-2 text-xs text-muted-foreground"
+              onClick={onBack}
+            >
+              Змінити кількість місць
+            </Button>
+          </div>
+          <p className="-mt-4 text-sm leading-relaxed text-muted-foreground">
+            Ім’я та прізвище латиницею, як у документі. Контактний телефон —
+            спільний для бронювання.
+          </p>
+          {passengers.map((person, index) => (
+            <fieldset
+              key={person.key}
+              className="min-w-0 space-y-4 border-0 p-0"
+            >
+              <legend className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-semibold">
+                Пасажир {index + 1}
+                {index === 0 && (
+                  <span className="ml-auto text-xs font-normal text-muted-foreground">
+                    Контактна особа
+                  </span>
+                )}
+                {index > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 text-muted-foreground"
+                    aria-label={`Видалити пасажира ${index + 1}`}
+                    onClick={() => {
+                      setPassengers((current) =>
+                        current.filter((item) => item.key !== person.key)
+                      )
+                      setErrors({})
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                )}
+              </legend>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                {(["firstName", "lastName"] as const).map((field) => {
+                  const id = `passenger-${index}-${field}`
+                  const label = field === "firstName" ? "Ім’я" : "Прізвище"
+                  return (
+                    <div key={field}>
+                      <label
+                        htmlFor={id}
+                        className="mb-2 block text-sm font-medium"
+                      >
+                        {label}
+                      </label>
+                      <Input
+                        id={id}
+                        required
+                        aria-invalid={!!errors[id]}
+                        aria-describedby={
+                          errors[id] ? `${id}-error` : undefined
+                        }
+                        autoComplete={`section-passenger${index} ${field === "firstName" ? "given-name" : "family-name"}`}
+                        maxLength={80}
+                        value={person[field]}
+                        onChange={(event) =>
+                          updatePerson(index, field, event.target.value)
+                        }
+                        placeholder={
+                          field === "firstName" ? "IVAN" : "PETRENKO"
+                        }
+                        className={fieldClass}
+                      />
+                      {fieldError(id)}
+                    </div>
+                  )
+                })}
+                <div className="min-w-0">
+                  <label
+                    htmlFor={`passenger-${index}-birthDate`}
+                    className="mb-2 block text-sm font-medium"
+                  >
+                    Дата народження
+                  </label>
+                  <DatePicker
+                    locale={uk}
+                    placeholder="Оберіть дату"
+                    id={`passenger-${index}-birthDate`}
+                    label={`Дата народження пасажира ${index + 1}`}
+                    required
+                    min={oldest}
+                    max={today}
+                    value={person.birthDate}
+                    onValueChange={(value) =>
+                      updatePerson(index, "birthDate", value)
+                    }
+                    invalid={!!errors[`passenger-${index}-birthDate`]}
+                    describedBy={
+                      errors[`passenger-${index}-birthDate`]
+                        ? `passenger-${index}-birthDate-error`
+                        : undefined
+                    }
+                    className={fieldClass}
+                  />
+                  {fieldError(`passenger-${index}-birthDate`)}
+                </div>
+              </div>
+              {index < passengers.length - 1 && <Separator className="mt-6" />}
+            </fieldset>
+          ))}
+          {passengers.length < seats && (
+            <div>
+              <Button
+                id="passengers"
+                type="button"
+                variant="outline"
+                className="h-11 px-4"
+                aria-describedby={
+                  errors.passengers ? "passengers-error" : undefined
+                }
+                onClick={() => {
+                  setPassengers((current) => [
+                    ...current,
+                    { ...blankPassenger(), key: crypto.randomUUID() },
+                  ])
+                  clearError("passengers")
+                }}
+              >
+                <Plus />
+                Додати пасажира
+              </Button>
+              {fieldError("passengers")}
+            </div>
+          )}
+          <Separator />
+          <div>
+            <label
+              htmlFor="passenger-phone"
+              className="mb-2 block text-sm font-medium"
+            >
+              Контактний телефон
+            </label>
+            <PhoneInput
+              id="passenger-phone"
+              required
+              value={phone || undefined}
+              onChange={(value) => {
+                setPhone(value ?? "")
+                clearError("passenger-phone")
+              }}
+              aria-invalid={!!errors["passenger-phone"]}
+              aria-describedby={
+                errors["passenger-phone"]
+                  ? "passenger-phone-error"
+                  : "phone-hint"
+              }
+              autoComplete="tel"
+              placeholder="Номер телефону"
+            />
+            {fieldError("passenger-phone")}
+            <p id="phone-hint" className="mt-2 text-xs text-muted-foreground">
+              Для зв’язку щодо рейсу.
+            </p>
+          </div>
+          {catalog.fields.map((field) => {
+            const id = `booking-${field.key}`
+            return (
+              <div key={field.key}>
+                <label htmlFor={id} className="mb-2 block text-sm font-medium">
+                  {field.label}
+                </label>
+                {field.type === "select" || field.type === "boolean" ? (
+                  <CheckoutSelect
+                    id={id}
+                    label={field.label}
+                    value={String(custom[field.key] ?? "")}
+                    onChange={(value) => {
+                      setCustom({
+                        ...custom,
+                        [field.key]:
+                          field.type === "boolean" ? value === "true" : value,
+                      })
+                      clearError(id)
+                    }}
+                    options={
+                      field.type === "boolean"
+                        ? [
+                            { value: "true", label: "Так" },
+                            { value: "false", label: "Ні" },
+                          ]
+                        : field.options.map((option) => ({
+                            value: option,
+                            label: option,
+                          }))
+                    }
+                    error={errors[id]}
+                  />
+                ) : field.type === "date" ? (
+                  <DatePicker
+                    locale={uk}
+                    placeholder="Оберіть дату"
+                    id={id}
+                    label={field.label}
+                    required
+                    value={String(custom[field.key] ?? "")}
+                    onValueChange={(value) => {
+                      setCustom({ ...custom, [field.key]: value })
+                      clearError(id)
+                    }}
+                    invalid={!!errors[id]}
+                    describedBy={errors[id] ? `${id}-error` : undefined}
+                    className={fieldClass}
+                  />
+                ) : (
+                  <Input
+                    id={id}
+                    required
+                    aria-invalid={!!errors[id]}
+                    aria-describedby={errors[id] ? `${id}-error` : undefined}
+                    type={field.type === "number" ? "number" : "text"}
+                    step={field.type === "number" ? "any" : undefined}
+                    maxLength={4000}
+                    value={String(custom[field.key] ?? "")}
+                    onChange={(event) => {
+                      setCustom({
+                        ...custom,
+                        [field.key]:
+                          field.type === "number" && event.target.value !== ""
+                            ? Number(event.target.value)
+                            : event.target.value,
+                      })
+                      clearError(id)
+                    }}
+                    className={fieldClass}
+                  />
+                )}
+                {fieldError(id)}
+              </div>
+            )
+          })}
+          <div>
+            <label
+              htmlFor="payment-method"
+              className="mb-2 block text-sm font-medium"
+            >
+              Спосіб оплати
+            </label>
+            <CheckoutSelect
+              id="payment-method"
+              label="Спосіб оплати"
+              value={paymentMethod}
+              onChange={(value) => {
+                setPaymentMethod(value)
+                clearError("payment-method")
+              }}
+              options={[
+                ...(catalog.payment.bankTransferAvailable &&
+                trip.currency === "UAH"
+                  ? [
+                      {
+                        value: "bank_transfer",
+                        label: paymentLabels.bank_transfer,
+                      },
+                    ]
+                  : []),
+                {
+                  value: "cash_on_boarding",
+                  label: paymentLabels.cash_on_boarding,
+                },
+              ]}
+              error={errors["payment-method"]}
+            />
+            {fieldError("payment-method")}
+            <p className="mt-2 text-xs text-muted-foreground">
+              {catalog.payment.bankTransferAvailable && trip.currency === "UAH"
+                ? "Переказ звіряється автоматично за сумою та призначенням."
+                : "Для цього рейсу доступна оплата при посадці."}
+            </p>
+          </div>
+          <button type="submit" className="sr-only" tabIndex={-1}>
+            Перевірити дані
+          </button>
+          {Object.keys(errors).length > 0 && (
+            <p role="alert" className="text-sm text-destructive">
+              Перевірте позначені поля перед продовженням.
+            </p>
+          )}
+        </form>
+      ) : step === 2 ? (
+        <div>
+          <h2 className="mb-5 text-lg font-semibold">
+            Перевірте перед бронюванням
+          </h2>
+          <ul className="space-y-4">
+            {passengers.map((person, index) => (
+              <li
+                key={person.key}
+                className="border-b border-border pb-4 text-sm"
+              >
+                <p className="text-xs text-muted-foreground">
+                  Пасажир {index + 1}
+                </p>
+                <p className="mt-1 font-semibold break-words">
+                  {person.firstName.trim()} {person.lastName.trim()}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {person.birthDate.split("-").reverse().join(".")}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div>
+              <dt className="text-muted-foreground">Контактний телефон</dt>
+              <dd className="mt-1 font-medium">
+                {formatPhoneNumberIntl(phone)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Спосіб оплати</dt>
+              <dd className="mt-1 font-medium">{paymentLabel}</dd>
+            </div>
+            {catalog.fields.map((field) => (
+              <div key={field.key}>
+                <dt className="text-muted-foreground">{field.label}</dt>
+                <dd className="mt-1 font-medium break-words">
+                  {typeof custom[field.key] === "boolean"
+                    ? custom[field.key]
+                      ? "Так"
+                      : "Ні"
+                    : String(custom[field.key])}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <Separator className="my-6" />
+          <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
+            <Checkbox
+              checked={consent}
+              onCheckedChange={setConsent}
+              className="mt-1"
+            />
+            <span>
+              Підтверджую правильність даних усіх пасажирів і погоджуюся на їх
+              обробку перевізником для цієї поїздки.
+            </span>
+          </label>
+        </div>
+      ) : confirmation ? (
+        <div>
+          <div role="status">
+            {paymentUnavailable ? (
+              <CircleAlert className="mb-4 size-10 text-destructive" />
+            ) : canPay ? (
+              <Clock3 className="mb-4 size-10 text-primary" />
+            ) : (
+              <CheckCircle2 className="mb-4 size-10 text-primary" />
+            )}
+            <h2 className="text-2xl font-bold">
+              {paymentUnavailable
+                ? "Бронювання не підтверджене"
+                : canPay
+                  ? "Завершіть оплату"
+                  : ["cash_on_boarding", "confirmed"].includes(
+                        confirmation.status
+                      )
+                    ? "Місця заброньовано!"
+                    : "Бронювання знайдено"}
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              {paymentUnavailable
+                ? "Час оплати минув або бронювання скасоване. Не переказуйте гроші за цими реквізитами — оберіть рейс знову."
+                : canPay
+                  ? "Місця утримуються 30 хвилин. Сплатіть точну суму з указаним призначенням — підтвердження з’явиться автоматично."
+                  : "Збережіть ID бронювання та покажіть його під час посадки."}
+            </p>
+          </div>
+          {paymentCheckError ? (
+            <p
+              role="status"
+              className="mt-4 text-sm text-amber-700 dark:text-amber-400"
+            >
+              {paymentCheckError}
+            </p>
+          ) : null}
+          {confirmation.payment ? (
+            <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div
+                className={`grid gap-0 ${canPay ? "lg:grid-cols-[1fr_220px]" : ""}`}
+              >
+                <div className="space-y-4 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold tracking-[.16em] text-muted-foreground uppercase">
+                      Оплата на рахунок ФОП
+                    </p>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${paymentState === "paid" ? "bg-emerald-500/15 text-emerald-600" : paymentUnavailable ? "bg-destructive/15 text-destructive" : "bg-primary/15 text-primary"}`}
+                    >
+                      {paymentState === "paid"
+                        ? "Оплачено"
+                        : paymentUnavailable
+                          ? "Оплата недоступна"
+                          : "Очікуємо оплату"}
+                    </span>
+                  </div>
+                  <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs text-muted-foreground">
+                        Отримувач
+                      </dt>
+                      <dd className="mt-1 font-semibold">
+                        {confirmation.payment.merchantName}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">
+                        ЄДРПОУ / ІПН
+                      </dt>
+                      <dd className="mt-1 font-semibold tabular-nums">
+                        {confirmation.payment.edrpou}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs text-muted-foreground">IBAN</dt>
+                      <dd className="mt-1 font-mono font-semibold break-all">
+                        {confirmation.payment.iban}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Банк</dt>
+                      <dd className="mt-1 font-semibold">
+                        {confirmation.payment.bankName}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">
+                        МФО / ЄДРПОУ банка
+                      </dt>
+                      <dd className="mt-1 font-semibold tabular-nums">
+                        {[
+                          confirmation.payment.bankMfo,
+                          confirmation.payment.bankEdrpou,
+                        ]
+                          .filter(Boolean)
+                          .join(" / ") || "—"}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs text-muted-foreground">
+                        Призначення
+                      </dt>
+                      <dd className="mt-1 font-semibold">
+                        {confirmation.payment.purpose}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="rounded-xl bg-primary/10 p-4">
+                    <p className="text-xs text-muted-foreground">
+                      {paymentState === "paid" ? "Сплачено" : "Сума бронювання"}
+                    </p>
+                    <p className="mt-1 text-2xl font-bold text-primary">
+                      {travelMoney(
+                        confirmation.priceMinor,
+                        confirmation.currency
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {canPay ? (
+                      <a
+                        className={buttonVariants()}
+                        href={confirmation.payment.paymentUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <Banknote />
+                        Оплатити
+                        <ExternalLink />
+                      </a>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        void navigator.clipboard
+                          .writeText(
+                            `${confirmation.payment!.iban}\n${confirmation.payment!.purpose}`
+                          )
+                          .then(() => setCopied(true))
+                          .catch(() =>
+                            setError(
+                              "Не вдалося скопіювати. Виділіть реквізити та скопіюйте вручну."
+                            )
+                          )
+                      }
+                    >
+                      <Copy />
+                      Скопіювати реквізити
+                    </Button>
+                  </div>
+                </div>
+                {canPay ? (
+                  <div className="flex flex-col items-center justify-center border-t border-border bg-background/60 p-5 lg:border-t-0 lg:border-l">
+                    <Image
+                      unoptimized
+                      width={176}
+                      height={176}
+                      className="size-44 rounded-xl bg-white p-2"
+                      src={`/api/public/${encodeURIComponent(slug)}/payments/${confirmation.reference}/qr?token=${encodeURIComponent(confirmation.payment.checkoutToken)}`}
+                      alt="QR-код для оплати за IBAN"
+                    />
+                    <p className="mt-3 flex items-center gap-1.5 text-center text-xs text-muted-foreground">
+                      <QrCode className="size-3.5" />
+                      Скануйте в застосунку банку
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          <div className="mt-6 rounded-xl border border-border bg-background p-4">
+            <p className="text-sm font-medium">ID бронювання</p>
+            <p
+              data-booking-reference
+              className="mt-2 font-mono text-base font-semibold break-all text-primary select-all"
+            >
+              {confirmation.reference}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-2 h-11 px-2"
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(confirmation.reference)
+                  .then(() => setCopied(true))
+                  .catch(() =>
+                    setError(
+                      "Не вдалося скопіювати. Виділіть ID і скопіюйте вручну."
+                    )
+                  )
+              }
+            >
+              <Copy />
+              {copied ? "Скопійовано" : "Копіювати ID"}
+            </Button>
+          </div>
+          {passengers.some(
+            (person) => person.firstName.trim() && person.lastName.trim()
+          ) ? (
+            <ul
+              aria-label="Пасажири бронювання"
+              className="mt-5 space-y-1 text-sm"
+            >
+              {passengers.map((person) => (
+                <li key={person.key}>
+                  {person.firstName.trim()} {person.lastName.trim()}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Button
+            variant="outline"
+            className="mt-5 h-11 px-4"
+            onClick={() => window.print()}
+          >
+            Зберегти / роздрукувати
+          </Button>
+          <p className="mt-5 text-sm text-muted-foreground">
+            {paymentUnavailable
+              ? "Оберіть інший рейс, щоб створити нове бронювання."
+              : paymentState === "paid"
+                ? "Платіж отримано, бронювання підтверджено."
+                : confirmation.status === "cash_on_boarding"
+                  ? "Оплата очікується готівкою при посадці."
+                  : "Очікуємо банківський переказ. Статус оновиться автоматично."}
+          </p>
+        </div>
+      ) : null}
+    </Wizard2>
+  )
 }
