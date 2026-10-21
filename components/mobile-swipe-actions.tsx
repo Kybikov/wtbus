@@ -15,18 +15,7 @@ export function MobileSwipeActions({
   onOpen?: () => void
   actions?: { label: string; destructive?: boolean; onSelect: () => void }[]
 }) {
-  const mobile = useIsMobile(),
-    content = React.useRef<HTMLDivElement>(null)
-  const [height, setHeight] = React.useState(160)
-  React.useLayoutEffect(() => {
-    if (!mobile || !content.current) return
-    const element = content.current
-    const observer = new ResizeObserver(() =>
-      setHeight(Math.ceil(element.getBoundingClientRect().height))
-    )
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [mobile])
+  const mobile = useIsMobile()
   if (!mobile) return children
   const choices = [
     ...(onOpen
@@ -57,22 +46,20 @@ export function MobileSwipeActions({
     <SwipeRow
       actions={choices}
       label={label}
-      height={height}
+      height="auto"
       radius={16}
       fullSwipe={false}
       actionColor={choices[0].color ?? "var(--control-hover)"}
       drawerColor="var(--control-hover)"
       rowColor="var(--card)"
       textColor="var(--foreground)"
-      surfaceClassName="!block !p-0"
+      surfaceClassName="!block !h-auto !p-0"
       onAction={(action) =>
         choices.find((choice) => choice.id === action.id)?.callback()
       }
       onSurfaceTap={onOpen}
     >
-      <div ref={content} className="w-full min-w-0">
-        {children}
-      </div>
+      <div className="w-full min-w-0">{children}</div>
     </SwipeRow>
   )
 }

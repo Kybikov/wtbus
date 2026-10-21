@@ -43,7 +43,7 @@ export interface SwipeRowProps {
   drawerColor?: string
   rowColor?: string
   textColor?: string
-  height?: number
+  height?: number | "auto"
   radius?: number
   actionWidth?: number
   direction?: "left" | "right"
@@ -470,7 +470,7 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
       data-disabled={disabled ? "" : undefined}
       style={
         {
-          "--sr-h": `${height}px`,
+          "--sr-h": height === "auto" ? "auto" : `${height}px`,
           "--sr-r": `${radius}px`,
           "--sr-a": `${A}px`,
           "--sr-row": rowColor,
