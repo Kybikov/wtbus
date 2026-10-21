@@ -3376,14 +3376,20 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 	}
 	defer tx.Rollback(r.Context())
 
-	var currentStatus string
+	var trip tripResponse
+	var driverPhone string
 	if err := tx.QueryRow(r.Context(), `
-		SELECT t.status::text
+		SELECT t.id::text,t.kind::text,t.status::text,t.origin_name,t.destination_name,
+		       t.starts_at,t.ends_at,t.capacity,t.price_minor,t.currency,
+		       COALESCE(v.name,''),COALESCE(d.full_name,''),COALESCE(d.phone_e164,'')
 		FROM trips t
+		LEFT JOIN vehicles v ON v.id=t.vehicle_id
+		LEFT JOIN drivers d ON d.id=t.driver_id
 		WHERE t.id = $1 AND t.tenant_id = $2
 		  AND (NULLIF($3, '')::uuid IS NULL OR t.driver_id = NULLIF($3, '')::uuid)
-		FOR UPDATE
-	`, tripID, tenant.ID, driverID).Scan(&currentStatus); err != nil {
+		FOR UPDATE OF t
+	`, tripID, tenant.ID, driverID).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination,
+		&trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.Currency, &trip.Vehicle, &trip.Driver, &driverPhone); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "trip not found"})
 			return
@@ -3397,6 +3403,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not change trip status"})
 		return
 	}
+	currentStatus := trip.Status
 	currentMeta, currentExists, err := app.workflowStatus(r.Context(), tenant.ID, "trips", currentStatus)
 	if err != nil {
 		app.publicFailure(w, err)
@@ -3413,6 +3420,12 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 	}
 	if driverID != "" && nextMeta.Phase != "in_progress" && nextMeta.Phase != "completed" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "a driver can only start or complete an assigned trip"})
+		return
+	}
+	// Retries must return the persisted trip without repeating side effects. In
+	// particular, completed bookings no longer participate in the cash-due sum.
+	if currentStatus == input.Status {
+		writeJSON(w, http.StatusOK, map[string]any{"item": trip, "timezone": tenant.Timezone})
 		return
 	}
 	if currentMeta.Terminal && currentStatus != input.Status {
@@ -3451,8 +3464,6 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	var trip tripResponse
-	var driverPhone string
 	err = tx.QueryRow(r.Context(), `
 		WITH updated AS (
 			UPDATE trips
