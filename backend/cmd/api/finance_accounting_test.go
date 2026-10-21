@@ -141,6 +141,8 @@ func TestFinanceAccountingPostgres(t *testing.T) {
 	if !strings.Contains(ledger.Body.String(), `"items":[]`) {
 		t.Fatal(ledger.Body)
 	}
+	call("GET", "/api/v1/tenants/driver/finance/accounting", nil, actor, app.accountingSnapshot, 200)
+	call("POST", "/api/v1/tenants/driver/finance/operations", accountingOperation{Action: "receipt", RequestID: requestID(), Amount: 1, Currency: "UAH", Category: "funding", Description: "Tenant route scope"}, actor, app.accountingOperation, 201)
 	today := time.Now().Format("2006-01-02")
 	ledger = call("GET", "/finance/ledger?from="+today+"&to="+today, nil, actor, app.accountingLedger, 200)
 	if !strings.Contains(ledger.Body.String(), "payroll_payout") {

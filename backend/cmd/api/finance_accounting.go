@@ -124,7 +124,7 @@ func (app *application) accountingSnapshot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	driverID := ""
-	if strings.Contains(r.URL.Path, "/driver/") {
+	if strings.HasSuffix(r.URL.Path, "/driver/wallet") {
 		var err error
 		driverID, err = app.ownFinanceDriver(r, tenant.ID)
 		if err != nil {
@@ -239,7 +239,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 	}
 	input.Description = strings.TrimSpace(input.Description)
 	input.Currency = normalizedFinanceCurrency(input.Currency, "UAH")
-	own := strings.Contains(r.URL.Path, "/driver/")
+	own := strings.HasSuffix(r.URL.Path, "/driver/handovers")
 	if own {
 		id, err := app.ownFinanceDriver(r, tenant.ID)
 		if err != nil {
