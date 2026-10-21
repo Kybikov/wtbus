@@ -1,4 +1,5 @@
 "use client"
+import Link from "next/link"
 import { Textarea } from "@/components/ui/textarea"
 import { useActionConfirmation } from "@/components/action-confirmation"
 
@@ -59,6 +60,7 @@ type APITrip = {
   notes?: string
   vehicle: string
   driver: string
+  driverConnected?: boolean
   customData?: Record<string, unknown>
 }
 
@@ -616,7 +618,19 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       scheduleTimeZone
     ),
     textColumn<CalendarTrip>("vehicle", "Автомобиль", (item) => item.vehicle),
-    textColumn<CalendarTrip>("driver", "Водитель", (item) => item.driver),
+    {
+      ...textColumn<CalendarTrip>("driver", "Водитель", (item) => item.driver),
+      value: (item: CalendarTrip) => (
+        <span className="grid gap-1">
+          <span>{item.driver || "Не назначен"}</span>
+          {item.driverConnected === false ? (
+            <span className="text-xs text-amber-500">
+              Нет доступа к кабинету
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
     numberColumn<CalendarTrip>("capacity", "Мест", (item) => item.capacity),
     moneyColumn<CalendarTrip>(
       "price",
@@ -1577,6 +1591,15 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                   ]}
                   value={tripForm.driverId}
                 />
+                {!isResourcesLoading && resources.drivers.length === 0 ? (
+                  <span className="text-xs font-normal text-amber-500">
+                    Нет подключённых водителей.{" "}
+                    <Link href="/team" className="underline">
+                      Подключите аккаунт в команде
+                    </Link>
+                    .
+                  </span>
+                ) : null}
               </label>
               <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
                 Комментарий{" "}

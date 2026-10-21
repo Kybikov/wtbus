@@ -25,6 +25,7 @@ type Entry = {
   changes?: ActivityChange[]
   submittedFields?: string[]
   status?: number
+  finance?: { amountMinor: number; currency: string }
   durationMs?: number
   requestId?: string
 }
@@ -193,6 +194,15 @@ export function ActivityHistory({ role }: { role?: string }) {
                       ? `${entry.action} ${entry.entity.replace(/^[A-Z]+ /, "")}`
                       : (activityActions[entry.action] ?? "Действие с записью")}
                   </p>
+                  {entry.finance &&
+                  /^[A-Z]{3}$/.test(entry.finance.currency) ? (
+                    <p className="mt-1 font-medium tabular-nums">
+                      {new Intl.NumberFormat("ru-RU", {
+                        style: "currency",
+                        currency: entry.finance.currency,
+                      }).format(entry.finance.amountMinor / 100)}
+                    </p>
+                  ) : null}
                   {kind === "activity" && !!entry.changes?.length && (
                     <div className="mt-2">
                       <ActivityChanges

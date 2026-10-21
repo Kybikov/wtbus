@@ -15,19 +15,18 @@ export const mobileDestinations = [
   { href: "/routes", label: "Маршруты", icon: "route", roles: operations },
   { href: "/fleet", label: "Автопарк", icon: "car", roles: operations },
   { href: "/customers", label: "Клиенты", icon: "users", roles: operations },
-  { href: "/finance", label: "Финансы", icon: "wallet", roles: management },
+  {
+    href: "/finance",
+    label: "Финансы",
+    icon: "wallet",
+    roles: [...management, "accountant"] as StaffRole[],
+  },
   { href: "/team", label: "Команда", icon: "users", roles: management },
   {
     href: "/settings",
     label: "Настройки компании",
     icon: "settings",
-    roles: management,
-  },
-  {
-    href: "/availability",
-    label: "Блокировки дат",
-    icon: "calendar",
-    roles: ["developer"] as StaffRole[],
+    roles: [...management, "accountant"] as StaffRole[],
   },
   {
     href: "/driver",
@@ -39,13 +38,13 @@ export const mobileDestinations = [
     href: "/notifications",
     label: "Уведомления",
     icon: "bell",
-    roles: [...operations, "driver"] as StaffRole[],
+    roles: [...operations, "driver", "accountant"] as StaffRole[],
   },
   {
     href: "/profile",
     label: "Профиль",
     icon: "user",
-    roles: [...operations, "driver"] as StaffRole[],
+    roles: [...operations, "driver", "accountant"] as StaffRole[],
   },
 ] as const
 
@@ -56,7 +55,9 @@ export function mobileDockNavigation(role: StaffRole) {
   const primary =
     role === "driver"
       ? ["/driver", "/notifications", "/profile"]
-      : ["/", "/trips", "/bookings"]
+      : role === "accountant"
+        ? ["/finance", "/notifications", "/profile"]
+        : ["/", "/trips", "/bookings"]
   return mobileNavigation(role).filter((item) => primary.includes(item.href))
 }
 export function isMobileDestinationActive(pathname: string, href: string) {

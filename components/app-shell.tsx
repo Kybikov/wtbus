@@ -87,7 +87,8 @@ import {
 import { EntityFooterContext } from "@/components/entity-footer-context"
 import { adminControlClassName, adminSearchClassName } from "@/lib/admin-ui"
 
-type MembershipRole = "developer" | "owner" | "admin" | "dispatcher" | "driver"
+type MembershipRole =
+  "developer" | "owner" | "admin" | "dispatcher" | "driver" | "accountant"
 type NavigationItem = {
   href: string
   icon: typeof DashboardSquare01Icon
@@ -191,19 +192,13 @@ const navigation: NavigationItem[] = [
     href: "/finance",
     icon: Wallet01Icon,
     label: "Финансы",
-    roles: managementRoles,
+    roles: [...managementRoles, "accountant"],
   },
   {
     href: "/team",
     icon: UserGroupIcon,
     label: "Команда",
     roles: managementRoles,
-  },
-  {
-    href: "/availability",
-    icon: Calendar01Icon,
-    label: "Блокировки дат",
-    roles: ["developer"],
   },
   {
     href: "/driver",
@@ -270,7 +265,8 @@ const isMembershipRole = (value: unknown): value is MembershipRole =>
   value === "owner" ||
   value === "admin" ||
   value === "dispatcher" ||
-  value === "driver"
+  value === "driver" ||
+  value === "accountant"
 const tenantNameFromSlug = (slug: string) =>
   slug
     .split("-")
@@ -585,7 +581,7 @@ export function AppShell({
   }, [])
   React.useEffect(() => {
     const query = searchQuery.trim()
-    if (!searchOpen || query.length < 2 || brand.role === "driver") return
+    if (!searchOpen || query.length < 2 || (brand.role === "driver" || brand.role === "accountant")) return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setSearchLoading(true)
@@ -1096,7 +1092,8 @@ export function AppShell({
                     )}
                     {resolvedTheme === "dark" ? "Светлая тема" : "Тёмная тема"}
                   </DropdownMenuItem>
-                  {managementRoles.includes(brand.role) ? (
+                  {managementRoles.includes(brand.role) ||
+                  brand.role === "accountant" ? (
                     <DropdownMenuItem render={<Link href="/settings" />}>
                       Настройки компании
                     </DropdownMenuItem>

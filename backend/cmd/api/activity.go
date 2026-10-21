@@ -297,11 +297,16 @@ func (app *application) activityHistory(w http.ResponseWriter, r *http.Request) 
 		} else {
 			err = rows.Scan(&id, &actor, &action, &entity, &entityID, &created, &details)
 			var safe struct {
+				Finance *struct {
+					AmountMinor int64  `json:"amountMinor"`
+					Currency    string `json:"currency"`
+				} `json:"finance"`
 				ChangedFields   []string           `json:"changedFields"`
 				SubmittedFields []string           `json:"submittedFields"`
 				Changes         []auditFieldChange `json:"changes"`
 			}
 			_ = json.Unmarshal(details, &safe)
+			item["finance"] = safe.Finance
 			item["changes"] = safe.Changes
 			item["changedFields"] = safe.ChangedFields
 			item["submittedFields"] = safe.SubmittedFields

@@ -19,6 +19,13 @@ import {
 import { cn } from "@/lib/utils"
 const sections = [
   {
+    group: "Компания",
+    href: "/settings/accounting",
+    label: "Финансовый учёт",
+    icon: CircleDollarSign,
+    roles: ["owner", "admin", "developer", "accountant"],
+  },
+  {
     group: "Личные настройки",
     href: "/profile",
     label: "Личные данные",

@@ -1,4 +1,5 @@
 "use client"
+import { FinanceOverview } from "@/components/finance-overview"
 import { Badge } from "@/components/ui/badge"
 
 import { sessionFetch } from "@/lib/session-navigation"
@@ -185,7 +186,11 @@ function Metric({
   )
 }
 
-export function OperationsDashboard() {
+export function OperationsDashboard({
+  showFinance = false,
+}: {
+  showFinance?: boolean
+}) {
   const [dashboard, setDashboard] = React.useState<Dashboard | null>(null)
   const [fleet, setFleet] = React.useState<FleetVehicle[]>([])
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -272,6 +277,7 @@ export function OperationsDashboard() {
       pageTitle="Оперативная сводка"
     >
       <div className="space-y-6">
+        {showFinance ? <FinanceOverview /> : null}
         {loadError ? (
           <div
             className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"

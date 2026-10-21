@@ -62,6 +62,7 @@ const icons = {
   user: User,
 }
 const roleNames: Record<StaffRole, string> = {
+  accountant: "Бухгалтер",
   developer: "Разработчик",
   owner: "Владелец",
   admin: "Администратор",

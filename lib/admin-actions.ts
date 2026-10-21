@@ -1,5 +1,5 @@
 export type StaffRole =
-  "developer" | "owner" | "admin" | "dispatcher" | "driver"
+  "developer" | "owner" | "admin" | "dispatcher" | "driver" | "accountant"
 const operations: StaffRole[] = ["developer", "owner", "admin", "dispatcher"]
 const managers: StaffRole[] = ["developer", "owner", "admin"]
 export const createTargets = [

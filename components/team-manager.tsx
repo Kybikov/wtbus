@@ -28,7 +28,8 @@ import {
   useWorkflowStatuses,
 } from "@/components/route-status-field"
 
-type Role = "developer" | "owner" | "admin" | "dispatcher" | "driver"
+type Role =
+  "developer" | "owner" | "admin" | "dispatcher" | "driver" | "accountant"
 
 type TeamMember = {
   membershipId: string
@@ -42,6 +43,7 @@ type TeamMember = {
   lastSeenAt?: string
   driverId?: string
   driverStatus?: string
+  cashBalances?: { currency: string; balanceMinor: number }[]
   actionCount: number
   lastActionAt?: string
 }
@@ -54,6 +56,7 @@ type Me = {
 }
 
 const roleLabels: Record<Role, string> = {
+  accountant: "Бухгалтер",
   developer: "Разработчик",
   owner: "Владелец",
   admin: "Администратор",
@@ -68,6 +71,7 @@ function isRole(value: string): value is Role {
 }
 
 const roleDescriptions: Record<Role, string> = {
+  accountant: "Платежи, касса, зарплата и финансовые отчёты",
   developer: "Полный доступ ко всем разделам и управлению доступами",
   owner: "Полный доступ, команда и настройки",
   admin: "Операции и настройки компании",
@@ -120,7 +124,7 @@ function humanDate(value?: string, empty = "Ещё не входил") {
 function manageableRoles(role: Role): Role[] {
   if (role === "developer") return allRoles
   return role === "owner"
-    ? ["owner", "admin", "dispatcher", "driver"]
+    ? ["owner", "admin", "dispatcher", "driver", "accountant"]
     : ["dispatcher", "driver"]
 }
 
@@ -130,10 +134,14 @@ const emptyForm = {
   password: "",
   role: "dispatcher" as Role,
   driverPhone: "",
+  driverId: "",
 }
 
 export function TeamManager() {
   const { statuses: driverStatuses } = useWorkflowStatuses("drivers")
+  const [unlinked, setUnlinked] = React.useState<
+    { id: string; name: string; phone: string }[]
+  >([])
   const [members, setMembers] = React.useState<TeamMember[]>([])
   const [me, setMe] = React.useState<Me | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -165,6 +173,11 @@ export function TeamManager() {
       if (!meResponse.ok || !isMe(mePayload))
         throw new Error("Не удалось определить ваши права.")
       setMembers(teamPayload.items)
+      if (
+        "unlinkedDrivers" in teamPayload &&
+        Array.isArray(teamPayload.unlinkedDrivers)
+      )
+        setUnlinked(teamPayload.unlinkedDrivers)
       setMe(mePayload)
     } catch (reason) {
       setError(
@@ -492,6 +505,23 @@ export function TeamManager() {
         defaultVisible: false,
       },
       {
+        id: "cashBalance",
+        label: "Наличные у водителя",
+        value: (member) =>
+          member.driverId
+            ? member.cashBalances?.length
+              ? member.cashBalances
+                  .map((b) =>
+                    new Intl.NumberFormat("ru-RU", {
+                      style: "currency",
+                      currency: b.currency,
+                    }).format(b.balanceMinor / 100)
+                  )
+                  .join(" · ")
+              : "0"
+            : "—",
+      },
+      {
         id: "driverId",
         metric: { kind: "text", getValue: (member) => member.driverId },
         label: "ID водителя",
@@ -547,6 +577,23 @@ export function TeamManager() {
           title="Не удалось выполнить действие"
         />
         <AdminNotice message={notice} />
+        {unlinked.length ? (
+          <div className="workspace-panel flex flex-wrap items-center justify-between gap-3 p-4">
+            <p className="text-sm">
+              Водители без доступа: <strong>{unlinked.length}</strong>.
+              Подключите аккаунты, чтобы водители видели рейсы, отмечали оплату
+              и передавали GPS.
+            </p>
+            <Button
+              onClick={() => {
+                setForm({ ...emptyForm, role: "driver" })
+                setShowForm(true)
+              }}
+            >
+              Подключить водителя
+            </Button>
+          </div>
+        ) : null}
         <EntityDataView
           collection="team"
           filters={[
@@ -752,22 +799,50 @@ export function TeamManager() {
               </span>
             </label>
             {form.role === "driver" ? (
-              <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
-                Телефон водителя
-                <Input
-                  disabled={saving}
-                  inputMode="tel"
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      driverPhone: event.target.value,
-                    }))
-                  }
-                  placeholder="+380501234567"
-                  required
-                  value={form.driverPhone}
-                />
-              </label>
+              <>
+                <label className="grid gap-2 text-sm sm:col-span-2">
+                  Профиль водителя
+                  <FieldSelect
+                    value={form.driverId || "new"}
+                    onValueChange={(id) => {
+                      const profile = unlinked.find((d) => d.id === id)
+                      setForm((v) => ({
+                        ...v,
+                        driverId: id === "new" ? "" : id,
+                        ...(profile
+                          ? {
+                              displayName: profile.name,
+                              driverPhone: profile.phone,
+                            }
+                          : {}),
+                      }))
+                    }}
+                    options={[
+                      { value: "new", label: "Новый водитель" },
+                      ...unlinked.map((d) => ({
+                        value: d.id,
+                        label: d.name + " · " + d.phone,
+                      })),
+                    ]}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
+                  Телефон водителя
+                  <Input
+                    disabled={saving}
+                    inputMode="tel"
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        driverPhone: event.target.value,
+                      }))
+                    }
+                    placeholder="+380501234567"
+                    required
+                    value={form.driverPhone}
+                  />
+                </label>
+              </>
             ) : null}
           </form>
           <DialogFooter>

@@ -46,7 +46,7 @@ type Preferences struct {
 }
 
 func Allowed(role, category string) bool {
-	return role == "owner" || role == "admin" || role == "developer" || (role == "dispatcher" && (category == "newRequests" || category == "newBookings" || category == "trips" || category == "test")) || (role == "driver" && (category == "trips" || category == "newBookings" || category == "test"))
+	return (role == "accountant" && (category == "payments" || category == "test")) || role == "owner" || role == "admin" || role == "developer" || (role == "dispatcher" && (category == "newRequests" || category == "newBookings" || category == "trips" || category == "test")) || (role == "driver" && (category == "trips" || category == "newBookings" || category == "test"))
 }
 func Defaults(legacy map[string]bool) Preferences {
 	p := Preferences{Events: map[string]Channels{}, Quiet: QuietHours{Days: []int{0, 1, 2, 3, 4, 5, 6}, Start: "20:00", End: "08:00", Timezone: "Europe/Warsaw"}}

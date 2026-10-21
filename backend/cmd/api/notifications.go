@@ -264,7 +264,7 @@ func (app *application) notifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT id::text,category,title,body,url,created_at,read_at FROM app_notifications
-	WHERE membership_id=$1 AND (category NOT IN ('payments','team') OR $2 IN ('owner','admin','developer'))
+	WHERE membership_id=$1 AND (category NOT IN ('payments','team') OR $2 IN ('owner','admin','developer') OR ($2='accountant' AND category='payments')) AND ($2<>'accountant' OR category IN ('payments','test'))
 	AND ($2<>'driver' OR category IN ('trips','newBookings','test'))
 	AND (NOT $4 OR read_at IS NULL)
     AND ($3='' OR (created_at,id)<(SELECT created_at,id FROM app_notifications WHERE id::text=$3 AND membership_id=$1))
@@ -299,7 +299,7 @@ func (app *application) notifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var unread int
-	if err := app.db.QueryRow(r.Context(), `SELECT count(*) FROM app_notifications WHERE membership_id=$1 AND read_at IS NULL AND (category NOT IN ('payments','team') OR $2 IN ('owner','admin','developer')) AND ($2<>'driver' OR category IN ('trips','newBookings','test'))`, actor.MembershipID, actor.Role).Scan(&unread); err != nil {
+	if err := app.db.QueryRow(r.Context(), `SELECT count(*) FROM app_notifications WHERE membership_id=$1 AND read_at IS NULL AND (category NOT IN ('payments','team') OR $2 IN ('owner','admin','developer') OR ($2='accountant' AND category='payments')) AND ($2<>'accountant' OR category IN ('payments','test')) AND ($2<>'driver' OR category IN ('trips','newBookings','test'))`, actor.MembershipID, actor.Role).Scan(&unread); err != nil {
 		writeError(w, 503, "Не удалось загрузить счётчик.")
 		return
 	}

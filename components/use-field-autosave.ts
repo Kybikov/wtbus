@@ -14,7 +14,7 @@ export function useFieldAutosave<T extends object>(
   const [queue] = React.useState(() => createAutosaveQueue<T>(persist))
   const commit = React.useCallback(
     (patch: Partial<T>) => {
-      void queue.commit(patch, persistRef.current).catch((error: unknown) => {
+      return queue.commit(patch, persistRef.current).catch((error: unknown) => {
         toast.error("Изменения не сохранены", {
           description:
             error instanceof Error ? error.message : "Повторите попытку.",

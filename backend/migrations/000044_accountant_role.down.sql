@@ -1,0 +1,1 @@
+-- PostgreSQL enum values are retained so existing accountant memberships remain valid.

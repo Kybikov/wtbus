@@ -38,6 +38,8 @@ import (
 )
 
 type application struct {
+	bankHTTPClient      *http.Client
+	bankBaseURL         string
 	db                  *pgxpool.Pool
 	redis               *redis.Client
 	log                 *slog.Logger
@@ -119,6 +121,8 @@ func main() {
 	app.notificationContext = signalContext
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); app.notificationWorker(signalContext) }()
+	bankDone := make(chan struct{})
+	go func() { defer close(bankDone); app.bankWorker(signalContext) }()
 	currencyDone := make(chan struct{})
 	go func() { defer close(currencyDone); app.currencyWorker(signalContext) }()
 	server := &http.Server{
@@ -150,6 +154,10 @@ func main() {
 	case <-currencyDone:
 	case <-shutdownContext.Done():
 	}
+	select {
+	case <-bankDone:
+	case <-shutdownContext.Done():
+	}
 }
 
 func (app *application) routes() http.Handler {
@@ -166,7 +174,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/public/{slug}/bookings", app.publicCreateBooking)
 	mux.HandleFunc("GET /api/v1/public/{slug}/payments/{bookingID}", app.publicPaymentStatus)
 	mux.HandleFunc("GET /api/v1/public/{slug}/payments/{bookingID}/qr", app.publicPaymentQR)
-	staff := app.requireRoles("owner", "admin", "dispatcher", "driver")
+	staff := app.requireRoles("owner", "admin", "dispatcher", "driver", "accountant")
 	mux.HandleFunc("GET /api/v1/realtime", app.realtime)
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/me/notifications", staff(app.notifications))
@@ -187,7 +195,7 @@ func (app *application) routes() http.Handler {
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-views", operations(app.entityViews))
 	}
-	finance := app.requireRoles("owner", "admin")
+	finance := app.requireRoles("owner", "admin", "accountant")
 	drivers := app.requireRoles("driver")
 	tripOperators := app.requireRoles("owner", "admin", "dispatcher", "driver")
 	mux.HandleFunc("GET /api/v1/me/preferences", staff(app.getUserPreferences))
@@ -234,6 +242,15 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", drivers(app.driverPassengers))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/cash-received", drivers(app.confirmDriverCashReceived))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/summary", finance(app.financeSummary))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/accounting", finance(app.accountingSnapshot))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/report", finance(app.accountingReport))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/ledger", finance(app.accountingLedger))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/operations", finance(app.requireActiveSubscription(app.accountingOperation)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/review", finance(app.reviewFinanceEntry))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/settings", finance(app.accountingSettings))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/settings", finance(app.accountingSettings))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/wallet", drivers(app.accountingSnapshot))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/handovers", drivers(app.accountingOperation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates/monobank", owners(app.monobankExchangeRates))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.getExchangeRates))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.requireActiveSubscription(app.updateExchangeRates)))
@@ -1020,19 +1037,20 @@ func (app *application) updateUserPreferences(w http.ResponseWriter, r *http.Req
 }
 
 type teamMemberResponse struct {
-	MembershipID string     `json:"membershipId"`
-	UserID       string     `json:"userId"`
-	DisplayName  string     `json:"displayName"`
-	Email        string     `json:"email"`
-	Role         string     `json:"role"`
-	IsActive     bool       `json:"isActive"`
-	IsSystem     bool       `json:"isSystem"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
-	DriverID     *string    `json:"driverId,omitempty"`
-	DriverStatus *string    `json:"driverStatus,omitempty"`
-	ActionCount  int64      `json:"actionCount"`
-	LastActionAt *time.Time `json:"lastActionAt,omitempty"`
+	MembershipID string         `json:"membershipId"`
+	UserID       string         `json:"userId"`
+	DisplayName  string         `json:"displayName"`
+	Email        string         `json:"email"`
+	Role         string         `json:"role"`
+	IsActive     bool           `json:"isActive"`
+	IsSystem     bool           `json:"isSystem"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	LastSeenAt   *time.Time     `json:"lastSeenAt,omitempty"`
+	DriverID     *string        `json:"driverId,omitempty"`
+	DriverStatus *string        `json:"driverStatus,omitempty"`
+	ActionCount  int64          `json:"actionCount"`
+	LastActionAt *time.Time     `json:"lastActionAt,omitempty"`
+	CashBalances []moneyBalance `json:"cashBalances"`
 }
 
 type createTeamMemberRequest struct {
@@ -1041,6 +1059,7 @@ type createTeamMemberRequest struct {
 	Password    string `json:"password"`
 	Role        string `json:"role"`
 	DriverPhone string `json:"driverPhone"`
+	DriverID    string `json:"driverId"`
 }
 
 type updateTeamMemberRequest struct {
@@ -1050,7 +1069,7 @@ type updateTeamMemberRequest struct {
 	DriverStatus *string `json:"driverStatus"`
 }
 
-var teamRoles = map[string]struct{}{"developer": {}, "owner": {}, "admin": {}, "dispatcher": {}, "driver": {}}
+var teamRoles = map[string]struct{}{"developer": {}, "owner": {}, "admin": {}, "dispatcher": {}, "driver": {}, "accountant": {}}
 
 func identityFromContext(ctx context.Context) (identity, bool) {
 	value, ok := ctx.Value(identityContextKey{}).(identity)
@@ -1140,7 +1159,28 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load team"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	rows.Close()
+	balances, balanceErr := app.driverCashBalances(r.Context(), tenant.ID, "")
+	if balanceErr != nil {
+		app.publicFailure(w, balanceErr)
+		return
+	}
+	for i := range items {
+		items[i].CashBalances = []moneyBalance{}
+		if items[i].DriverID != nil {
+			for _, b := range balances {
+				if b.DriverID == *items[i].DriverID {
+					items[i].CashBalances = append(items[i].CashBalances, moneyBalance{Currency: b.Currency, BalanceMinor: b.BalanceMinor})
+				}
+			}
+		}
+	}
+	unlinked, listErr := app.unlinkedDriverProfiles(r.Context(), tenant.ID)
+	if listErr != nil {
+		app.publicFailure(w, listErr)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "unlinkedDrivers": unlinked})
 }
 
 func (app *application) createTeamMember(w http.ResponseWriter, r *http.Request) {
@@ -1233,18 +1273,25 @@ func (app *application) createTeamMember(w http.ResponseWriter, r *http.Request)
 	}
 	if input.Role == "driver" {
 		var driverID string
-		if err := tx.QueryRow(r.Context(), `
-			INSERT INTO drivers (tenant_id, membership_id, full_name, phone_e164, is_active, status)
-			VALUES ($1, $2, $3, $4, true, 'ready')
-			RETURNING id::text
-		`, tenant.ID, item.MembershipID, input.DisplayName, input.DriverPhone).Scan(&driverID); err != nil {
-			var pgError *pgconn.PgError
-			if errors.As(err, &pgError) && pgError.Code == "23505" {
-				writeJSON(w, http.StatusConflict, map[string]string{"error": "a driver with this phone already exists"})
+		var driverErr error
+		if input.DriverID != "" {
+			driverErr = tx.QueryRow(r.Context(), `UPDATE drivers SET membership_id=$3,full_name=$4,phone_e164=$5,is_active=true,status='ready',updated_at=now()
+              WHERE id=$1 AND tenant_id=$2 AND membership_id IS NULL RETURNING id::text`, input.DriverID, tenant.ID, item.MembershipID, input.DisplayName, input.DriverPhone).Scan(&driverID)
+		} else {
+			driverErr = tx.QueryRow(r.Context(), `INSERT INTO drivers(tenant_id,membership_id,full_name,phone_e164,is_active,status)
+              VALUES($1,$2,$3,$4,true,'ready') RETURNING id::text`, tenant.ID, item.MembershipID, input.DisplayName, input.DriverPhone).Scan(&driverID)
+		}
+		if driverErr != nil {
+			if errors.Is(driverErr, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "Профиль водителя уже связан с другим сотрудником или недоступен."})
 				return
 			}
-			app.log.Error("create driver profile", "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create driver profile"})
+			var pgError *pgconn.PgError
+			if errors.As(driverErr, &pgError) && pgError.Code == "23505" {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "Водитель с этим телефоном уже существует. Выберите его профиль."})
+				return
+			}
+			app.publicFailure(w, driverErr)
 			return
 		}
 		item.DriverID = &driverID
@@ -1521,24 +1568,25 @@ type tenant struct {
 }
 
 type tripResponse struct {
-	ID          string         `json:"id"`
-	Kind        string         `json:"kind"`
-	Status      string         `json:"status"`
-	Origin      string         `json:"origin"`
-	Destination string         `json:"destination"`
-	StartsAt    time.Time      `json:"startsAt"`
-	EndsAt      time.Time      `json:"endsAt"`
-	Capacity    int16          `json:"capacity"`
-	PriceMinor  int64          `json:"priceMinor"`
-	PricingMode string         `json:"pricingMode"`
-	Currency    string         `json:"currency"`
-	RouteID     *string        `json:"routeId,omitempty"`
-	VehicleID   *string        `json:"vehicleId,omitempty"`
-	DriverID    *string        `json:"driverId,omitempty"`
-	Notes       string         `json:"notes,omitempty"`
-	Vehicle     string         `json:"vehicle"`
-	Driver      string         `json:"driver"`
-	CustomData  map[string]any `json:"customData,omitempty"`
+	ID              string         `json:"id"`
+	Kind            string         `json:"kind"`
+	Status          string         `json:"status"`
+	Origin          string         `json:"origin"`
+	Destination     string         `json:"destination"`
+	StartsAt        time.Time      `json:"startsAt"`
+	EndsAt          time.Time      `json:"endsAt"`
+	Capacity        int16          `json:"capacity"`
+	PriceMinor      int64          `json:"priceMinor"`
+	PricingMode     string         `json:"pricingMode"`
+	Currency        string         `json:"currency"`
+	RouteID         *string        `json:"routeId,omitempty"`
+	VehicleID       *string        `json:"vehicleId,omitempty"`
+	DriverID        *string        `json:"driverId,omitempty"`
+	Notes           string         `json:"notes,omitempty"`
+	Vehicle         string         `json:"vehicle"`
+	Driver          string         `json:"driver"`
+	DriverConnected *bool          `json:"driverConnected,omitempty"`
+	CustomData      map[string]any `json:"customData,omitempty"`
 }
 
 type dashboardTripResponse struct {
@@ -1739,7 +1787,7 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		SELECT
 			t.id::text, t.kind::text, t.status::text, t.origin_name, t.destination_name,
 			t.starts_at, t.ends_at, t.capacity, t.price_minor, t.pricing_mode, t.currency, t.custom_data, t.route_id::text, t.vehicle_id::text, t.driver_id::text, COALESCE(t.notes, ''),
-			COALESCE(v.name, ''), COALESCE(d.full_name, '')
+			COALESCE(v.name, ''), COALESCE(d.full_name, ''), EXISTS(SELECT 1 FROM memberships m WHERE m.id=d.membership_id AND m.tenant_id=t.tenant_id AND m.is_active AND m.role::text IN ('driver','developer'))
 		FROM trips t
 		JOIN tenants tenant ON tenant.id = t.tenant_id
 		LEFT JOIN vehicles v ON v.id = t.vehicle_id
@@ -1763,7 +1811,7 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(
 			&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination,
 			&trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency,
-			&customData, &trip.RouteID, &trip.VehicleID, &trip.DriverID, &trip.Notes, &trip.Vehicle, &trip.Driver,
+			&customData, &trip.RouteID, &trip.VehicleID, &trip.DriverID, &trip.Notes, &trip.Vehicle, &trip.Driver, &trip.DriverConnected,
 		); err != nil {
 			app.log.Error("scan trip", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trips"})
@@ -2719,10 +2767,10 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	}
 
 	drivers, err := app.db.Query(r.Context(), `
-		SELECT id::text, full_name
-		FROM drivers
-		WHERE tenant_id = $1 AND is_active
-		ORDER BY full_name
+		SELECT d.id::text, d.full_name
+		FROM drivers d JOIN memberships m ON m.id=d.membership_id AND m.tenant_id=d.tenant_id JOIN users u ON u.id=m.user_id
+		WHERE d.tenant_id = $1 AND d.is_active AND m.is_active AND m.role::text IN ('driver','developer') AND NOT u.is_system
+		ORDER BY d.full_name
 	`, tenant.ID)
 	if err != nil {
 		app.log.Error("list drivers", "error", err, "tenant", slug)
@@ -2931,7 +2979,7 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		app.writeResourceLookupError(w, err, "vehicle")
 		return
 	}
-	if err := app.db.QueryRow(r.Context(), `SELECT id FROM drivers WHERE id = $1 AND tenant_id = $2 AND is_active`, input.DriverID, tenant.ID).Scan(new(string)); err != nil {
+	if err := app.db.QueryRow(r.Context(), `SELECT d.id FROM drivers d JOIN memberships m ON m.id=d.membership_id AND m.tenant_id=d.tenant_id JOIN users u ON u.id=m.user_id WHERE d.id=$1 AND d.tenant_id=$2 AND d.is_active AND m.is_active AND m.role::text IN ('driver','developer') AND NOT u.is_system`, input.DriverID, tenant.ID).Scan(new(string)); err != nil {
 		app.writeResourceLookupError(w, err, "driver")
 		return
 	}
@@ -3102,7 +3150,7 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := app.db.QueryRow(r.Context(), `
-		SELECT id FROM drivers WHERE id = $1 AND tenant_id = $2 AND is_active
+		SELECT d.id FROM drivers d JOIN memberships m ON m.id=d.membership_id AND m.tenant_id=d.tenant_id JOIN users u ON u.id=m.user_id WHERE d.id=$1 AND d.tenant_id=$2 AND d.is_active AND m.is_active AND m.role::text IN ('driver','developer') AND NOT u.is_system
 	`, input.DriverID, tenant.ID).Scan(new(string)); err != nil {
 		app.writeResourceLookupError(w, err, "driver")
 		return
@@ -3304,6 +3352,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status is required"})
 		return
 	}
+	actor, _ := identityFromContext(r.Context())
 	driverID := ""
 	if actor, authenticated := identityFromContext(r.Context()); authenticated && actor.Role == "driver" {
 		var err error
@@ -3473,13 +3522,22 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		if _, err := tx.Exec(r.Context(), `
-			INSERT INTO operational_expenses(tenant_id,trip_id,category,amount_minor,currency,description,occurred_at)
-			SELECT tenant_id,id,'driver_pay',driver_pay_minor,currency,'Зарплата водителя за рейс',ends_at
+			INSERT INTO operational_expenses(tenant_id,trip_id,category,amount_minor,currency,description,occurred_at,actor_membership_id)
+			SELECT tenant_id,id,'driver_pay',driver_pay_minor,currency,'Зарплата водителя за рейс',now(),NULLIF($3,'')::uuid
 			FROM trips WHERE id=$1 AND tenant_id=$2 AND driver_pay_minor>0
 			ON CONFLICT (tenant_id,trip_id) WHERE category='driver_pay' AND trip_id IS NOT NULL DO NOTHING
-		`, trip.ID, tenant.ID); err != nil {
+		`, trip.ID, tenant.ID, actor.MembershipID); err != nil {
 			app.log.Error("record trip driver pay", "error", err, "tenant", slug, "trip", tripID)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record driver pay"})
+			return
+		}
+		var expenseID string
+		payrollErr := tx.QueryRow(r.Context(), "SELECT id::text FROM operational_expenses WHERE tenant_id=$1 AND trip_id=$2 AND category='driver_pay'", tenant.ID, trip.ID).Scan(&expenseID)
+		if payrollErr == nil {
+			payrollErr = app.ensurePayrollAccrual(r.Context(), tx, tenant.ID, expenseID)
+		}
+		if payrollErr != nil && !errors.Is(payrollErr, pgx.ErrNoRows) {
+			app.publicFailure(w, payrollErr)
 			return
 		}
 	}
@@ -5200,7 +5258,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		  AND ($7 = '' OR t.status::text = $7)
 		  AND ($8 = ''
 		    OR ($8 = 'cash_on_boarding' AND (b.status = 'cash_on_boarding' OR COALESCE(b.custom_data->>'payment_method', '') = 'cash_on_boarding'))
-		    OR ($8 = 'none' AND COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = '')
+		    OR ($8 = 'none' AND b.status<>'cash_on_boarding' AND COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = '')
 		    OR COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = $8)
 		ORDER BY t.starts_at DESC, b.created_at DESC, b.id DESC
 		LIMIT $9 OFFSET $10
@@ -6141,7 +6199,9 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			UNION
 			SELECT currency FROM bookings WHERE tenant_id=$1 AND created_at >= $2 AND created_at < $3
 			UNION
-			SELECT currency FROM driver_cash_ledger WHERE tenant_id = $1
+			SELECT currency FROM company_cash_receipts WHERE tenant_id=$1
+ UNION
+ SELECT currency FROM driver_cash_ledger WHERE tenant_id = $1
 			UNION
 			SELECT currency FROM operational_expenses WHERE tenant_id = $1 AND occurred_at >= $2 AND occurred_at < $3
 		), payment_totals AS (
@@ -6187,7 +6247,7 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			GROUP BY currency
 		)
 		SELECT c.currency,
-			COALESCE(payment.bank_revenue_minor,0)+COALESCE(cash.cash_collected_minor,0), COALESCE(pending.pending_revenue_minor,0),
+			COALESCE(payment.bank_revenue_minor,0)+COALESCE(cash.cash_collected_minor,0)+coalesce((SELECT sum(amount_minor) FROM company_cash_receipts receipt WHERE receipt.tenant_id=$1 AND receipt.currency=c.currency AND receipt.kind='income' AND receipt.occurred_at>=$2 AND receipt.occurred_at<$3),0), COALESCE(pending.pending_revenue_minor,0),
 			COALESCE(payment.paid_bookings,0)+COALESCE(cash_bookings.paid_bookings,0),
 			COALESCE(cash.cash_collected_minor, 0), COALESCE(cash.cash_handed_in_minor, 0),
 			COALESCE(balance.balance_minor,0), COALESCE(exp.operational_expenses_minor, 0)
@@ -6437,12 +6497,12 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 
 	var ledgerID string
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO driver_cash_ledger (tenant_id, driver_id, trip_id, amount_minor, currency, kind)
-		VALUES ($1, $2, $3, $4, $5, 'cash_collected')
+		INSERT INTO driver_cash_ledger (tenant_id, driver_id, trip_id, amount_minor, currency, kind,actor_membership_id)
+		VALUES ($1, $2, $3, $4, $5, 'cash_collected',NULLIF($6,'')::uuid)
 		ON CONFLICT (tenant_id, trip_id, currency) WHERE kind = 'cash_collected' AND trip_id IS NOT NULL
 		DO NOTHING
 		RETURNING id::text
-	`, tenant.ID, driverID, input.TripID, amountMinor, currency).Scan(&ledgerID)
+	`, tenant.ID, driverID, input.TripID, amountMinor, currency, actor.MembershipID).Scan(&ledgerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var recordedAmount int64
 		err = tx.QueryRow(r.Context(), `
@@ -6463,6 +6523,13 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not confirm cash receipt"})
 		return
 	}
+	if ledgerID != "" {
+		if err := writeFinanceActivity(r.Context(), tx, actor, "finance.driver_cash_received", ledgerID, map[string]any{"tripId": input.TripID, "driverId": driverID, "amountMinor": amountMinor, "currency": currency}); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+	}
+	financeAuditDone(r)
 	if err := tx.Commit(r.Context()); err != nil {
 		app.log.Error("commit trip cash receipt", "error", err, "tenant", slug, "trip", input.TripID)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not confirm cash receipt"})
@@ -6504,7 +6571,7 @@ func (app *application) recordDriverCash(w http.ResponseWriter, r *http.Request)
 	}
 	defer tx.Rollback(r.Context())
 	var driverExists bool
-	if err := tx.QueryRow(r.Context(), `SELECT is_active FROM drivers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, input.DriverID, tenant.ID).Scan(&driverExists); err != nil || !driverExists {
+	if err := tx.QueryRow(r.Context(), `SELECT is_active FROM drivers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, input.DriverID, tenant.ID).Scan(&driverExists); err != nil || (!driverExists && input.Kind != "collection") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver is unavailable"})
 		return
 	}
@@ -6530,16 +6597,22 @@ func (app *application) recordDriverCash(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	actor, _ := identityFromContext(r.Context())
 	var id string
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO driver_cash_ledger (tenant_id, driver_id, trip_id, amount_minor, currency, kind)
-		VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6) RETURNING id::text
-	`, tenant.ID, input.DriverID, input.TripID, input.AmountMinor, input.Currency, input.Kind).Scan(&id)
+		INSERT INTO driver_cash_ledger (tenant_id, driver_id, trip_id, amount_minor, currency, kind,actor_membership_id)
+		VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6,NULLIF($7,'')::uuid) RETURNING id::text
+	`, tenant.ID, input.DriverID, input.TripID, input.AmountMinor, input.Currency, input.Kind, actor.MembershipID).Scan(&id)
 	if err != nil {
 		app.log.Error("record driver cash", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
 		return
 	}
+	if err := writeFinanceActivity(r.Context(), tx, actor, "finance.driver_cash", id, input); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	financeAuditDone(r)
 	if err := tx.Commit(r.Context()); err != nil {
 		app.log.Error("commit driver cash transaction", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
@@ -6558,7 +6631,7 @@ type recordOperationalExpenseRequest struct {
 
 func validExpenseCategory(category string) bool {
 	switch category {
-	case "fuel", "driver_pay", "amortization", "marketing", "other":
+	case "fuel", "driver_pay", "taxes", "amortization", "marketing", "other":
 		return true
 	default:
 		return false
@@ -6593,17 +6666,42 @@ func (app *application) recordOperationalExpense(w http.ResponseWriter, r *http.
 			return
 		}
 	}
+	actor, _ := identityFromContext(r.Context())
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if input.Category == "driver_pay" && input.TripID == "" {
+		writeJSON(w, 400, map[string]string{"error": "Для начисления зарплаты выберите рейс или используйте расчёты с водителем."})
+		return
+	}
 	var id string
-	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO operational_expenses (tenant_id, trip_id, category, amount_minor, currency, description)
-		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6)
+	err = tx.QueryRow(r.Context(), `
+		INSERT INTO operational_expenses (tenant_id, trip_id, category, amount_minor, currency, description,actor_membership_id)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6,NULLIF($7,'')::uuid)
 		RETURNING id::text
-	`, tenant.ID, input.TripID, input.Category, input.AmountMinor, input.Currency, input.Description).Scan(&id)
+	`, tenant.ID, input.TripID, input.Category, input.AmountMinor, input.Currency, input.Description, actor.MembershipID).Scan(&id)
 	if err != nil {
 		app.log.Error("record operational expense", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record expense"})
 		return
 	}
+	if input.Category == "driver_pay" {
+		err = app.ensurePayrollAccrual(r.Context(), tx, tenant.ID, id)
+	}
+	if err == nil {
+		err = writeFinanceActivity(r.Context(), tx, actor, "finance.expense", id, input)
+	}
+	if err == nil {
+		err = tx.Commit(r.Context())
+	}
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	financeAuditDone(r)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "currency": input.Currency})
 }
 

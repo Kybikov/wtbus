@@ -327,7 +327,7 @@ func (app *app) run(signalContext context.Context) {
 	updates := app.bot.GetUpdatesChan(updateConfig)
 	go app.deliverTelegramNotifications(runContext)
 	go app.expireBookingHoldsLoop(runContext)
-	go app.reconcileIBANPaymentsLoop(runContext)
+	// Bank reconciliation runs in the API independently of Telegram.
 	for {
 		select {
 		case <-signalContext.Done():

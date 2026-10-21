@@ -1,4 +1,5 @@
 "use client"
+import { AccountingWorkspace } from "@/components/accounting-workspace"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
@@ -663,6 +664,7 @@ export function DriverLocationTracker() {
             </p>
           </div>
         ) : null}
+        {identity ? <AccountingWorkspace driver /> : null}
       </div>
     </AppShell>
   )

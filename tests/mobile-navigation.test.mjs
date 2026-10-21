@@ -40,7 +40,7 @@ test("primary dock stays compact while all other permitted pages remain reachabl
     for (const href of primary) assert.ok(pages.includes(href))
     for (const href of ["/routes", "/fleet", "/customers", "/profile"])
       assert.ok(pages.includes(href))
-    assert.equal(pages.includes("/availability"), role === "developer")
+    assert.equal(pages.includes("/availability"), false)
   }
 })
 
@@ -55,7 +55,7 @@ test("developer can reach every registered destination", () => {
   const developer = new Set(
     mobileNavigation("developer").map((item) => item.href)
   )
-  for (const role of ["owner", "admin", "dispatcher", "driver"])
+  for (const role of ["owner", "admin", "dispatcher", "driver", "accountant"])
     for (const page of mobileNavigation(role))
       assert.ok(developer.has(page.href), page.href)
 })

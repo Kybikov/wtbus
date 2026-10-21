@@ -165,7 +165,8 @@ export function MobileDock({
   }, [])
   React.useEffect(() => {
     const value = query.trim()
-    if (!open || value.length < 2 || role === "driver") return
+    if (!open || value.length < 2 || role === "driver" || role === "accountant")
+      return
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
@@ -213,7 +214,8 @@ export function MobileDock({
     setQuery(value)
     setResults({
       ...emptyResults,
-      loading: value.trim().length >= 2 && role !== "driver",
+      loading:
+        value.trim().length >= 2 && role !== "driver" && role !== "accountant",
     })
   }
   function changeOpen(value: boolean) {

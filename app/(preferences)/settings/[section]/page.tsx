@@ -1,3 +1,4 @@
+import { AccountingSettings } from "@/components/accounting-settings"
 import { getSessionRole } from "@/lib/server-role"
 import { redirect } from "next/navigation"
 import { notFound } from "next/navigation"
@@ -13,6 +14,7 @@ export default async function SettingsSectionPage({
   const { section } = await params
   if (
     ![
+      "accounting",
       "company",
       "payments",
       "finance",
@@ -24,6 +26,11 @@ export default async function SettingsSectionPage({
   )
     notFound()
   const role = await getSessionRole()
+  if (section === "accounting") {
+    if (!role || !["owner", "admin", "developer", "accountant"].includes(role))
+      redirect("/profile")
+    return <AccountingSettings />
+  }
   if (!role || !["owner", "admin", "developer"].includes(role))
     redirect("/profile")
   if (
