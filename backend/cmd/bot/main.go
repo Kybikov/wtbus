@@ -2186,10 +2186,14 @@ func (app *app) chooseCashBooking(ctx context.Context, paymentID string) error {
 	}
 	defer tx.Rollback(ctx)
 	var bookingID string
+	var expiresAt *time.Time
 	// Match reconciliation's lock order: booking first, payment second.
-	if err := tx.QueryRow(ctx, `SELECT b.id::text FROM bookings b JOIN payments p ON p.booking_id=b.id AND p.tenant_id=b.tenant_id
- WHERE p.id=$1 AND p.tenant_id=$2 AND p.status='pending' AND b.status='awaiting_payment' AND b.payment_hold_expires_at>now() FOR UPDATE OF b`, paymentID, app.tenantID).Scan(&bookingID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT b.id::text,b.payment_hold_expires_at FROM bookings b JOIN payments p ON p.booking_id=b.id AND p.tenant_id=b.tenant_id
+ WHERE p.id=$1 AND p.tenant_id=$2 AND p.status='pending' AND b.status='awaiting_payment' AND b.payment_hold_expires_at>now() FOR UPDATE OF b`, paymentID, app.tenantID).Scan(&bookingID, &expiresAt); err != nil {
 		return err
+	}
+	if expiresAt == nil || !expiresAt.After(time.Now()) {
+		return pgx.ErrNoRows
 	}
 	if err := tx.QueryRow(ctx, `
 		UPDATE payments
@@ -2219,8 +2223,12 @@ func (app *app) setTelegramPaymentMethod(ctx context.Context, paymentID, method,
 	}
 	defer tx.Rollback(ctx)
 	var bookingID string
-	if err = tx.QueryRow(ctx, `SELECT b.id::text FROM bookings b JOIN payments p ON p.booking_id=b.id AND p.tenant_id=b.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.status='pending' AND b.status='awaiting_payment' AND b.payment_hold_expires_at>now() FOR UPDATE OF b`, paymentID, app.tenantID).Scan(&bookingID); err != nil {
+	var expiresAt *time.Time
+	if err = tx.QueryRow(ctx, `SELECT b.id::text,b.payment_hold_expires_at FROM bookings b JOIN payments p ON p.booking_id=b.id AND p.tenant_id=b.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.status='pending' AND b.status='awaiting_payment' AND b.payment_hold_expires_at>now() FOR UPDATE OF b`, paymentID, app.tenantID).Scan(&bookingID, &expiresAt); err != nil {
 		return err
+	}
+	if expiresAt == nil || !expiresAt.After(time.Now()) {
+		return pgx.ErrNoRows
 	}
 	result, err := tx.Exec(ctx, `
 		UPDATE payments

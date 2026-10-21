@@ -231,11 +231,14 @@ func (app *application) matchBankPayment(ctx context.Context, tx pgx.Tx, tenantI
 	m := matches[0]
 	// Lock the booking first, matching the manual confirmation path.
 	var status string
-	err = tx.QueryRow(ctx, `SELECT status FROM bookings WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, m.booking).Scan(&status)
+	var expiresAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT status,payment_hold_expires_at FROM bookings WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, m.booking).Scan(&status, &expiresAt)
 	if err != nil {
 		return err
 	}
-	if status != "awaiting_payment" {
+	// Check wall-clock time after obtaining the lock: now() is fixed when the
+	// transaction begins and the booking may have expired while we waited.
+	if status != "awaiting_payment" || expiresAt == nil || !expiresAt.After(time.Now()) {
 		return nil
 	}
 	result, err := tx.Exec(ctx, `UPDATE payments SET status='paid',provider_payment_id=$3,paid_at=to_timestamp($4),updated_at=now(),provider_payload=provider_payload||'{"reconciliation":"monobank_statement"}'::jsonb WHERE tenant_id=$1 AND id=$2 AND status='pending'`, tenantID, m.id, item.ID, item.Time)

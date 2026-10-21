@@ -187,6 +187,58 @@ func TestTelegramPassengerJourneyPostgres(t *testing.T) {
 	if err := app.setTelegramPaymentMethod(ctx, cash.PaymentID, "bank_transfer", "mono"); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("stale bank button overwrote cash: %v", err)
 	}
+	// Both payment buttons must recheck the deadline after waiting for a row
+	// lock, even though PostgreSQL now() still sees the transaction's start.
+	for _, method := range []string{"cash", "bank_transfer"} {
+		holdCustomer := row(`INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Expired button QA',$2) RETURNING id::text`, tenant, "+38050000500"+map[string]string{"cash": "4", "bank_transfer": "5"}[method])
+		holdBooking := row(`INSERT INTO bookings(tenant_id,customer_id,trip_id,status,seats,price_minor,currency,source,payment_hold_expires_at) VALUES($1,$2,$3,'awaiting_payment',1,125000,'UAH','telegram',now()+interval '10 minutes') RETURNING id::text`, tenant, holdCustomer, trip)
+		holdPayment := row(`INSERT INTO payments(tenant_id,booking_id,provider,status,amount_minor,currency,idempotency_key) VALUES($1,$2,'internal','pending',125000,'UAH',$3) RETURNING id::text`, tenant, holdBooking, holdBooking)
+		blocker, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer blocker.Rollback(context.Background())
+		var pid int
+		if err := blocker.QueryRow(ctx, `SELECT pg_backend_pid() FROM bookings WHERE id=$1 FOR UPDATE`, holdBooking).Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		paymentContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		go func() {
+			if method == "cash" {
+				done <- app.chooseCashBooking(paymentContext, holdPayment)
+			} else {
+				done <- app.setTelegramPaymentMethod(paymentContext, holdPayment, method, "mono")
+			}
+		}()
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			var waiting bool
+			if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))`, pid).Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			if waiting {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("Telegram payment did not wait for the booking lock")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if _, err := blocker.Exec(ctx, `UPDATE bookings SET payment_hold_expires_at=clock_timestamp()-interval '1 millisecond' WHERE id=$1`, holdBooking); err != nil {
+			t.Fatal(err)
+		}
+		if err := blocker.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-done; !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("expired %s button accepted after waiting: %v", method, err)
+		}
+		if got := row(`SELECT b.status||':'||COALESCE(p.payment_method,'') FROM bookings b JOIN payments p ON p.booking_id=b.id WHERE b.id=$1`, holdBooking); got != "awaiting_payment:" {
+			t.Fatalf("expired button changed the booking/payment: %s", got)
+		}
+	}
 	// A custom confirmed status occupies seats just like the built-in status.
 	exec(`INSERT INTO workflow_statuses(tenant_id,entity_type,key,label,semantic_phase) VALUES($1,'bookings','qa_paid','Оплачена QA','confirmed')`, tenant)
 	exec(`UPDATE bookings SET status='qa_paid' WHERE id=$1`, booking)

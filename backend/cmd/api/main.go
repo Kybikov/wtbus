@@ -5633,7 +5633,8 @@ func (app *application) confirmBookingPayment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var status string
-	if err := tx.QueryRow(r.Context(), `SELECT status::text FROM bookings WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, bookingID, tenant.ID).Scan(&status); err != nil {
+	var expiresAt *time.Time
+	if err := tx.QueryRow(r.Context(), `SELECT status::text,payment_hold_expires_at FROM bookings WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, bookingID, tenant.ID).Scan(&status, &expiresAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "booking not found"})
 			return
@@ -5641,7 +5642,7 @@ func (app *application) confirmBookingPayment(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "booking id is invalid"})
 		return
 	}
-	if status != "awaiting_payment" {
+	if status != "awaiting_payment" || expiresAt == nil || !expiresAt.After(time.Now()) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "only an active bank-transfer hold can be confirmed"})
 		return
 	}
