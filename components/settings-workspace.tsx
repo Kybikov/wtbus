@@ -1,5 +1,7 @@
 "use client"
-import { useEffect, useRef, type ReactNode } from "react"
+import type { ReactNode } from "react"
+import { useRouter } from "next/navigation"
+import { FieldSelect } from "@/components/ui/field-select"
 import Link from "next/link"
 import {
   UserRound,
@@ -99,30 +101,27 @@ export function SettingsWorkspace({
   role?: string
   children: ReactNode
 }) {
-  const navRef = useRef<HTMLElement>(null)
-  useEffect(() => {
-    const nav = navRef.current
-    const selected = nav?.querySelector<HTMLElement>('[aria-current="page"]')
-    if (nav && selected && nav.scrollWidth > nav.clientWidth)
-      nav.scrollTo({
-        left:
-          nav.scrollLeft +
-          selected.getBoundingClientRect().left -
-          nav.getBoundingClientRect().left -
-          (nav.clientWidth - selected.clientWidth) / 2,
-      })
-  }, [active])
+  const router = useRouter()
   const visible = sections.filter(
     (s) => !s.roles || (!!role && s.roles.includes(role))
   )
   return (
     <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
-      <aside className="workspace-panel min-w-0 p-2 xl:sticky xl:top-0">
-        <nav
-          ref={navRef}
-          aria-label="Разделы настроек"
-          className="flex min-w-0 gap-1 overflow-x-auto xl:block xl:space-y-1"
-        >
+      <div className="workspace-panel min-w-0 space-y-2 p-3 xl:hidden">
+        <p className="text-xs text-muted-foreground">Раздел настроек</p>
+        <FieldSelect
+          aria-label="Раздел настроек"
+          value={active}
+          onValueChange={(href) => router.push(href)}
+          options={visible.map((section) => ({
+            value: section.href,
+            label: section.label,
+          }))}
+          triggerClassName="h-11"
+        />
+      </div>
+      <aside className="workspace-panel sticky top-0 hidden min-w-0 p-2 xl:block">
+        <nav aria-label="Разделы настроек" className="min-w-0 space-y-1">
           {visible.map((s, i) => (
             <div key={s.href} className="shrink-0 xl:shrink">
               {i === 0 || visible[i - 1].group !== s.group ? (

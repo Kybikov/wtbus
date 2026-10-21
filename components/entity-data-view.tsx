@@ -989,29 +989,39 @@ export function EntityDataView<T>({
                     </CardHeader>
                     <CardContent className="px-3">
                       <dl className="grid grid-cols-2 gap-3">
-                        {visibleColumns.map((column) => (
-                          <div
-                            key={column.id}
-                            className={cn(
-                              "min-w-0",
-                              [
-                                "name",
-                                "passenger",
-                                "passengers",
-                                "allPassengers",
-                                "route",
-                                "notes",
-                              ].includes(column.id) && "col-span-2"
-                            )}
-                          >
-                            <dt className="mb-1 text-xs text-muted-foreground">
-                              {column.label}
-                            </dt>
-                            <dd className="min-w-0 text-sm break-words [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal [&>*]:max-w-full [&>*]:min-w-0">
-                              {column.value(item)}
-                            </dd>
-                          </div>
-                        ))}
+                        {visibleColumns
+                          .filter((column, index) => {
+                            if (index !== 0) return true
+                            const value =
+                              column.text?.(item) ?? column.value(item)
+                            return (
+                              typeof value !== "string" ||
+                              value !== getLabel(item)
+                            )
+                          })
+                          .map((column) => (
+                            <div
+                              key={column.id}
+                              className={cn(
+                                "min-w-0",
+                                [
+                                  "name",
+                                  "passenger",
+                                  "passengers",
+                                  "allPassengers",
+                                  "route",
+                                  "notes",
+                                ].includes(column.id) && "col-span-2"
+                              )}
+                            >
+                              <dt className="mb-1 text-xs text-muted-foreground">
+                                {column.label}
+                              </dt>
+                              <dd className="min-w-0 text-sm break-words [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal [&>*]:max-w-full [&>*]:min-w-0">
+                                {column.value(item)}
+                              </dd>
+                            </div>
+                          ))}
                       </dl>
                       {detailEnabled ? (
                         <Link

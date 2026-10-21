@@ -29,20 +29,21 @@ test("dispatcher mobile search cannot suggest management or finance pages", () =
   ])
     assert.equal(pages.includes(href), true)
 })
-test("scrollable dock exposes all permitted sections with no duplicate destinations", () => {
+test("primary dock stays compact while all other permitted pages remain reachable", () => {
   for (const role of ["owner", "admin", "developer", "dispatcher"]) {
-    const pages = mobileDockNavigation(role).map((item) => item.href)
-    assert.deepEqual(
-      pages,
-      mobileNavigation(role).map((item) => item.href)
-    )
+    const primary = mobileDockNavigation(role).map((item) => item.href)
+    assert.deepEqual(primary, ["/", "/trips", "/bookings"])
+    // Three destinations plus Search and More: no scrolling or hidden targets.
+    assert.ok(primary.length + 2 <= 5)
+    const pages = mobileNavigation(role).map((item) => item.href)
     assert.equal(new Set(pages).size, pages.length)
-    for (const href of ["/routes", "/fleet", "/customers"])
+    for (const href of primary) assert.ok(pages.includes(href))
+    for (const href of ["/routes", "/fleet", "/customers", "/profile"])
       assert.ok(pages.includes(href))
     assert.equal(pages.includes("/availability"), role === "developer")
   }
-  assert.ok(mobileNavigation("owner").some((item) => item.href === "/settings"))
 })
+
 test("dock selection uses complete route segments rather than prefix collisions", () => {
   assert.equal(isMobileDestinationActive("/bookings/abc", "/bookings"), true)
   assert.equal(isMobileDestinationActive("/bookings-other", "/bookings"), false)

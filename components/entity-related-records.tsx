@@ -280,6 +280,7 @@ export function EntityRelatedRecords({
               size="icon"
               variant="outline"
               className="size-8 rounded-lg"
+              nativeButton={!canCreate}
               render={canCreate ? <Link href={createHref} /> : undefined}
             >
               <Plus className="size-4" />

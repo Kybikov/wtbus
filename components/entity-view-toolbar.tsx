@@ -1044,15 +1044,17 @@ export function EntityViewToolbar<T>({
         createPortal(
           <section
             aria-label="Несохранённые изменения вида"
-            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-40 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-2xl border border-primary/30 bg-popover p-3 shadow-xl sm:bottom-20"
+            className="mobile-view-changes fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom))] left-1/2 z-40 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-primary/30 bg-popover p-3 shadow-xl sm:gap-3 md:bottom-20"
           >
-            <p role="status" className="px-1 text-sm font-medium">
+            <p role="status" className="px-1 text-xs font-medium sm:text-sm">
               Есть несохранённые изменения
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem] items-center gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-center">
               <Button
                 size="sm"
                 variant="outline"
+                aria-label="Сохранить в текущий"
+                className="min-w-0 px-2 text-xs sm:px-3 sm:text-sm"
                 disabled={busy || !current?.canEdit}
                 disabledReason={
                   busy
@@ -1071,7 +1073,8 @@ export function EntityViewToolbar<T>({
                 onClick={() => void saveCurrent()}
               >
                 <Save />
-                Сохранить в текущий
+                <span className="sm:hidden">Сохранить</span>
+                <span className="hidden sm:inline">Сохранить в текущий</span>
               </Button>
               <Button
                 size="sm"
@@ -1081,10 +1084,13 @@ export function EntityViewToolbar<T>({
                     ? "Дождитесь завершения текущей операции."
                     : "Дождитесь загрузки сохранённых видов."
                 }
+                aria-label="Создать новый вид"
+                className="min-w-0 px-2 text-xs sm:px-3 sm:text-sm"
                 onClick={() => open("create")}
               >
                 <Plus />
-                Создать новый
+                <span className="sm:hidden">Новый вид</span>
+                <span className="hidden sm:inline">Создать новый</span>
               </Button>
               <Button
                 size="icon-sm"

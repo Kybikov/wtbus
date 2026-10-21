@@ -317,7 +317,47 @@ body:has([data-public-booking]) {
   box-shadow: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px),
+  (max-width: 1023px) and (max-height: 500px) and (pointer: coarse) {
+  .mobile-dock {
+    display: flex !important;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  .mobile-dock-search {
+    display: grid !important;
+    left: max(16px, env(safe-area-inset-left)) !important;
+    right: max(16px, env(safe-area-inset-right)) !important;
+  }
+  [data-sidebar="sidebar"][data-mobile="true"] {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  [data-sidebar="sidebar"][data-mobile="true"] [data-slot="sidebar-header"] {
+    padding-right: 64px;
+  }
+  [data-sidebar="sidebar"][data-mobile="true"] > button {
+    top: max(16px, env(safe-area-inset-top));
+    right: 12px;
+  }
+  .mobile-account-trigger {
+    display: inline-flex !important;
+  }
+  .desktop-account-trigger {
+    display: none !important;
+  }
+  .mobile-account-menu {
+    padding-right: env(safe-area-inset-right);
+    height: var(--mobile-viewport-height, 100dvh) !important;
+    top: var(--mobile-viewport-top, 0px) !important;
+  }
+  .mobile-view-changes {
+    bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+  html[data-mobile-keyboard="true"] .mobile-collection-footer {
+    display: none;
+  }
   html[data-scale] {
     font-size: 16px;
   }
@@ -331,7 +371,8 @@ body:has([data-public-booking]) {
   .app-shell-frame .app-topbar {
     height: 56px;
     min-height: 56px;
-    margin-inline: 8px;
+    margin-left: max(8px, env(safe-area-inset-left));
+    margin-right: max(8px, env(safe-area-inset-right));
     border-radius: 28px;
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--card) 95%, transparent);
@@ -340,13 +381,17 @@ body:has([data-public-booking]) {
   }
   .workspace-content,
   :root[data-density="compact"] .workspace-content {
-    padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+    padding: 16px max(16px, env(safe-area-inset-right))
+      calc(104px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
   .app-workspace:has(.mobile-collection-footer) .workspace-content {
     padding-bottom: 16px;
   }
   .mobile-collection-footer {
-    padding: 4px 16px calc(84px + env(safe-area-inset-bottom));
+    padding: 4px max(16px, env(safe-area-inset-right))
+      calc(92px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
   button,
   [data-slot="button"],
@@ -400,8 +445,19 @@ body:has([data-public-booking]) {
     min-height: 44px;
   }
   [data-slot="dialog-content"]:not(.mobile-dock-search) {
+    width: calc(
+      100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)
+    );
+    max-width: calc(
+      100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)
+    ) !important;
+    top: calc(
+      var(--mobile-viewport-top, 0px) + var(--mobile-viewport-height, 100dvh) /
+        2
+    );
     max-height: calc(
-      100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+      var(--mobile-viewport-height, 100dvh) - 32px - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom)
     );
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -414,6 +470,30 @@ body:has([data-public-booking]) {
     border-radius: var(--radius-lg);
     gap: 12px;
     padding: 10px 12px;
+  }
+}
+
+@media (max-height: 500px) and (pointer: coarse) {
+  .mobile-account-header {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 2px 12px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: 12px;
+  }
+  .mobile-account-header > [aria-hidden] {
+    grid-row: 1 / span 2;
+    width: 40px;
+    height: 40px;
+    margin: 0;
+  }
+  .mobile-account-header > p {
+    grid-column: 2;
+    margin: 0;
+    font-size: 14px;
+  }
+  .mobile-account-header > span {
+    display: none;
   }
 }
 
@@ -633,7 +713,8 @@ body:has([data-public-booking]) {
 
 /* A blocked action explains its restriction instead of showing a second,
    ordinary icon tooltip on the same trigger. */
-body:has([data-disabled-action-hint][data-open]) [data-slot="tooltip-content"]:not([data-disabled-action-hint]) {
+body:has([data-disabled-action-hint][data-open])
+  [data-slot="tooltip-content"]:not([data-disabled-action-hint]) {
   visibility: hidden;
 }
 [data-disabled-reason]:is(:disabled, [aria-disabled="true"], [data-disabled]) {

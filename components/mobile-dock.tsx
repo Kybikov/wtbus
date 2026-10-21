@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { mobileViewportQuery } from "@/lib/mobile-viewport"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { motion, useReducedMotion } from "motion/react"
@@ -19,9 +20,10 @@ import {
   Wallet,
   X,
   ListFilter,
+  Menu,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import type { MobileAccount } from "@/components/mobile-account-menu"
 import {
   Dialog,
   DialogContent,
@@ -84,6 +86,7 @@ const emptyResults: SearchState = {
 // Shadcn owns controls, modal focus/keyboard handling and the real CRM result list.
 export type MobileDockProps = {
   role: StaffRole
+  account?: MobileAccount
   localSearch?: {
     value: string
     onChange: (value: string) => void
@@ -92,7 +95,15 @@ export type MobileDockProps = {
   }
 }
 
-export function MobileDock({ role, localSearch }: MobileDockProps) {
+export function MobileDock({
+  role,
+  localSearch,
+  menuOpen,
+  onOpenMenu,
+}: MobileDockProps & {
+  menuOpen: boolean
+  onOpenMenu: (trigger: HTMLElement) => void
+}) {
   const pathname = usePathname()
   const router = useRouter()
   const reduceMotion = useReducedMotion()
@@ -102,7 +113,6 @@ export function MobileDock({ role, localSearch }: MobileDockProps) {
   const [results, setResults] = React.useState<SearchState>(emptyResults)
   const [viewport, setViewport] = React.useState({ bottom: 0, height: 600 })
   const searchTrigger = React.useRef<HTMLButtonElement>(null)
-  const navigationRoot = React.useRef<HTMLDivElement>(null)
   const destinations = mobileNavigation(role)
   const matches = destinations.filter((item) =>
     item.label
@@ -111,40 +121,35 @@ export function MobileDock({ role, localSearch }: MobileDockProps) {
   )
 
   React.useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const viewport = navigationRoot.current?.querySelector<HTMLElement>(
-        '[data-slot="scroll-area-viewport"]'
-      )
-      const active = viewport?.querySelector<HTMLElement>(
-        '[aria-current="page"]'
-      )
-      if (!viewport || !active) return
-      const area = viewport.getBoundingClientRect()
-      const item = active.getBoundingClientRect()
-      viewport.scrollTo({
-        left:
-          viewport.scrollLeft +
-          item.left -
-          area.left -
-          (area.width - item.width) / 2,
-        behavior: reduceMotion ? "instant" : "smooth",
-      })
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [pathname, role, reduceMotion])
+    const mobile = window.matchMedia(mobileViewportQuery)
+    const close = () => {
+      if (!mobile.matches) setOpen(false)
+    }
+    mobile.addEventListener("change", close)
+    return () => mobile.removeEventListener("change", close)
+  }, [])
 
   React.useEffect(() => {
     const view = window.visualViewport
-    const update = () =>
-      setViewport({
-        bottom: Math.max(
-          0,
-          window.innerHeight -
-            (view?.height ?? window.innerHeight) -
-            (view?.offsetTop ?? 0)
-        ),
-        height: view?.height ?? window.innerHeight,
-      })
+    const update = () => {
+      // Pinch zoom must remain under the browser's control.
+      if (view && view.scale !== 1) return
+      const bottom = Math.max(
+        0,
+        window.innerHeight -
+          (view?.height ?? window.innerHeight) -
+          (view?.offsetTop ?? 0)
+      )
+      const height = view?.height ?? window.innerHeight
+      setViewport({ bottom, height })
+      const root = document.documentElement
+      root.style.setProperty("--mobile-viewport-height", height + "px")
+      root.style.setProperty(
+        "--mobile-viewport-top",
+        (view?.offsetTop ?? 0) + "px"
+      )
+      root.dataset.mobileKeyboard = String(bottom > 120)
+    }
     update()
     view?.addEventListener("resize", update)
     view?.addEventListener("scroll", update)
@@ -153,6 +158,9 @@ export function MobileDock({ role, localSearch }: MobileDockProps) {
       view?.removeEventListener("resize", update)
       view?.removeEventListener("scroll", update)
       window.removeEventListener("resize", update)
+      document.documentElement.style.removeProperty("--mobile-viewport-height")
+      document.documentElement.style.removeProperty("--mobile-viewport-top")
+      delete document.documentElement.dataset.mobileKeyboard
     }
   }, [])
   React.useEffect(() => {
@@ -226,86 +234,86 @@ export function MobileDock({ role, localSearch }: MobileDockProps) {
       <div
         className={cn(
           "mobile-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 md:hidden",
-          (open || keyboardOpen) && "invisible"
+          (open || menuOpen || keyboardOpen) && "invisible"
         )}
       >
         <motion.nav
           aria-label="Основная навигация"
           layout={!reduceMotion}
           layoutId={`${layoutId}-dock-frame`}
-          className="pointer-events-auto flex h-14 w-full max-w-md min-w-0 items-center gap-1 rounded-full border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
+          className="pointer-events-auto flex h-16 w-full max-w-md min-w-0 items-center gap-1 rounded-2xl border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
         >
-          <div
-            ref={navigationRoot}
-            className="min-w-0 flex-1 overflow-hidden rounded-full"
-          >
-            <ScrollArea className="h-11 w-full [&_[data-slot=scroll-area-viewport]]:scrollbar-none [&_[data-slot=scroll-area-viewport]]:overscroll-x-contain">
-              <div className="flex w-max items-center gap-1 px-0.5">
-                {mobileDockNavigation(role).map((item) => {
-                  const active = isMobileDestinationActive(pathname, item.href)
-                  const Icon = icons[item.icon]
-                  return (
-                    <Button
-                      key={item.href}
-                      nativeButton={false}
-                      render={<Link href={item.href} />}
-                      aria-label={item.label}
-                      title={item.label}
-                      aria-current={active ? "page" : undefined}
-                      variant="ghost"
-                      size="icon-lg"
-                      className={cn(
-                        "relative size-11 shrink-0 rounded-full",
-                        active &&
-                          "text-primary-foreground hover:text-primary-foreground"
-                      )}
-                    >
-                      {active ? (
-                        <motion.span
-                          aria-hidden
-                          layoutId={`${layoutId}-active`}
-                          transition={
-                            reduceMotion
-                              ? { duration: 0 }
-                              : { type: "spring", bounce: 0.15, duration: 0.45 }
-                          }
-                          className="absolute inset-0 rounded-full bg-primary"
-                        />
-                      ) : null}
-                      <motion.span
-                        aria-hidden
-                        className="relative flex items-center justify-center"
-                        animate={{ scale: active ? 1.12 : 1 }}
-                        transition={
-                          reduceMotion
-                            ? { duration: 0 }
-                            : { type: "spring", stiffness: 400, damping: 24 }
-                        }
-                        whileTap={reduceMotion ? undefined : { scale: 0.9 }}
-                      >
-                        <Icon className="size-5" />
-                      </motion.span>
-                    </Button>
-                  )
-                })}
-              </div>
-              <ScrollBar orientation="horizontal" className="h-1!" />
-            </ScrollArea>
-          </div>
-          <span aria-hidden className="mx-0.5 h-6 w-px bg-border" />
-          <DialogTrigger
-            render={
+          {mobileDockNavigation(role).map((item) => {
+            const active = isMobileDestinationActive(pathname, item.href)
+            const Icon = icons[item.icon]
+            return (
               <Button
-                ref={searchTrigger}
-                aria-label="Поиск и все разделы"
-                size="icon-lg"
+                key={item.href}
+                nativeButton={false}
+                render={<Link href={item.href} />}
+                aria-label={item.label}
+                aria-current={active ? "page" : undefined}
                 variant="ghost"
-                className="size-11 rounded-full"
-              />
-            }
+                className={cn(
+                  "relative h-full min-w-0 flex-1 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none",
+                  active &&
+                    "text-primary-foreground hover:text-primary-foreground"
+                )}
+              >
+                {active && (
+                  <motion.span
+                    aria-hidden
+                    layoutId={layoutId + "-active"}
+                    transition={
+                      reduceMotion
+                        ? { duration: 0 }
+                        : { type: "spring", bounce: 0.15, duration: 0.45 }
+                    }
+                    className="absolute inset-0 rounded-xl bg-primary"
+                  />
+                )}
+                <Icon className="relative size-5" />
+                <span className="relative">
+                  {item.href === "/bookings"
+                    ? "Брони"
+                    : item.href === "/notifications"
+                      ? "События"
+                      : item.label}
+                </span>
+              </Button>
+            )
+          })}
+          {role !== "driver" && (
+            <DialogTrigger
+              render={
+                <Button
+                  ref={searchTrigger}
+                  aria-label="Поиск и все разделы"
+                  variant="ghost"
+                  className="h-full min-w-0 flex-1 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none"
+                />
+              }
+            >
+              <Search className="size-5" />
+              <span>Поиск</span>
+            </DialogTrigger>
+          )}
+          <Button
+            aria-label="Профиль и разделы"
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            variant="ghost"
+            onClick={(event) => onOpenMenu(event.currentTarget)}
+            className={cn(
+              "h-full min-w-0 flex-1 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none",
+              !mobileDockNavigation(role).some((item) =>
+                isMobileDestinationActive(pathname, item.href)
+              ) && "bg-control text-primary"
+            )}
           >
-            <Search className="size-5" />
-          </DialogTrigger>
+            <Menu className="size-5" />
+            <span>Ещё</span>
+          </Button>
         </motion.nav>
       </div>
       <DialogContent

@@ -3,7 +3,10 @@
 import { sessionFetch } from "@/lib/session-navigation"
 import { NotificationsBell } from "@/components/notifications-inbox"
 import { realtimeEvent } from "@/lib/realtime"
-import { useMobilePageNavigation } from "@/components/mobile-navigation-provider"
+import {
+  useMobilePageNavigation,
+  useMobileNavigationControls,
+} from "@/components/mobile-navigation-provider"
 
 import * as React from "react"
 import { useLayoutPreferences } from "@/components/layout-preferences-provider"
@@ -457,12 +460,23 @@ export function AppShell({
   const [viewExport, setViewExport] = React.useState<EntityExport | null>(null)
   const [identityReady, setIdentityReady] = React.useState(false)
   const [brand, setBrand] = React.useState(defaultShellBrand)
+  const [userName, setUserName] = React.useState("")
+  const { openMenu } = useMobileNavigationControls()
+  const account = React.useMemo(
+    () => ({
+      name: userName || brand.tenantName,
+      initials: brand.userInitials,
+      company: brand.tenantName,
+      tenantSlug: brand.tenantSlug,
+    }),
+    [userName, brand.tenantName, brand.userInitials, brand.tenantSlug]
+  )
   useMobilePageNavigation(identityReady, {
     pathname,
     role: brand.role,
     localSearch,
+    account,
   })
-  const [userName, setUserName] = React.useState("")
   const profileVersion = React.useRef(0)
   React.useEffect(() => {
     function updated(event: Event) {
@@ -1012,12 +1026,26 @@ export function AppShell({
                 </Tooltip>
               </div>
               <NotificationsBell />
+              <Button
+                aria-label="Открыть правое меню"
+                disabled={!identityReady}
+                disabledReason="Загружаем ваш профиль. Подождите немного."
+                aria-haspopup="dialog"
+                onClick={(event) => openMenu(event.currentTarget)}
+                className="mobile-account-trigger ml-0.5 size-11 rounded-full md:hidden"
+                size="icon-lg"
+                variant="secondary"
+              >
+                <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  {brand.userInitials}
+                </span>
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
                     <Button
                       aria-label="Открыть меню профиля"
-                      className="ml-0.5 size-11 rounded-full md:size-9"
+                      className="desktop-account-trigger ml-0.5 hidden size-9 rounded-full md:inline-flex"
                       size="icon-lg"
                       variant="secondary"
                     />
