@@ -107,6 +107,7 @@ type AppShellProps = {
   }
   utilities?: React.ReactNode
   pageActions?: React.ReactNode
+  pageControls?: React.ReactNode
   onCreate?: () => void
   createDisabled?: boolean
   dataActions?: HeaderDataActions
@@ -402,6 +403,7 @@ export function AppShell({
   localSearch,
   utilities,
   pageActions,
+  pageControls,
   onCreate,
   createDisabled,
   dataActions,
@@ -581,7 +583,13 @@ export function AppShell({
   }, [])
   React.useEffect(() => {
     const query = searchQuery.trim()
-    if (!searchOpen || query.length < 2 || (brand.role === "driver" || brand.role === "accountant")) return
+    if (
+      !searchOpen ||
+      query.length < 2 ||
+      brand.role === "driver" ||
+      brand.role === "accountant"
+    )
+      return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setSearchLoading(true)
@@ -749,7 +757,13 @@ export function AppShell({
           variant={preferences.sidebarVariant}
         />
         <SidebarInset className="app-workspace min-h-0 min-w-0 overflow-hidden bg-transparent shadow-none">
-          <header className="app-topbar workspace-panel relative z-30 flex h-14 shrink-0 items-center justify-between gap-1 px-2 md:h-12 md:gap-3 md:px-3">
+          <header
+            className={cn(
+              "app-topbar workspace-panel relative z-30 flex h-14 shrink-0 items-center justify-between gap-1 px-2 md:h-12 md:gap-3 md:px-3",
+              pageControls &&
+                "app-topbar-with-controls h-auto flex-wrap gap-y-2 py-2 md:h-auto"
+            )}
+          >
             <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-2">
               <SidebarTrigger
                 aria-label="Открыть навигацию"
@@ -821,7 +835,10 @@ export function AppShell({
               </div>
               {localSearch ? (
                 <AdminSearchField
-                  className="hidden w-44 shrink-0 lg:flex"
+                  className={cn(
+                    "hidden w-44 shrink-0",
+                    pageControls ? "2xl:flex" : "lg:flex"
+                  )}
                   value={localSearch.value}
                   onChange={localSearch.onChange}
                   label={localSearch.label ?? "Поиск на странице"}
@@ -836,7 +853,8 @@ export function AppShell({
                   className={cn(
                     adminControlClassName,
                     adminSearchClassName,
-                    "hidden w-44 shrink-0 justify-start gap-2 text-muted-foreground lg:inline-flex"
+                    "hidden w-44 shrink-0 justify-start gap-2 text-muted-foreground",
+                    pageControls ? "2xl:inline-flex" : "lg:inline-flex"
                   )}
                   onClick={() => setSearchOpen(true)}
                   variant="outline"
@@ -852,7 +870,10 @@ export function AppShell({
                 <Button
                   aria-expanded={localSearchMobileOpen}
                   aria-label="Поиск на странице"
-                  className="hidden md:inline-flex lg:hidden"
+                  className={cn(
+                    "hidden md:inline-flex",
+                    pageControls ? "2xl:hidden" : "lg:hidden"
+                  )}
                   onClick={() => setLocalSearchMobileOpen((open) => !open)}
                   size="icon"
                   variant="ghost"
@@ -866,7 +887,10 @@ export function AppShell({
                     render={
                       <Button
                         aria-label="Поиск рейса или клиента"
-                        className="hidden md:inline-flex lg:hidden"
+                        className={cn(
+                          "hidden md:inline-flex",
+                          pageControls ? "2xl:hidden" : "lg:hidden"
+                        )}
                         onClick={() => setSearchOpen(true)}
                         size="icon"
                         variant="ghost"
@@ -879,6 +903,11 @@ export function AppShell({
                 </Tooltip>
               ) : null}
             </div>
+            {pageControls && (
+              <div className="order-last w-full min-w-0 basis-full pb-1 xl:order-none xl:w-auto xl:shrink-0 xl:basis-auto xl:pb-0">
+                {pageControls}
+              </div>
+            )}
             <div className="flex shrink-0 items-center gap-0.5 md:gap-1.5">
               <Popover
                 open={mobileActionsOpen}

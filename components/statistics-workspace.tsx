@@ -19,11 +19,11 @@ import { AppShell } from "@/components/app-shell"
 import { OperationsDashboard } from "@/components/operations-dashboard"
 import Stats1 from "@/components/stats-1"
 import { StatisticsCalendar } from "@/components/statistics-calendar"
+import { StatisticsToolbar } from "@/components/statistics-toolbar"
 import {
   colors,
   dateLabel,
   Distribution,
-  Hint,
   integer,
   Metric,
   Panel,
@@ -31,7 +31,6 @@ import {
   Trend,
 } from "@/components/statistics-charts"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { DatePicker } from "@/components/ui/date-picker"
 import { FieldSelect } from "@/components/ui/field-select"
 import { sessionFetch } from "@/lib/session-navigation"
 import { realtimeEvent } from "@/lib/realtime"
@@ -41,7 +40,6 @@ import {
   statisticsCategoryLabels,
   statisticsMethodLabels,
   statisticsOccupancy,
-  statisticsPreset,
   statisticsSourceLabels,
   type StatisticsReport,
 } from "@/lib/statistics"
@@ -182,7 +180,7 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
   }
   const from = isStatisticsDate(fromParam) ? fromParam : report?.from || ""
   const to = isStatisticsDate(toParam) ? toParam : report?.to || ""
-  const currency = currencyParam || report?.finance?.currency || "UAH"
+  const currency = currencyParam || snapshot?.report.finance?.currency || "UAH"
   const money = (value: number) =>
     new Intl.NumberFormat("ru-RU", {
       style: "currency",
@@ -220,7 +218,19 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
   return (
     <AppShell
       pageTitle="Статистика"
-      pageDescription="Выручка, бронирования и рейсы"
+      pageDescription={`Выручка, бронирования и рейсы. ${report?.timezone ?? "Часовой пояс компании"}${updatedAt ? ` · ${refreshing ? "Обновление…" : `Обновлено ${updatedAt}`}` : ""}. Бронирования — по дате создания, рейсы — по отправлению, деньги — по дате операции. Обе даты включены. Суммы только в выбранной валюте; количество записей — во всех валютах.`}
+      pageControls={
+        section !== "live" ? (
+          <StatisticsToolbar
+            today={(report ?? snapshot?.report)?.today}
+            from={from}
+            to={to}
+            currency={currency}
+            financial={financial}
+            onChange={update}
+          />
+        ) : undefined
+      }
       onRefresh={() => setRefresh((value) => value + 1)}
       refreshing={refreshing}
     >
@@ -282,88 +292,6 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
               triggerClassName="h-11 w-full"
             />
           </div>
-          {section !== "live" && (
-            <section
-              className="workspace-panel min-w-0 rounded-2xl border bg-card p-3 sm:p-4"
-              aria-label="Период статистики"
-            >
-              <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-start gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
-                <div className="grid min-w-0 grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
-                  {[
-                    { key: "today", label: "Сегодня" },
-                    { key: "week", label: "7 дней" },
-                    { key: "30days", label: "30 дней" },
-                    { key: "month", label: "Этот месяц" },
-                  ].map((preset) => {
-                    const range = report
-                      ? statisticsPreset(report.today, preset.key)
-                      : null
-                    const active = range?.from === from && range?.to === to
-                    return (
-                      <Button
-                        key={preset.key}
-                        variant={active ? "default" : "secondary"}
-                        size="sm"
-                        className="h-9"
-                        disabled={!report}
-                        disabledReason="Дождитесь загрузки статистики, чтобы выбрать период в часовом поясе компании."
-                        onClick={() => range && update(range)}
-                        aria-pressed={active}
-                      >
-                        {preset.label}
-                      </Button>
-                    )
-                  })}
-                </div>
-                {financial && (
-                  <div className="w-20 sm:w-28">
-                    <FieldSelect
-                      aria-label="Валюта статистики"
-                      value={currency}
-                      options={["UAH", "EUR", "USD", "PLN"].map((value) => ({
-                        value,
-                        label: value,
-                      }))}
-                      onValueChange={(value) => update({ currency: value })}
-                      triggerClassName="h-9"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 grid min-w-0 grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap sm:gap-3">
-                <div className="min-w-0 sm:w-40">
-                  <label className="mb-1 block text-xs text-muted-foreground">
-                    С
-                  </label>
-                  <DatePicker
-                    label="Начало периода"
-                    value={from}
-                    max={to || undefined}
-                    onValueChange={(value) => update({ from: value })}
-                  />
-                </div>
-                <div className="min-w-0 sm:w-40">
-                  <label className="mb-1 block text-xs text-muted-foreground">
-                    По
-                  </label>
-                  <DatePicker
-                    label="Конец периода"
-                    value={to}
-                    min={from || undefined}
-                    onValueChange={(value) => update({ to: value })}
-                  />
-                </div>
-                <div className="col-span-2 flex items-center gap-1 text-xs text-muted-foreground sm:ml-auto">
-                  <span>
-                    {report?.timezone ?? "Часовой пояс компании"}
-                    {updatedAt &&
-                      ` · ${refreshing ? "Обновление…" : `Обновлено ${updatedAt}`}`}
-                  </span>
-                  <Hint text="Бронирования — по дате создания, рейсы и загрузка — по отправлению, деньги — по дате операции. Период включает обе даты. Суммы только в выбранной валюте; количество записей — во всех валютах." />
-                </div>
-              </div>
-            </section>
-          )}
           {loadError && (
             <div
               role="alert"
