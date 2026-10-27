@@ -51,7 +51,7 @@ export const dateLabel = (value: string, month = false) =>
 export const shortMoney = (value: number) =>
   new Intl.NumberFormat("ru-RU", {
     notation: "compact",
-    maximumFractionDigits: 1,
+    maximumFractionDigits: 2,
   }).format(value / 100)
 
 export function Hint({ text }: { text: string }) {
@@ -178,9 +178,25 @@ export function Trend({
       { label: item.label, color: item.color ?? colors[i % colors.length] },
     ])
   )
+  const hasValues = data.some((row) =>
+    series.some((item) => row[item.key] != null)
+  )
+  const hasNonzero = data.some((row) =>
+    series.some((item) => Number(row[item.key] ?? 0) !== 0)
+  )
+  if (!hasNonzero)
+    return (
+      <Empty
+        text={
+          hasValues
+            ? "Все показатели за период равны нулю"
+            : "За выбранный период данных нет"
+        }
+      />
+    )
   const props = {
     data,
-    margin: { top: 8, right: 8, left: -18, bottom: 0 },
+    margin: { top: 8, right: 8, left: 0, bottom: 0 },
     accessibilityLayer: true,
   }
   const axes = (
