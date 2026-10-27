@@ -62,16 +62,67 @@ export function isStatisticsDate(value: string) {
   )
 }
 export function statisticsPreset(today: string, preset: string) {
+  if (preset === "lastMonth") return statisticsMonth(today, -1)
+  if (preset === "year")
+    return { from: today.slice(0, 4) + "-01-01", to: today }
+  if (preset === "lastYear") {
+    const year = Number(today.slice(0, 4)) - 1
+    return { from: `${year}-01-01`, to: `${year}-12-31` }
+  }
+  const days: Record<string, number> = {
+    today: 1,
+    week: 7,
+    "30days": 30,
+    "90days": 90,
+    "180days": 180,
+    "365days": 365,
+  }
   return {
     from:
       preset === "month"
         ? today.slice(0, 7) + "-01"
-        : shiftStatisticsDate(
-            today,
-            preset === "week" ? -6 : preset === "30days" ? -29 : 0
-          ),
+        : shiftStatisticsDate(today, 1 - (days[preset] ?? 1)),
     to: today,
   }
+}
+export const statisticsPeriodPresets = [
+  { key: "month", label: "Этот месяц" },
+  { key: "lastMonth", label: "Прошлый месяц" },
+  { key: "today", label: "Сегодня" },
+  { key: "week", label: "7 дней" },
+  { key: "30days", label: "30 дней" },
+  { key: "90days", label: "90 дней" },
+  { key: "180days", label: "180 дней" },
+  { key: "365days", label: "365 дней" },
+  { key: "year", label: "Этот год" },
+  { key: "lastYear", label: "Прошлый год" },
+]
+export function statisticsPeriodLabel(
+  today: string | undefined,
+  from: string,
+  to: string
+) {
+  if (!isStatisticsDate(from) || !isStatisticsDate(to)) return "Период"
+  const preset =
+    today &&
+    statisticsPeriodPresets.find((item) => {
+      const range = statisticsPreset(today, item.key)
+      return from === range.from && to === range.to
+    })
+  if (preset) return preset.label
+  if (from.slice(5) === "01-01" && to === from.slice(0, 4) + "-12-31")
+    return from.slice(0, 4) + " год"
+  if (from === statisticsMonth(from).from && to === statisticsMonth(from).to) {
+    const label = new Intl.DateTimeFormat("ru-RU", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(from + "T12:00:00Z"))
+    return label[0].toUpperCase() + label.slice(1)
+  }
+  const short = (value: string) =>
+    `${value.slice(8, 10)}.${value.slice(5, 7)}.${value.slice(2, 4)}`
+  return from === to ? short(from) : `${short(from)} — ${short(to)}`
 }
 export function statisticsMonth(value: string, offset = 0) {
   const date = new Date(value.slice(0, 7) + "-01T12:00:00Z")

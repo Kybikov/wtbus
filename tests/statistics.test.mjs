@@ -8,6 +8,7 @@ import {
   statisticsOccupancy,
   shiftStatisticsDate,
   isStatisticsDate,
+  statisticsPeriodLabel,
 } from "../lib/statistics.ts"
 
 test("statistics dates use civil days across DST, leap years and year boundaries", () => {
@@ -28,6 +29,55 @@ test("statistics dates use civil days across DST, leap years and year boundaries
     from: "2024-02-01",
     to: "2024-02-29",
   })
+})
+
+test("period picker presets preserve civil month/year boundaries and leap days", () => {
+  assert.deepEqual(statisticsPreset("2026-01-03", "lastMonth"), {
+    from: "2025-12-01",
+    to: "2025-12-31",
+  })
+  assert.deepEqual(statisticsPreset("2025-03-30", "lastYear"), {
+    from: "2024-01-01",
+    to: "2024-12-31",
+  })
+  assert.deepEqual(statisticsPreset("2026-10-27", "year"), {
+    from: "2026-01-01",
+    to: "2026-10-27",
+  })
+  for (const days of [30, 90, 180, 365]) {
+    const range = statisticsPreset("2026-10-27", `${days}days`)
+    assert.equal(
+      (new Date(range.to + "T12:00:00Z") -
+        new Date(range.from + "T12:00:00Z")) /
+        86400000 +
+        1,
+      days
+    )
+  }
+})
+
+test("one period button names the applied preset, whole month, year or exact range", () => {
+  assert.equal(
+    statisticsPeriodLabel("2026-10-27", "2026-10-01", "2026-10-27"),
+    "Этот месяц"
+  )
+  assert.equal(
+    statisticsPeriodLabel("2026-10-27", "2026-09-01", "2026-09-30"),
+    "Прошлый месяц"
+  )
+  assert.equal(
+    statisticsPeriodLabel("2026-10-27", "2024-01-01", "2024-12-31"),
+    "2024 год"
+  )
+  assert.match(
+    statisticsPeriodLabel("2026-10-27", "2024-02-01", "2024-02-29"),
+    /^Февраль 2024/
+  )
+  assert.equal(
+    statisticsPeriodLabel("2026-10-27", "2026-10-05", "2026-10-09"),
+    "05.10.26 — 09.10.26"
+  )
+  assert.equal(statisticsPeriodLabel(undefined, "", ""), "Период")
 })
 test("calendar starts on Monday and includes every month day exactly once", () => {
   for (const month of [
