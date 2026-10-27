@@ -150,7 +150,7 @@ const navigation: NavigationItem[] = [
     href: "/",
     icon: DashboardSquare01Icon,
     label: "Обзор",
-    roles: operationsRoles,
+    roles: [...operationsRoles, "accountant"],
   },
   {
     href: "/trips",
@@ -243,7 +243,7 @@ function loadShellBootstrap() {
   return promise
 }
 const pageDescriptions: Record<string, string> = {
-  Обзор: "Оперативная картина на сегодня",
+  Обзор: "Выручка, бронирования и рейсы",
   Рейсы: "Планирование и контроль выездов",
   Маршруты: "Шаблоны регулярных направлений",
   Автопарк: "Транспорт и состояние машин",

@@ -188,8 +188,12 @@ function Metric({
 
 export function OperationsDashboard({
   showFinance = false,
+  embedded = false,
+  refreshToken = 0,
 }: {
   showFinance?: boolean
+  embedded?: boolean
+  refreshToken?: number
 }) {
   const [dashboard, setDashboard] = React.useState<Dashboard | null>(null)
   const [fleet, setFleet] = React.useState<FleetVehicle[]>([])
@@ -260,7 +264,7 @@ export function OperationsDashboard({
       disposed = true
       window.clearInterval(timer)
     }
-  }, [refreshVersion])
+  }, [refreshVersion, refreshToken])
 
   const upcomingTrip =
     nowMillis > 0
@@ -269,377 +273,376 @@ export function OperationsDashboard({
         )
       : undefined
 
-  return (
+  const content = (
+    <div className="space-y-6">
+      {showFinance ? <FinanceOverview /> : null}
+      {loadError ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
+          <span>{loadError}</span>
+          <Link
+            className="font-semibold underline underline-offset-4"
+            href="/trips"
+          >
+            Открыть рейсы
+          </Link>
+        </div>
+      ) : null}
+      <section
+        aria-label="Ключевые показатели"
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <Metric
+          detail={
+            dashboard
+              ? `на ${formatDashboardDate(dashboard.date, dashboard.timezone)}`
+              : "загружаем данные"
+          }
+          icon={Route01Icon}
+          label="Рейсов"
+          value={dashboard ? String(dashboard.tripCount) : "—"}
+        />
+        <Metric
+          detail="мест забронировано на сегодня"
+          icon={UserGroupIcon}
+          label="Пассажиров"
+          value={dashboard ? String(dashboard.passengerCount) : "—"}
+        />
+        <Metric
+          detail="активных машин на линии"
+          icon={Car01Icon}
+          label="Автопарк"
+          value={
+            dashboard
+              ? `${dashboard.vehiclesOnLine} / ${dashboard.activeVehicleCount}`
+              : "—"
+          }
+        />
+        <Metric
+          detail="включая ожидающие и наличные брони"
+          icon={Wallet01Icon}
+          label="Ожидаемая выручка"
+          value={
+            dashboard
+              ? formatMoney(dashboard.expectedRevenueMinor, dashboard.currency)
+              : "—"
+          }
+        />
+      </section>
+      <section
+        aria-labelledby="active-trips-heading"
+        className="surface-card overflow-hidden"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 className="font-bold" id="active-trips-heading">
+              Активные рейсы
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Призрачный автобус — план сейчас, яркий — момент последнего GPS
+            </p>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            Обновление каждые 30 секунд
+          </span>
+        </div>
+        <div className="divide-y divide-border">
+          {!isLoading &&
+          fleet.filter((vehicle) => vehicle.activeTrip).length === 0 ? (
+            <p className="px-5 py-7 text-sm text-muted-foreground">
+              Сейчас нет назначенных или активных рейсов.
+            </p>
+          ) : null}
+          {fleet
+            .filter((vehicle) => vehicle.activeTrip)
+            .map((vehicle) => {
+              const trip = vehicle.activeTrip as FleetTrip
+              const planned = timelineProgress(nowMillis, trip)
+              const recordedAt = vehicle.lastLocation
+                ? new Date(vehicle.lastLocation.recordedAt).getTime()
+                : Number.NaN
+              const actual = Number.isFinite(recordedAt)
+                ? timelineProgress(recordedAt, trip)
+                : 0
+              const signalAge = Number.isFinite(recordedAt)
+                ? Math.max(0, Math.round((nowMillis - recordedAt) / 60_000))
+                : null
+              const mapsHref = vehicle.lastLocation
+                ? `https://www.google.com/maps/search/?api=1&query=${vehicle.lastLocation.latitude},${vehicle.lastLocation.longitude}`
+                : null
+              return (
+                <article
+                  className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(13rem,.8fr)_minmax(18rem,1.5fr)_auto] lg:items-center"
+                  key={vehicle.id}
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{vehicle.name}</p>
+                      <Badge
+                        variant="secondary"
+                        className="bg-sky-500/12 text-sky-600 dark:text-sky-400"
+                      >
+                        {trip.status === "in_progress" ? "В пути" : "Назначен"}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {trip.origin} → {trip.destination}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {vehicle.driver || vehicle.registrationNumber}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        {formatTime(
+                          trip.startsAt,
+                          dashboard?.timezone ?? "Europe/Berlin"
+                        )}
+                      </span>
+                      <span>
+                        {formatTime(
+                          trip.endsAt,
+                          dashboard?.timezone ?? "Europe/Berlin"
+                        )}
+                      </span>
+                    </div>
+                    <div className="relative h-3 rounded-full bg-muted">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full bg-primary/25"
+                        style={{ width: `${planned}%` }}
+                      />
+                      <span
+                        aria-label={`План ${Math.round(planned)}%`}
+                        className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-dashed border-primary/60 bg-background/80 text-primary/55"
+                        style={{ left: `${planned}%` }}
+                        title={`План: ${Math.round(planned)}%`}
+                      >
+                        <HugeiconsIcon icon={Car01Icon} size={16} />
+                      </span>
+                      {vehicle.lastLocation ? (
+                        <span
+                          aria-label={`Последний GPS ${Math.round(actual)}% временной шкалы`}
+                          className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-[left] duration-500"
+                          style={{ left: `${actual}%` }}
+                          title="Последняя GPS-точка на временной шкале"
+                        >
+                          <HugeiconsIcon icon={Car01Icon} size={16} />
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          signalAge !== null && signalAge <= 2
+                            ? "text-emerald-700 dark:text-emerald-500"
+                            : "text-amber-700 dark:text-amber-500"
+                        )}
+                      >
+                        {signalAge === null
+                          ? "GPS ещё не получен"
+                          : signalAge <= 1
+                            ? "GPS сейчас"
+                            : `GPS ${signalAge} мин назад`}
+                      </span>
+                      <span className="text-muted-foreground">
+                        План выполнен на {Math.round(planned)}%
+                      </span>
+                    </div>
+                  </div>
+                  {mapsHref ? (
+                    <a
+                      className={buttonVariants({
+                        size: "sm",
+                        variant: "outline",
+                      })}
+                      href={mapsHref}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Открыть в Google Maps
+                      <HugeiconsIcon icon={ArrowUpRight01Icon} size={15} />
+                    </a>
+                  ) : (
+                    <Button
+                      disabled
+                      disabledReason={
+                        "Координаты этого автомобиля ещё не получены."
+                      }
+                      size="sm"
+                      variant="outline"
+                    >
+                      Нет GPS
+                    </Button>
+                  )}
+                </article>
+              )
+            })}
+        </div>
+      </section>
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(19rem,0.8fr)]">
+        <article className="surface-card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <h2 className="font-bold">Ближайшие рейсы</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {dashboard
+                  ? `Расписание на ${formatDashboardDate(dashboard.date, dashboard.timezone)}`
+                  : "Загружаем расписание…"}
+              </p>
+            </div>
+            <Link
+              className={buttonVariants({ size: "sm", variant: "ghost" })}
+              href="/trips"
+            >
+              Все рейсы
+            </Link>
+          </div>
+          <div className="divide-y divide-border">
+            {isLoading ? (
+              <p className="px-5 py-7 text-sm text-muted-foreground">
+                Загружаем рейсы…
+              </p>
+            ) : null}
+            {!isLoading && dashboard?.trips.length === 0 ? (
+              <div className="px-5 py-7">
+                <p className="text-sm font-semibold">На сегодня рейсов нет</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Создайте регулярный или индивидуальный рейс в планировщике.
+                </p>
+              </div>
+            ) : null}
+            {dashboard?.trips.map((trip) => {
+              const meta = tripStatusMeta[trip.status] ?? {
+                label: trip.status,
+                tone: "slate" as const,
+              }
+              return (
+                <div
+                  className="trip-row grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3 px-4 py-4 sm:grid-cols-[4rem_minmax(10rem,1.3fr)_minmax(8rem,1fr)_minmax(7rem,1fr)_auto] sm:px-5"
+                  key={trip.id}
+                >
+                  <div className="text-sm font-bold tabular-nums">
+                    {formatTime(trip.startsAt, dashboard.timezone)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {trip.origin} → {trip.destination}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground sm:hidden">
+                      {trip.vehicle || "Транспорт не назначен"} ·{" "}
+                      {trip.bookedSeats}/{trip.capacity} мест
+                    </p>
+                  </div>
+                  <p className="hidden text-sm text-muted-foreground sm:block">
+                    {trip.vehicle || "Не назначен"}
+                  </p>
+                  <p className="hidden text-sm text-muted-foreground sm:block">
+                    {trip.driver || `${trip.bookedSeats}/${trip.capacity} мест`}
+                  </p>
+                  <span
+                    className={cn(
+                      "col-start-2 justify-self-start rounded-lg px-2.5 py-1 text-xs font-bold sm:col-start-auto sm:justify-self-end",
+                      `status-${meta.tone}`
+                    )}
+                  >
+                    {meta.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          <Link
+            className="flex w-full items-center justify-center gap-2 border-t border-border px-5 py-3 text-sm font-bold text-primary hover:bg-muted"
+            href="/trips"
+          >
+            Открыть календарь{" "}
+            <HugeiconsIcon icon={ArrowUpRight01Icon} size={16} />
+          </Link>
+        </article>
+        <article className="surface-card p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-bold">Загрузка автопарка</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Бронь и план рейсов на сегодня
+              </p>
+            </div>
+            <span className="flex items-center gap-1.5 text-xs font-bold text-primary">
+              <span className="size-2 rounded-full bg-primary" />
+              {dashboard?.vehiclesOnLine ? "На линии" : "Нет рейсов"}
+            </span>
+          </div>
+          <div className="mt-7 space-y-5">
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">
+                Загружаем автопарк…
+              </p>
+            ) : null}
+            {!isLoading && dashboard?.vehicles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Активного транспорта пока нет.
+              </p>
+            ) : null}
+            {dashboard?.vehicles.map((vehicle) => (
+              <div key={vehicle.id}>
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">{vehicle.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {vehicle.route || "Свободен сегодня"}
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold tabular-nums">
+                    {vehicle.bookedSeats}/{vehicle.capacity}
+                  </span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width] duration-500"
+                    style={{ width: `${vehicle.occupancyPercent}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-7 flex items-center justify-between rounded-2xl bg-secondary p-3">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-xl bg-background text-primary">
+                <HugeiconsIcon icon={Clock01Icon} size={16} />
+              </span>
+              <div>
+                <p className="text-xs font-bold">Ближайший выезд</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {upcomingTrip && dashboard
+                    ? `${formatTime(upcomingTrip.startsAt, dashboard.timezone)} · ${upcomingTrip.origin} → ${upcomingTrip.destination}`
+                    : "На сегодня новых выездов нет"}
+                </p>
+              </div>
+            </div>
+            <HugeiconsIcon
+              className="text-primary"
+              icon={ChartIncreaseIcon}
+              size={18}
+            />
+          </div>
+        </article>
+      </section>
+    </div>
+  )
+  return embedded ? (
+    content
+  ) : (
     <AppShell
       onRefresh={() => setRefreshVersion((version) => version + 1)}
       refreshing={isLoading || refreshing}
       pageDescription="Рейсы, загрузка, GPS и команда в течение дня"
       pageTitle="Оперативная сводка"
     >
-      <div className="space-y-6">
-        {showFinance ? <FinanceOverview /> : null}
-        {loadError ? (
-          <div
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-            role="alert"
-          >
-            <span>{loadError}</span>
-            <Link
-              className="font-semibold underline underline-offset-4"
-              href="/trips"
-            >
-              Открыть рейсы
-            </Link>
-          </div>
-        ) : null}
-        <section
-          aria-label="Ключевые показатели"
-          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-        >
-          <Metric
-            detail={
-              dashboard
-                ? `на ${formatDashboardDate(dashboard.date, dashboard.timezone)}`
-                : "загружаем данные"
-            }
-            icon={Route01Icon}
-            label="Рейсов"
-            value={dashboard ? String(dashboard.tripCount) : "—"}
-          />
-          <Metric
-            detail="мест забронировано на сегодня"
-            icon={UserGroupIcon}
-            label="Пассажиров"
-            value={dashboard ? String(dashboard.passengerCount) : "—"}
-          />
-          <Metric
-            detail="активных машин на линии"
-            icon={Car01Icon}
-            label="Автопарк"
-            value={
-              dashboard
-                ? `${dashboard.vehiclesOnLine} / ${dashboard.activeVehicleCount}`
-                : "—"
-            }
-          />
-          <Metric
-            detail="включая ожидающие и наличные брони"
-            icon={Wallet01Icon}
-            label="Ожидаемая выручка"
-            value={
-              dashboard
-                ? formatMoney(
-                    dashboard.expectedRevenueMinor,
-                    dashboard.currency
-                  )
-                : "—"
-            }
-          />
-        </section>
-        <section
-          aria-labelledby="active-trips-heading"
-          className="surface-card overflow-hidden"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-            <div>
-              <h2 className="font-bold" id="active-trips-heading">
-                Активные рейсы
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Призрачный автобус — план сейчас, яркий — момент последнего GPS
-              </p>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              Обновление каждые 30 секунд
-            </span>
-          </div>
-          <div className="divide-y divide-border">
-            {!isLoading &&
-            fleet.filter((vehicle) => vehicle.activeTrip).length === 0 ? (
-              <p className="px-5 py-7 text-sm text-muted-foreground">
-                Сейчас нет назначенных или активных рейсов.
-              </p>
-            ) : null}
-            {fleet
-              .filter((vehicle) => vehicle.activeTrip)
-              .map((vehicle) => {
-                const trip = vehicle.activeTrip as FleetTrip
-                const planned = timelineProgress(nowMillis, trip)
-                const recordedAt = vehicle.lastLocation
-                  ? new Date(vehicle.lastLocation.recordedAt).getTime()
-                  : Number.NaN
-                const actual = Number.isFinite(recordedAt)
-                  ? timelineProgress(recordedAt, trip)
-                  : 0
-                const signalAge = Number.isFinite(recordedAt)
-                  ? Math.max(0, Math.round((nowMillis - recordedAt) / 60_000))
-                  : null
-                const mapsHref = vehicle.lastLocation
-                  ? `https://www.google.com/maps/search/?api=1&query=${vehicle.lastLocation.latitude},${vehicle.lastLocation.longitude}`
-                  : null
-                return (
-                  <article
-                    className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(13rem,.8fr)_minmax(18rem,1.5fr)_auto] lg:items-center"
-                    key={vehicle.id}
-                  >
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold">{vehicle.name}</p>
-                        <Badge
-                          variant="secondary"
-                          className="bg-sky-500/12 text-sky-600 dark:text-sky-400"
-                        >
-                          {trip.status === "in_progress"
-                            ? "В пути"
-                            : "Назначен"}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {trip.origin} → {trip.destination}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {vehicle.driver || vehicle.registrationNumber}
-                      </p>
-                    </div>
-                    <div>
-                      <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {formatTime(
-                            trip.startsAt,
-                            dashboard?.timezone ?? "Europe/Berlin"
-                          )}
-                        </span>
-                        <span>
-                          {formatTime(
-                            trip.endsAt,
-                            dashboard?.timezone ?? "Europe/Berlin"
-                          )}
-                        </span>
-                      </div>
-                      <div className="relative h-3 rounded-full bg-muted">
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-primary/25"
-                          style={{ width: `${planned}%` }}
-                        />
-                        <span
-                          aria-label={`План ${Math.round(planned)}%`}
-                          className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-dashed border-primary/60 bg-background/80 text-primary/55"
-                          style={{ left: `${planned}%` }}
-                          title={`План: ${Math.round(planned)}%`}
-                        >
-                          <HugeiconsIcon icon={Car01Icon} size={16} />
-                        </span>
-                        {vehicle.lastLocation ? (
-                          <span
-                            aria-label={`Последний GPS ${Math.round(actual)}% временной шкалы`}
-                            className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-[left] duration-500"
-                            style={{ left: `${actual}%` }}
-                            title="Последняя GPS-точка на временной шкале"
-                          >
-                            <HugeiconsIcon icon={Car01Icon} size={16} />
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span
-                          className={cn(
-                            "font-semibold",
-                            signalAge !== null && signalAge <= 2
-                              ? "text-emerald-700 dark:text-emerald-500"
-                              : "text-amber-700 dark:text-amber-500"
-                          )}
-                        >
-                          {signalAge === null
-                            ? "GPS ещё не получен"
-                            : signalAge <= 1
-                              ? "GPS сейчас"
-                              : `GPS ${signalAge} мин назад`}
-                        </span>
-                        <span className="text-muted-foreground">
-                          План выполнен на {Math.round(planned)}%
-                        </span>
-                      </div>
-                    </div>
-                    {mapsHref ? (
-                      <a
-                        className={buttonVariants({
-                          size: "sm",
-                          variant: "outline",
-                        })}
-                        href={mapsHref}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        Открыть в Google Maps
-                        <HugeiconsIcon icon={ArrowUpRight01Icon} size={15} />
-                      </a>
-                    ) : (
-                      <Button
-                        disabled
-                        disabledReason={
-                          "Координаты этого автомобиля ещё не получены."
-                        }
-                        size="sm"
-                        variant="outline"
-                      >
-                        Нет GPS
-                      </Button>
-                    )}
-                  </article>
-                )
-              })}
-          </div>
-        </section>
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(19rem,0.8fr)]">
-          <article className="surface-card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <h2 className="font-bold">Ближайшие рейсы</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {dashboard
-                    ? `Расписание на ${formatDashboardDate(dashboard.date, dashboard.timezone)}`
-                    : "Загружаем расписание…"}
-                </p>
-              </div>
-              <Link
-                className={buttonVariants({ size: "sm", variant: "ghost" })}
-                href="/trips"
-              >
-                Все рейсы
-              </Link>
-            </div>
-            <div className="divide-y divide-border">
-              {isLoading ? (
-                <p className="px-5 py-7 text-sm text-muted-foreground">
-                  Загружаем рейсы…
-                </p>
-              ) : null}
-              {!isLoading && dashboard?.trips.length === 0 ? (
-                <div className="px-5 py-7">
-                  <p className="text-sm font-semibold">На сегодня рейсов нет</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Создайте регулярный или индивидуальный рейс в планировщике.
-                  </p>
-                </div>
-              ) : null}
-              {dashboard?.trips.map((trip) => {
-                const meta = tripStatusMeta[trip.status] ?? {
-                  label: trip.status,
-                  tone: "slate" as const,
-                }
-                return (
-                  <div
-                    className="trip-row grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3 px-4 py-4 sm:grid-cols-[4rem_minmax(10rem,1.3fr)_minmax(8rem,1fr)_minmax(7rem,1fr)_auto] sm:px-5"
-                    key={trip.id}
-                  >
-                    <div className="text-sm font-bold tabular-nums">
-                      {formatTime(trip.startsAt, dashboard.timezone)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold">
-                        {trip.origin} → {trip.destination}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground sm:hidden">
-                        {trip.vehicle || "Транспорт не назначен"} ·{" "}
-                        {trip.bookedSeats}/{trip.capacity} мест
-                      </p>
-                    </div>
-                    <p className="hidden text-sm text-muted-foreground sm:block">
-                      {trip.vehicle || "Не назначен"}
-                    </p>
-                    <p className="hidden text-sm text-muted-foreground sm:block">
-                      {trip.driver ||
-                        `${trip.bookedSeats}/${trip.capacity} мест`}
-                    </p>
-                    <span
-                      className={cn(
-                        "col-start-2 justify-self-start rounded-lg px-2.5 py-1 text-xs font-bold sm:col-start-auto sm:justify-self-end",
-                        `status-${meta.tone}`
-                      )}
-                    >
-                      {meta.label}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-            <Link
-              className="flex w-full items-center justify-center gap-2 border-t border-border px-5 py-3 text-sm font-bold text-primary hover:bg-muted"
-              href="/trips"
-            >
-              Открыть календарь{" "}
-              <HugeiconsIcon icon={ArrowUpRight01Icon} size={16} />
-            </Link>
-          </article>
-          <article className="surface-card p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="font-bold">Загрузка автопарка</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Бронь и план рейсов на сегодня
-                </p>
-              </div>
-              <span className="flex items-center gap-1.5 text-xs font-bold text-primary">
-                <span className="size-2 rounded-full bg-primary" />
-                {dashboard?.vehiclesOnLine ? "На линии" : "Нет рейсов"}
-              </span>
-            </div>
-            <div className="mt-7 space-y-5">
-              {isLoading ? (
-                <p className="text-sm text-muted-foreground">
-                  Загружаем автопарк…
-                </p>
-              ) : null}
-              {!isLoading && dashboard?.vehicles.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Активного транспорта пока нет.
-                </p>
-              ) : null}
-              {dashboard?.vehicles.map((vehicle) => (
-                <div key={vehicle.id}>
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold">{vehicle.name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {vehicle.route || "Свободен сегодня"}
-                      </p>
-                    </div>
-                    <span className="text-sm font-bold tabular-nums">
-                      {vehicle.bookedSeats}/{vehicle.capacity}
-                    </span>
-                  </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width] duration-500"
-                      style={{ width: `${vehicle.occupancyPercent}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-7 flex items-center justify-between rounded-2xl bg-secondary p-3">
-              <div className="flex items-center gap-2">
-                <span className="grid size-8 place-items-center rounded-xl bg-background text-primary">
-                  <HugeiconsIcon icon={Clock01Icon} size={16} />
-                </span>
-                <div>
-                  <p className="text-xs font-bold">Ближайший выезд</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {upcomingTrip && dashboard
-                      ? `${formatTime(upcomingTrip.startsAt, dashboard.timezone)} · ${upcomingTrip.origin} → ${upcomingTrip.destination}`
-                      : "На сегодня новых выездов нет"}
-                  </p>
-                </div>
-              </div>
-              <HugeiconsIcon
-                className="text-primary"
-                icon={ChartIncreaseIcon}
-                size={18}
-              />
-            </div>
-          </article>
-        </section>
-      </div>
+      {content}
     </AppShell>
   )
 }

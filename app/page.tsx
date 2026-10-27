@@ -1,14 +1,13 @@
-import { OperationsDashboard } from "@/components/operations-dashboard"
+import { Suspense } from "react"
+import { StatisticsWorkspace } from "@/components/statistics-workspace"
 import { redirect } from "next/navigation"
 import { getSessionRole } from "@/lib/server-role"
-import { appHome } from "@/lib/app-entry"
-
 export default async function Page() {
   const role = await getSessionRole()
-  if (role && appHome(role) !== "/") redirect(appHome(role))
+  if (role === "driver") redirect("/driver")
   return (
-    <OperationsDashboard
-      showFinance={!!role && ["owner", "admin", "developer"].includes(role)}
-    />
+    <Suspense fallback={<p className="p-6">Загружаем статистику…</p>}>
+      <StatisticsWorkspace role={role} />
+    </Suspense>
   )
 }

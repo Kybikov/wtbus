@@ -59,3 +59,11 @@ test("developer can reach every registered destination", () => {
     for (const page of mobileNavigation(role))
       assert.ok(developer.has(page.href), page.href)
 })
+
+test("accountants can open statistics without expanding their compact dock", () => {
+  assert.ok(mobileNavigation("accountant").some((item) => item.href === "/"))
+  assert.deepEqual(
+    mobileDockNavigation("accountant").map((item) => item.href),
+    ["/finance", "/notifications", "/profile"]
+  )
+})

@@ -4,6 +4,8 @@
 
 CRM notifications, background Web Push, staff Telegram delivery, profile settings and authenticated WebSocket updates are described in [notifications](docs/notifications.md), including migrations through 40, deployment configuration and verification.
 
+The overview's revenue, booking, trip and calendar reports are documented in [statistics](docs/statistics.md), including recognition rules, currency separation and role access.
+
 Public passenger booking: `/book` or `/book/{tenant-slug}`. The Ukrainian page searches database-backed city pairs and departures, then creates a cash-on-boarding booking without login or an IBAN. Staff can open it from the profile menu. See [public booking](docs/public-booking.md) for API boundaries, migration and verification.
 
 ## Local Docker preview

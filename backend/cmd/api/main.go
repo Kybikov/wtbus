@@ -202,6 +202,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/me/preferences", staff(app.updateUserPreferences))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips", operations(app.listTrips))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/dashboard", operations(app.dashboardSummary))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/statistics", app.requireRoles("owner", "admin", "dispatcher", "accountant")(app.statistics))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips", operations(app.requireActiveSubscription(app.createTrip)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips/schedule", operations(app.requireActiveSubscription(app.createTripSchedule)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}", tripOperators(app.changeTripStatus))

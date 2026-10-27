@@ -721,3 +721,19 @@ body:has([data-disabled-action-hint][data-open])
   pointer-events: auto;
   cursor: not-allowed;
 }
+
+/* Distinct series remain readable in both company themes. */
+.statistics-workspace {
+  --chart-1: oklch(0.68 0.14 75);
+  --chart-2: oklch(0.61 0.12 175);
+  --chart-3: oklch(0.59 0.17 255);
+  --chart-4: oklch(0.60 0.17 305);
+  --chart-5: oklch(0.60 0.18 15);
+}
+.dark .statistics-workspace {
+  --chart-1: oklch(0.80 0.14 80);
+  --chart-2: oklch(0.74 0.12 175);
+  --chart-3: oklch(0.73 0.13 255);
+  --chart-4: oklch(0.74 0.13 305);
+  --chart-5: oklch(0.72 0.15 15);
+}

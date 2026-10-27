@@ -3,7 +3,12 @@ import type { StaffRole } from "./admin-actions.ts"
 const operations: StaffRole[] = ["owner", "admin", "developer", "dispatcher"]
 const management: StaffRole[] = ["owner", "admin", "developer"]
 export const mobileDestinations = [
-  { href: "/", label: "Обзор", icon: "home", roles: operations },
+  {
+    href: "/",
+    label: "Обзор",
+    icon: "home",
+    roles: [...operations, "accountant"] as StaffRole[],
+  },
   { href: "/trips", label: "Рейсы", icon: "calendar", roles: operations },
   {
     href: "/bookings",
