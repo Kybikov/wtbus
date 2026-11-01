@@ -813,6 +813,21 @@ export function EntityDetailPage({
           ))}
         </div>
       )
+    if (key === "boarding" && typeof value === "object" && value !== null)
+      return (
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(value).map(([index, status]) => (
+            <Badge key={index} variant="secondary">
+              Пассажир {Number(index) + 1}:{" "}
+              {status === "boarded"
+                ? "пришёл"
+                : status === "absent"
+                  ? "не пришёл"
+                  : "ожидаем"}
+            </Badge>
+          ))}
+        </div>
+      )
     if (typeof value === "object")
       return (
         <dl className="grid gap-3">

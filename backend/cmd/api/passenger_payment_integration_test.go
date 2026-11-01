@@ -209,5 +209,11 @@ func TestPassengerPaymentJourneyPostgres(t *testing.T) {
 	if m := find(cash.Reference); m.PaymentStatus != "paid" || m.PaymentMethod != "cash_on_boarding" {
 		t.Fatalf("cash receipt missing from manifest: %+v", m)
 	}
+	zero := 0
+	for _, id := range []string{web.Reference, tgBooking} {
+		call("POST", "tenants/passenger-qa/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: id, PassengerIndex: &zero, Boarding: "boarded"}, session.SessionToken, 200)
+		bankCash := int64(125000)
+		call("POST", "tenants/passenger-qa/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: id, CashMinor: &bankCash}, session.SessionToken, 409)
+	}
 	call("PATCH", "tenants/passenger-qa/trips/"+trip, changeTripStatusRequest{Status: "completed"}, session.SessionToken, 200)
 }

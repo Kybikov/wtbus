@@ -56,6 +56,7 @@ func deletionSets(entity string) []deletionSet {
 			sets = append(sets, deletionSet{"bookings", bookings, "bookings", "Бронирования", "delete"})
 		}
 		bookingSelection := "SELECT t.id FROM bookings t WHERE t.tenant_id=$2::uuid AND " + bookings
+		sets = append(sets, deletionSet{"driver_booking_checkins", "t.booking_id IN (" + bookingSelection + ")", "", "Отметки посадки и получения наличных", "delete"})
 		sets = append(sets, deletionSet{"payments", "t.booking_id IN (" + bookingSelection + ")", "payments", "Платёжные записи в CRM", "delete"})
 		if entity != "customers" {
 			sets = append(sets, deletionSet{"individual_transfer_requests", "t.booking_id IN (" + bookingSelection + ")", "requests", "Заявки сохранятся без привязки к бронированию", "unlink"})
@@ -178,7 +179,7 @@ func (app *application) entityDeletion(w http.ResponseWriter, r *http.Request) {
 	sets := deletionSets(entity)
 	// Children before parents; FK SET NULL keeps independent trips, GPS history,
 	// cash ledger and expenses intact. No dynamic client table or predicate enters SQL.
-	for _, kind := range []string{"payments", "bookings", "individual_transfer_requests", "availability_blocks", "gps_points"} {
+	for _, kind := range []string{"driver_booking_checkins", "payments", "bookings", "individual_transfer_requests", "availability_blocks", "gps_points"} {
 		for index, set := range sets {
 			if index == 0 || set.operation != "delete" || set.table != kind {
 				continue

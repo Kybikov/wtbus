@@ -249,6 +249,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/gps-points", tripOperators(app.recordGPSPoint))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/cash-summary", drivers(app.driverCashSummary))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", drivers(app.driverPassengers))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/checkin", drivers(app.driverCheckin))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/cash-received", drivers(app.confirmDriverCashReceived))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/summary", finance(app.financeSummary))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/accounting", finance(app.accountingSnapshot))
@@ -2458,13 +2459,16 @@ type fleetLocationResponse struct {
 }
 
 type fleetTripResponse struct {
-	Progress    roadProgress `json:"progress"`
-	ID          string       `json:"id"`
-	Status      string       `json:"status"`
-	Origin      string       `json:"origin"`
-	Destination string       `json:"destination"`
-	StartsAt    time.Time    `json:"startsAt"`
-	EndsAt      time.Time    `json:"endsAt"`
+	ActualStartedAt   *time.Time   `json:"actualStartedAt,omitempty"`
+	ActualCompletedAt *time.Time   `json:"actualCompletedAt,omitempty"`
+	StatusPhase       string       `json:"statusPhase"`
+	Progress          roadProgress `json:"progress"`
+	ID                string       `json:"id"`
+	Status            string       `json:"status"`
+	Origin            string       `json:"origin"`
+	Destination       string       `json:"destination"`
+	StartsAt          time.Time    `json:"startsAt"`
+	EndsAt            time.Time    `json:"endsAt"`
 }
 
 type fleetVehicleResponse struct {
@@ -2508,11 +2512,11 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			v.id::text, v.name, v.registration_number, v.vehicle_class, v.capacity, v.is_active, v.status,
 			COALESCE(active_driver.full_name, ''),
 			active_trip.id::text, active_trip.status::text, active_trip.origin_name,
-			active_trip.destination_name, active_trip.starts_at, active_trip.ends_at, active_trip.navigation,
+			active_trip.destination_name, active_trip.starts_at, active_trip.ends_at, active_trip.navigation, active_trip.actual_started_at,active_trip.actual_completed_at,active_trip.phase,
 			latest.latitude, latest.longitude, latest.accuracy_meters, latest.recorded_at
 		FROM vehicles v
 		LEFT JOIN LATERAL (
-			SELECT t.id, t.status, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.driver_id, to_jsonb(t)->'navigation' AS navigation
+			SELECT t.id, t.status, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.driver_id, to_jsonb(t)->'navigation' AS navigation,t.actual_started_at,t.actual_completed_at,workflow_status_phase(t.tenant_id,'trips',t.status) AS phase
 			FROM trips t
 			WHERE t.tenant_id = $1 AND t.vehicle_id = v.id
 			  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=t.tenant_id AND ws.entity_type='trips' AND ws.key=t.status AND ws.semantic_phase IN ('assigned','in_progress'))
@@ -2548,14 +2552,15 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var item fleetVehicleResponse
 		var tripID, tripStatus, tripOrigin, tripDestination *string
-		var tripStartsAt, tripEndsAt *time.Time
+		var tripStartsAt, tripEndsAt, actualStartedAt, actualCompletedAt *time.Time
+		var tripPhase *string
 		var navigationJSON []byte
 		var latitude, longitude *float64
 		var accuracy *float64
 		var recordedAt *time.Time
 		if err := rows.Scan(
 			&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive, &item.Status,
-			&item.Driver, &tripID, &tripStatus, &tripOrigin, &tripDestination, &tripStartsAt, &tripEndsAt, &navigationJSON,
+			&item.Driver, &tripID, &tripStatus, &tripOrigin, &tripDestination, &tripStartsAt, &tripEndsAt, &navigationJSON, &actualStartedAt, &actualCompletedAt, &tripPhase,
 			&latitude, &longitude, &accuracy, &recordedAt,
 		); err != nil {
 			app.log.Error("scan fleet", "error", err)
@@ -2565,7 +2570,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 		if tripID != nil {
 			item.ActiveTrip = &fleetTripResponse{
 				ID: *tripID, Status: *tripStatus, Origin: *tripOrigin, Destination: *tripDestination,
-				StartsAt: *tripStartsAt, EndsAt: *tripEndsAt,
+				StartsAt: *tripStartsAt, EndsAt: *tripEndsAt, ActualStartedAt: actualStartedAt, ActualCompletedAt: actualCompletedAt, StatusPhase: *tripPhase,
 			}
 		}
 		if latitude != nil && longitude != nil && recordedAt != nil {
@@ -3394,6 +3399,18 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 	}
 	defer tx.Rollback(r.Context())
 
+	// Serialize actual departures with receipts/handovers and other starts by this driver.
+	var resource string
+	err = tx.QueryRow(r.Context(), `SELECT d.id::text FROM drivers d WHERE d.tenant_id=$1 AND d.id=(SELECT driver_id FROM trips WHERE id=$2 AND tenant_id=$1) FOR UPDATE`, tenant.ID, tripID).Scan(&resource)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		app.publicFailure(w, err)
+		return
+	}
+	err = tx.QueryRow(r.Context(), `SELECT v.id::text FROM vehicles v WHERE v.tenant_id=$1 AND v.id=(SELECT vehicle_id FROM trips WHERE id=$2 AND tenant_id=$1) FOR UPDATE`, tenant.ID, tripID).Scan(&resource)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		app.publicFailure(w, err)
+		return
+	}
 	var trip tripResponse
 	var driverPhone string
 	if err := tx.QueryRow(r.Context(), `
@@ -3454,7 +3471,42 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this status transition is not allowed"})
 		return
 	}
+	if nextMeta.Phase == "in_progress" && currentMeta.Phase != "in_progress" {
+		var conflict bool
+		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips active JOIN trips selected ON selected.id=$2 AND selected.tenant_id=active.tenant_id WHERE active.tenant_id=$1 AND active.id<>selected.id AND workflow_status_phase(active.tenant_id,'trips',active.status)='in_progress' AND (active.driver_id=selected.driver_id OR active.vehicle_id=selected.vehicle_id))`, tenant.ID, tripID).Scan(&conflict)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if conflict {
+			writeJSON(w, 409, map[string]string{"error": "Водитель или автомобиль ещё выполняет другой рейс. Сначала завершите его."})
+			return
+		}
+	}
 	if nextMeta.Phase == "completed" {
+		var unresolved bool
+		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM driver_booking_checkins c JOIN bookings b ON b.id=c.booking_id WHERE b.tenant_id=$1 AND b.trip_id=$2) AND EXISTS(
+ SELECT 1 FROM bookings b LEFT JOIN driver_booking_checkins c ON c.booking_id=b.id AND c.tenant_id=b.tenant_id
+ WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed'
+ AND EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting') NOT IN ('boarded','absent')))`, tenant.ID, tripID).Scan(&unresolved)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if unresolved {
+			writeJSON(w, 409, map[string]string{"error": "Отметьте посадку или отсутствие каждого пассажира."})
+			return
+		}
+		// No-shows without collected cash are cancelled atomically with completion.
+		_, err = tx.Exec(r.Context(), `UPDATE bookings b SET status='cancelled',updated_at=now()
+ FROM driver_booking_checkins c WHERE c.booking_id=b.id AND c.tenant_id=b.tenant_id AND b.tenant_id=$1 AND b.trip_id=$2 AND c.cash_minor=0
+ AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed'
+ AND (SELECT count(*) FROM jsonb_each_text(c.boarding) item WHERE item.value='absent')=b.seats
+ AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.tenant_id=b.tenant_id AND p.booking_id=b.id AND workflow_status_phase(p.tenant_id,'payments',p.status)='paid')`, tenant.ID, tripID)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 		var cashDue, cashCollected int64
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
@@ -3544,7 +3596,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			UPDATE bookings
 			SET status = 'completed', updated_at = now()
 			WHERE tenant_id = $1 AND trip_id = $2
-			  AND status IN ('cash_on_boarding', 'confirmed')
+			  AND workflow_status_phase(tenant_id,'bookings',status)='confirmed'
 		`, tenant.ID, trip.ID); err != nil {
 			app.log.Error("complete trip bookings", "error", err, "tenant", slug, "trip", tripID)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not complete trip bookings"})
@@ -4386,10 +4438,10 @@ func (app *application) listCustomers(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN LATERAL (
 			SELECT COALESCE(jsonb_agg(jsonb_build_object('currency', totals.currency, 'amountMinor', totals.amount_minor) ORDER BY totals.currency), '[]'::jsonb) AS lifetime_value
 			FROM (
-				SELECT currency, SUM(price_minor)::bigint AS amount_minor
+				SELECT currency, SUM(booking_received_minor(tenant_id,id))::bigint AS amount_minor
 				FROM bookings
 				WHERE tenant_id = c.tenant_id AND customer_id = c.id AND workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')
-				GROUP BY currency
+				GROUP BY currency HAVING SUM(booking_received_minor(tenant_id,id))>0
 			) totals
 		) ltv ON true
 		WHERE c.tenant_id = $1
@@ -4483,10 +4535,10 @@ func (app *application) getCustomer(w http.ResponseWriter, r *http.Request) {
 	if err := app.db.QueryRow(r.Context(), `
 		SELECT COALESCE(jsonb_agg(jsonb_build_object('currency', totals.currency, 'amountMinor', totals.amount_minor) ORDER BY totals.currency), '[]'::jsonb)
 		FROM (
-			SELECT currency, SUM(price_minor)::bigint AS amount_minor
+			SELECT currency, SUM(booking_received_minor(tenant_id,id))::bigint AS amount_minor
 			FROM bookings
 			WHERE tenant_id = $1 AND customer_id = $2 AND workflow_status_phase(tenant_id,'bookings',status) IN ('confirmed','completed')
-			GROUP BY currency
+			GROUP BY currency HAVING SUM(booking_received_minor(tenant_id,id))>0
 		) totals
 	`, tenant.ID, customerID).Scan(&lifetimeValue); err != nil {
 		app.log.Error("load customer lifetime value", "error", err, "tenant", slug, "customer", customerID)
@@ -5266,13 +5318,14 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		SELECT b.id::text, b.status::text, b.seats, b.price_minor, b.currency, b.source, b.created_at, b.custom_data,
 			COALESCE(c.full_name, ''), c.phone_e164,
 			t.id::text, t.status::text, t.origin_name, t.destination_name, t.starts_at, t.capacity,
-			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status) IN ('pending','confirmed') OR (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status)='awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
-			COALESCE(payment.id::text, ''), COALESCE(payment.status::text, ''), COALESCE(payment.payment_method, ''), b.payment_hold_expires_at,
+			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status)='awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
+			COALESCE(payment.id::text, ''), COALESCE(payment.status::text,CASE WHEN ci.cash_minor>=b.price_minor THEN 'paid' WHEN ci.cash_minor>0 THEN 'partial' ELSE '' END), COALESCE(payment.payment_method,CASE WHEN ci.cash_minor>0 OR b.status='cash_on_boarding' THEN 'cash_on_boarding' ELSE '' END), b.payment_hold_expires_at,
 			COALESCE(request.id::text, ''), count(*) OVER()
 		FROM bookings b
 		JOIN customers c ON c.id = b.customer_id
 		JOIN trips t ON t.id = b.trip_id
-		LEFT JOIN individual_transfer_requests request ON request.booking_id = b.id AND request.tenant_id = b.tenant_id
+		LEFT JOIN driver_booking_checkins ci ON ci.booking_id=b.id AND ci.tenant_id=b.tenant_id
+ LEFT JOIN individual_transfer_requests request ON request.booking_id = b.id AND request.tenant_id = b.tenant_id
 		LEFT JOIN LATERAL (
 			SELECT id, status, payment_method FROM payments
 			WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
@@ -5286,8 +5339,8 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		  AND ($6 = '' OR b.source = $6)
 		  AND ($7 = '' OR t.status::text = $7)
 		  AND ($8 = ''
-		    OR ($8 = 'cash_on_boarding' AND (b.status = 'cash_on_boarding' OR COALESCE(b.custom_data->>'payment_method', '') = 'cash_on_boarding'))
-		    OR ($8 = 'none' AND b.status<>'cash_on_boarding' AND COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = '')
+		    OR ($8 IN ('cash','cash_on_boarding') AND (ci.cash_minor>0 OR b.status = 'cash_on_boarding' OR COALESCE(b.custom_data->>'payment_method', '') = 'cash_on_boarding'))
+		    OR ($8 = 'none' AND COALESCE(ci.cash_minor,0)=0 AND b.status<>'cash_on_boarding' AND COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = '')
 		    OR COALESCE(b.custom_data->>'payment_method', payment.payment_method, '') = $8)
 		ORDER BY t.starts_at DESC, b.created_at DESC, b.id DESC
 		LIMIT $9 OFFSET $10
@@ -6244,13 +6297,13 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			FROM payments WHERE tenant_id=$1
 			GROUP BY currency
 		), pending_totals AS (
-			SELECT booking.currency, COALESCE(SUM(booking.price_minor),0) AS pending_revenue_minor
-			FROM bookings booking
+			SELECT booking.currency, COALESCE(SUM(GREATEST(booking.price_minor-COALESCE(checkin.cash_minor,0),0)),0) AS pending_revenue_minor
+			FROM bookings booking LEFT JOIN driver_booking_checkins checkin ON checkin.booking_id=booking.id AND checkin.tenant_id=booking.tenant_id
 			WHERE booking.tenant_id=$1 AND booking.created_at >= $2 AND booking.created_at < $3
 			  AND (workflow_status_phase(booking.tenant_id,'bookings',booking.status) IN ('pending','confirmed')
 			    OR (workflow_status_phase(booking.tenant_id,'bookings',booking.status)='awaiting_payment' AND booking.payment_hold_expires_at>now()))
 			  AND NOT EXISTS (SELECT 1 FROM payments payment WHERE payment.booking_id=booking.id AND workflow_status_phase(payment.tenant_id,'payments',payment.status) IN ('paid','refunded'))
-			  AND NOT EXISTS (SELECT 1 FROM driver_cash_ledger ledger WHERE ledger.tenant_id=booking.tenant_id AND ledger.trip_id=booking.trip_id AND ledger.kind='cash_collected')
+			  AND (checkin.id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM driver_cash_ledger ledger WHERE ledger.tenant_id=booking.tenant_id AND ledger.trip_id=booking.trip_id AND ledger.kind='cash_collected' AND ledger.source_key IS NULL))
 			GROUP BY booking.currency
 		), cash_booking_counts AS (
 			SELECT ledger.currency, COUNT(DISTINCT booking.id) AS paid_bookings
@@ -6259,6 +6312,7 @@ func (app *application) financeSummary(w http.ResponseWriter, r *http.Request) {
 			WHERE ledger.tenant_id=$1 AND ledger.kind='cash_collected' AND ledger.occurred_at >= $2 AND ledger.occurred_at < $3
 			  AND workflow_status_phase(booking.tenant_id,'bookings',booking.status) IN ('confirmed','completed')
 			  AND NOT EXISTS (SELECT 1 FROM payments payment WHERE payment.booking_id=booking.id AND payment.payment_method='bank_transfer')
+ AND (EXISTS(SELECT 1 FROM driver_booking_checkins ci WHERE ci.booking_id=booking.id AND ci.cash_minor>=booking.price_minor) OR ledger.source_key IS NULL)
 			GROUP BY ledger.currency
 		), cash_period AS (
 			SELECT currency,
@@ -6420,6 +6474,7 @@ func (app *application) driverCashSummary(w http.ResponseWriter, r *http.Request
 				SELECT SUM(price_minor) FROM bookings b
 				WHERE b.tenant_id = t.tenant_id AND b.trip_id = t.id
 				  AND workflow_status_phase(b.tenant_id,'bookings',b.status) = 'confirmed'
+ AND NOT EXISTS(SELECT 1 FROM driver_booking_checkins ci WHERE ci.booking_id=b.id AND ci.cash_minor=0 AND (SELECT count(*) FROM jsonb_each_text(ci.boarding) item WHERE item.value='absent')=b.seats)
 				  AND NOT EXISTS (
 					SELECT 1 FROM payments payment
 					WHERE payment.tenant_id=b.tenant_id AND payment.booking_id=b.id AND payment.payment_method='bank_transfer'
@@ -6505,6 +6560,20 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not confirm cash receipt"})
 		return
 	}
+	var individualCount int
+	if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM driver_booking_checkins c JOIN bookings b ON b.id=c.booking_id WHERE b.tenant_id=$1 AND b.trip_id=$2 `, tenant.ID, input.TripID).Scan(&individualCount); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	var legacyReceipt bool
+	if err := tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM driver_cash_ledger WHERE tenant_id=$1 AND trip_id=$2 AND kind='cash_collected' AND source_key IS NULL)`, tenant.ID, input.TripID).Scan(&legacyReceipt); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if individualCount > 0 && !legacyReceipt {
+		writeJSON(w, 409, map[string]string{"error": "Оплаты уже отмечаются по пассажирам. Продолжите в списке посадки."})
+		return
+	}
 	var amountMinor int64
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(SUM(price_minor), 0)
@@ -6529,7 +6598,7 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO driver_cash_ledger (tenant_id, driver_id, trip_id, amount_minor, currency, kind,actor_membership_id)
 		VALUES ($1, $2, $3, $4, $5, 'cash_collected',NULLIF($6,'')::uuid)
-		ON CONFLICT (tenant_id, trip_id, currency) WHERE kind = 'cash_collected' AND trip_id IS NOT NULL
+		ON CONFLICT (tenant_id, trip_id, currency) WHERE kind = 'cash_collected' AND trip_id IS NOT NULL AND source_key IS NULL
 		DO NOTHING
 		RETURNING id::text
 	`, tenant.ID, driverID, input.TripID, amountMinor, currency, actor.MembershipID).Scan(&ledgerID)
@@ -6551,6 +6620,15 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 	} else if err != nil {
 		app.log.Error("record trip cash receipt", "error", err, "tenant", slug, "trip", input.TripID)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not confirm cash receipt"})
+		return
+	}
+	// Legacy whole-trip clients remain idempotent and seed individual paid states.
+	if _, err := tx.Exec(r.Context(), `INSERT INTO driver_booking_checkins(tenant_id,booking_id,cash_minor,boarding,actor_membership_id)
+ SELECT b.tenant_id,b.id,b.price_minor,(SELECT jsonb_object_agg(i::text,'boarded'::text) FROM generate_series(0,b.seats-1) i),NULLIF($3,'')::uuid
+ FROM bookings b WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed'
+ AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.tenant_id=b.tenant_id AND p.booking_id=b.id AND p.payment_method='bank_transfer')
+ ON CONFLICT(booking_id) DO NOTHING`, tenant.ID, input.TripID, actor.MembershipID); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	if ledgerID != "" {

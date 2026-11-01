@@ -1,5 +1,6 @@
 "use client"
 import { AccountingWorkspace } from "@/components/accounting-workspace"
+import { useActionConfirmation } from "@/components/action-confirmation"
 
 import { sessionFetch } from "@/lib/session-navigation"
 
@@ -21,6 +22,8 @@ type FleetTrip = {
   origin: string
   destination: string
   startsAt: string
+  actualStartedAt?: string
+  statusPhase?: "assigned" | "in_progress"
 }
 
 type Vehicle = {
@@ -121,6 +124,7 @@ function formatMoney(amountMinor: number, currency: string) {
 }
 
 export function DriverLocationTracker() {
+  const confirm = useActionConfirmation()
   const router = useRouter()
   const [vehicles, setVehicles] = React.useState<Vehicle[]>([])
   const [cashSummary, setCashSummary] =
@@ -128,7 +132,7 @@ export function DriverLocationTracker() {
   const [companyName, setCompanyName] = React.useState("Vivat Bus")
   const [loading, setLoading] = React.useState(true)
   const [cashLoading, setCashLoading] = React.useState(true)
-  const [confirmingCash, setConfirmingCash] = React.useState(false)
+  const [walletRefresh, setWalletRefresh] = React.useState(0)
   const [updatingTripStatus, setUpdatingTripStatus] = React.useState(false)
   const [identity, setIdentity] = React.useState<DriverIdentity | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -207,7 +211,18 @@ export function DriverLocationTracker() {
       const payload: unknown = await response.json()
       if (!response.ok || !isFleetResponse(payload))
         throw new Error("Не удалось получить список автомобиля.")
-      setVehicles(payload.items)
+      setVehicles(
+        payload.items.map((vehicle) => ({
+          ...vehicle,
+          activeTrip: vehicle.activeTrip
+            ? {
+                ...vehicle.activeTrip,
+                status:
+                  vehicle.activeTrip.statusPhase ?? vehicle.activeTrip.status,
+              }
+            : undefined,
+        }))
+      )
       setIdentity(session)
       setError(null)
     } catch (reason) {
@@ -298,7 +313,15 @@ export function DriverLocationTracker() {
       return
     }
     const action = status === "in_progress" ? "начать" : "завершить"
-    if (!window.confirm(`Подтвердить: ${action} рейс?`)) return
+    if (
+      !(await confirm({
+        title: `${status === "in_progress" ? "Начать" : "Завершить"} рейс?`,
+        description: `Подтвердите: ${action} рейс ${selectedVehicle?.activeTrip?.origin} → ${selectedVehicle?.activeTrip?.destination}.`,
+        label: status === "in_progress" ? "Начать рейс" : "Завершить рейс",
+        tone: "archive",
+      }))
+    )
+      return
     setUpdatingTripStatus(true)
     setError(null)
     try {
@@ -328,6 +351,7 @@ export function DriverLocationTracker() {
         throw new Error(message)
       }
       await Promise.all([loadFleet(), loadCashSummary()])
+      setWalletRefresh((value) => value + 1)
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -339,41 +363,10 @@ export function DriverLocationTracker() {
     }
   }
 
-  async function confirmCashReceipt() {
-    if (!cashSummary || confirmingCash) return
-    const amount = formatMoney(cashSummary.amountMinor, cashSummary.currency)
-    if (!window.confirm(`Подтвердить получение наличных: ${amount}?`)) return
-    setConfirmingCash(true)
-    setError(null)
-    try {
-      const response = await sessionFetch("/api/driver-cash", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tripId: cashSummary.tripId }),
-        signal: AbortSignal.timeout(12_000),
-      })
-      const payload: unknown = await response.json().catch(() => null)
-      if (!response.ok || !isDriverCashSummaryResponse(payload)) {
-        const message =
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof payload.error === "string"
-            ? payload.error
-            : "Не удалось подтвердить наличные."
-        throw new Error(message)
-      }
-      setCashSummary(payload.item)
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось подтвердить наличные."
-      )
-    } finally {
-      setConfirmingCash(false)
-    }
-  }
+  const refreshPassengerMoney = React.useCallback(() => {
+    void loadCashSummary()
+    setWalletRefresh((value) => value + 1)
+  }, [loadCashSummary])
 
   return (
     <AppShell
@@ -382,6 +375,7 @@ export function DriverLocationTracker() {
       onRefresh={async () => {
         await loadFleet()
         if (identity?.role === "driver") await loadCashSummary()
+        setWalletRefresh((value) => value + 1)
       }}
     >
       <div className="mx-auto flex w-full max-w-md flex-col rounded-[var(--app-radius)] border border-border bg-card p-4 sm:p-5">
@@ -397,22 +391,8 @@ export function DriverLocationTracker() {
           </div>
         </div>
 
-        <div className="mt-6">
-          <h1 className="text-3xl font-bold tracking-[-.035em]">
-            Передача геолокации
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Диспетчер увидит автомобиль и свежесть GPS-сигнала. Координаты
-            передаются только после вашего действия.
-          </p>
-        </div>
-
         {selectedVehicle?.activeTrip ? (
           <>
-            <DriverPassengerManifest
-              key={selectedVehicle.activeTrip.id}
-              tripId={selectedVehicle.activeTrip.id}
-            />
             <div className="mt-7 rounded-2xl border border-border bg-background/40 p-4">
               <p className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
                 <HugeiconsIcon icon={Route01Icon} size={15} />
@@ -428,6 +408,17 @@ export function DriverLocationTracker() {
                   ? "Рейс выполняется"
                   : "Рейс назначен"}
               </p>
+              {selectedVehicle.activeTrip.actualStartedAt ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Фактический выезд:{" "}
+                  {new Intl.DateTimeFormat("ru-RU", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }).format(
+                    new Date(selectedVehicle.activeTrip.actualStartedAt)
+                  )}
+                </p>
+              ) : null}
               {selectedVehicle.activeTrip.status === "assigned" ? (
                 <Button
                   className="mt-4 w-full"
@@ -467,42 +458,28 @@ export function DriverLocationTracker() {
                 </Button>
               )}
             </div>
+            <DriverPassengerManifest
+              key={selectedVehicle.activeTrip.id}
+              tripId={selectedVehicle.activeTrip.id}
+              onChange={refreshPassengerMoney}
+            />
             {cashSummary?.tripId === selectedVehicle.activeTrip.id &&
             cashSummary.amountMinor > 0 ? (
               <section className="mt-4 rounded-2xl border border-primary/30 bg-primary/10 p-4">
-                <h2 className="text-sm font-bold">Наличные к получению</h2>
+                <h2 className="text-sm font-bold">Наличные по рейсу</h2>
                 <p className="mt-1 text-3xl font-bold tracking-[-.035em] tabular-nums">
                   {formatMoney(cashSummary.amountMinor, cashSummary.currency)}
                 </p>
-                {cashSummary.collectedMinor === cashSummary.amountMinor ? (
-                  <p className="mt-3 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                    Получение подтверждено. Сумма зачислена в кассу водителя.
-                  </p>
-                ) : selectedVehicle.activeTrip.status === "in_progress" ? (
-                  <>
-                    <p className="mt-3 text-sm leading-5 text-muted-foreground">
-                      Проверьте сумму перед подтверждением. Без этого рейс
-                      нельзя завершить.
-                    </p>
-                    <Button
-                      className="mt-4 w-full"
-                      disabled={confirmingCash || !online}
-                      disabledReason={
-                        confirmingCash
-                          ? "Подтверждаем получение денег. Дождитесь результата."
-                          : "Для подтверждения оплаты нужно подключение к интернету."
-                      }
-                      onClick={() => void confirmCashReceipt()}
-                      size="lg"
-                    >
-                      {confirmingCash ? "Подтверждаем…" : "Деньги получены"}
-                    </Button>
-                  </>
-                ) : (
-                  <p className="mt-3 text-sm leading-5 text-muted-foreground">
-                    Подтверждение наличных станет доступно после начала рейса.
-                  </p>
-                )}
+                <p className="mt-2 text-sm">
+                  Получено:{" "}
+                  {formatMoney(
+                    cashSummary.collectedMinor,
+                    cashSummary.currency
+                  )}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Оплата отмечается у каждого пассажира.
+                </p>
               </section>
             ) : cashLoading ? (
               <div className="mt-4 h-28 animate-pulse rounded-2xl border border-border bg-muted/40" />
@@ -512,9 +489,6 @@ export function DriverLocationTracker() {
           <div className="mt-7 rounded-2xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
             <p>
               {loading ? "Загружаем назначения…" : "Нет назначенного рейса."}
-            </p>
-            <p className="mt-1 text-xs">
-              Назначения обновляются каждые 30 секунд, пока приложение открыто.
             </p>
             <Button
               className="mt-4"
@@ -664,7 +638,9 @@ export function DriverLocationTracker() {
             </p>
           </div>
         ) : null}
-        {identity ? <AccountingWorkspace driver /> : null}
+        {identity ? (
+          <AccountingWorkspace driver refreshKey={walletRefresh} />
+        ) : null}
       </div>
     </AppShell>
   )

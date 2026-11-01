@@ -19,6 +19,9 @@ type driverManifestBooking struct {
 	PaymentStatus string            `json:"paymentStatus"`
 	AmountMinor   int64             `json:"amountMinor"`
 	Currency      string            `json:"currency"`
+	Boarding      map[string]string `json:"boarding"`
+	CashMinor     int64             `json:"cashMinor"`
+	RecordNumber  string            `json:"recordNumber"`
 }
 
 func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request) {
@@ -59,9 +62,10 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
  CASE WHEN p.payment_method='bank_transfer' OR b.custom_data->>'payment_method'='bank_transfer' THEN 'bank_transfer'
       WHEN p.payment_method='cash' OR workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' THEN 'cash_on_boarding' ELSE 'unselected' END,
  CASE WHEN p.payment_method='bank_transfer' THEN p.status::text
-      WHEN EXISTS(SELECT 1 FROM driver_cash_ledger l WHERE l.tenant_id=b.tenant_id AND l.trip_id=b.trip_id AND l.kind='cash_collected') THEN 'paid' ELSE 'pending' END,
- b.price_minor,b.currency
+      WHEN (checkin.id IS NULL AND NOT EXISTS(SELECT 1 FROM driver_booking_checkins ci JOIN bookings bi ON bi.id=ci.booking_id WHERE bi.tenant_id=b.tenant_id AND bi.trip_id=b.trip_id) AND EXISTS(SELECT 1 FROM driver_cash_ledger l WHERE l.tenant_id=b.tenant_id AND l.trip_id=b.trip_id AND l.kind='cash_collected')) OR COALESCE(checkin.cash_minor,0)>=b.price_minor THEN 'paid' WHEN COALESCE(checkin.cash_minor,0)>0 THEN 'partial' ELSE 'pending' END,
+ b.price_minor,b.currency,COALESCE(checkin.boarding,'{}'::jsonb),COALESCE(checkin.cash_minor,0),COALESCE((SELECT number FROM record_numbers n WHERE n.record_id=b.id AND n.tenant_id=b.tenant_id AND n.entity='bookings'),'')
  FROM bookings b JOIN customers c ON c.id=b.customer_id AND c.tenant_id=b.tenant_id
+ LEFT JOIN driver_booking_checkins checkin ON checkin.booking_id=b.id AND checkin.tenant_id=b.tenant_id
  LEFT JOIN LATERAL (SELECT payment_method,status FROM payments WHERE tenant_id=b.tenant_id AND booking_id=b.id ORDER BY created_at DESC,id DESC LIMIT 1) p ON true
  WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY b.created_at`, company.ID, tripID)
 	if err != nil {
@@ -72,12 +76,16 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 	items := make([]driverManifestBooking, 0)
 	for rows.Next() {
 		var item driverManifestBooking
-		var people []byte
-		if err = rows.Scan(&item.ID, &item.Name, &item.Phone, &item.Seats, &people, &item.PaymentMethod, &item.PaymentStatus, &item.AmountMinor, &item.Currency); err != nil {
+		var people, boarding []byte
+		if err = rows.Scan(&item.ID, &item.Name, &item.Phone, &item.Seats, &people, &item.PaymentMethod, &item.PaymentStatus, &item.AmountMinor, &item.Currency, &boarding, &item.CashMinor, &item.RecordNumber); err != nil {
 			app.publicFailure(w, err)
 			return
 		}
 		if err = json.Unmarshal(people, &item.Passengers); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if err = json.Unmarshal(boarding, &item.Boarding); err != nil {
 			app.publicFailure(w, err)
 			return
 		}

@@ -26,6 +26,7 @@ func companyCleanupSets() []deletionSet {
 	entries := []struct{ table, entity, label string }{
 		{"public_booking_requests", "", "Запросы публичного бронирования"},
 		{"individual_transfer_requests", "requests", "Индивидуальные заявки"},
+		{"driver_booking_checkins", "", "Отметки посадки и получения наличных"},
 		{"payments", "payments", "Платёжные записи в CRM"},
 		{"driver_payroll_accruals", "payroll_accruals", "Начисления зарплаты"},
 		{"driver_payroll_payouts", "payroll_payouts", "Выплаты зарплаты"},
