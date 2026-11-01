@@ -291,7 +291,7 @@ export function MobileDock({
             orientation="vertical"
             className="mx-1 h-7 data-vertical:self-center"
           />
-          <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(3rem,1fr))] gap-1">
+          <div className="grid min-w-0 flex-1 [scrollbar-width:none] auto-cols-[minmax(2.5rem,1fr)] grid-flow-col gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             {resolveMobileDock(role, dockHrefs).map((item) => {
               const active =
                 !createOpen && isMobileDestinationActive(pathname, item.href)
