@@ -73,11 +73,11 @@ services:
           - vivat-redis
 
   migrate:
-    image: migrate/migrate:v4.18.3
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.migrations
     exclude_from_hc: true
     # Apply versioned migrations before starting the matching API build.
-    volumes:
-      - ./backend/migrations:/migrations:ro
     command:
       [
         "-path",
