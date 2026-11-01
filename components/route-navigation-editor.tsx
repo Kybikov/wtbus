@@ -125,6 +125,7 @@ function Editor({ routeID, entity = "routes" }: EditorProps) {
     return () => window.clearTimeout(timer)
   }, [load])
   function choose(key: "start" | "end", point: RoadPoint | null) {
+    setError(null)
     setFields((current) => ({ ...current, [key]: display(point) }))
     void autosave.commit({ [key]: point })
   }
