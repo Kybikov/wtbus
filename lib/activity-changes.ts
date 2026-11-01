@@ -11,6 +11,16 @@ export type ActivityChange = {
   afterCurrency?: string
 }
 export type ActivityEvent = {
+  entity?: string
+  entityId?: string
+  recordLabel?: string
+  summary?: {
+    amountMinor?: number
+    currency?: string
+    boarding?: string
+    passengerIndex?: number
+    source?: string
+  }
   id?: string
   actorId?: string
   action: string
@@ -36,6 +46,9 @@ export function groupActivityEvents<T extends ActivityEvent>(
       event.actorId ?? event.actor,
       event.kind,
       event.action,
+      event.entity,
+      event.entityId,
+      event.summary,
       [...(event.changedFields ?? [])].sort(),
       [...(event.changes ?? [])].sort((a, b) => a.field.localeCompare(b.field)),
     ])

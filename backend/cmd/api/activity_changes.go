@@ -23,7 +23,7 @@ type auditFieldChange struct {
 // contacts, custom data, location, credentials and provider payloads stay out.
 var auditValueFields = func() map[string]bool {
 	m := map[string]bool{}
-	for _, key := range strings.Fields("name full_name display_name status is_active role origin_name destination_name currency default_price_minor default_pricing_mode driver_pay_minor price_minor pricing_mode distance_km tariff_mode vehicle_class registration_number capacity vehicle_id driver_id route_id trip_id customer_id booking_id starts_at ends_at kind seats") {
+	for _, key := range strings.Fields("name full_name display_name status is_active role origin_name destination_name currency default_price_minor default_pricing_mode driver_pay_minor price_minor pricing_mode distance_km tariff_mode vehicle_class registration_number capacity vehicle_id driver_id route_id trip_id customer_id booking_id starts_at ends_at kind seats amount_minor payment_method paid_at") {
 		m[key] = true
 	}
 	return m

@@ -123,6 +123,9 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
     },
   ],
   trips: [
+    { key: "currency", type: "select" },
+    { key: "capacity", type: "number" },
+    { key: "driver_pay_minor", type: "money" },
     { key: "status", type: "select" },
     { key: "origin_name" },
     { key: "destination_name" },
@@ -280,6 +283,9 @@ function updateRequest(
         startsAt: localDateTime(item.starts_at, timezone),
         endsAt: localDateTime(item.ends_at, timezone),
         priceMinor: Number(item.price_minor),
+        capacity: Number(item.capacity),
+        driverPayMinor: Number(item.driver_pay_minor ?? 0),
+        currency: item.currency,
         pricingMode: item.pricing_mode,
         notes: item.notes ?? "",
         customData: item.custom_data ?? {},
@@ -462,7 +468,13 @@ export function EntityDetailPage({
           const payload = await response.json()
           if (response.ok && isDetail(payload) && !controller.signal.aborted)
             setDetail((current) =>
-              current ? { ...current, activity: payload.activity } : current
+              current
+                ? {
+                    ...current,
+                    activity: payload.activity,
+                    related: payload.related,
+                  }
+                : current
             )
         } catch {
           /* Keep the current form and history during a reconnect. */
@@ -515,11 +527,6 @@ export function EntityDetailPage({
       (entity === "trips" && key === "status"
         ? undefined
         : detail?.editRestriction) ||
-      (entity === "trips" &&
-      ["origin_name", "destination_name"].includes(key) &&
-      item?.route_id
-        ? "Города заданы маршрутом. Выберите «Без маршрута», чтобы изменить их только в этом рейсе."
-        : undefined) ||
       (entity === "trips" && key === "route_id" && item?.kind === "individual"
         ? "Маршрут выбирается для регулярного рейса."
         : undefined) ||
@@ -909,7 +916,7 @@ export function EntityDetailPage({
       ? (valueLabels[String(value)] ?? String(value))
       : String(value)
   }
-  const relations = detail
+  const relations: EntityRelatedRecord[] = detail
     ? Array.from(
         new Map(
           [
@@ -1067,6 +1074,10 @@ export function EntityDetailPage({
                 .filter(
                   ([key]) =>
                     !(entity === "team" && key === "driver_id") &&
+                    !(
+                      entity === "trips" &&
+                      ["route_id", "vehicle_id", "driver_id"].includes(key)
+                    ) &&
                     ![
                       "id",
                       "user_id",
@@ -1182,6 +1193,84 @@ export function EntityDetailPage({
             <EntityRelatedRecords
               ownerEntity={entity}
               records={relations}
+              managedEntities={
+                entity === "trips" ? ["routes", "fleet", "team"] : []
+              }
+              controls={
+                entity === "trips" ? (
+                  <div className="divide-y divide-border/70">
+                    {(
+                      [
+                        ["route_id", "routes"],
+                        ["vehicle_id", "fleet"],
+                        ["driver_id", "team"],
+                      ] as const
+                    ).map(([key, collection]) => {
+                      const ref = relations.find(
+                        (record) => record.entity === collection
+                      )
+                      const meta = ref?.meta
+                      return (
+                        <div key={key} className="grid min-w-0 gap-2 py-3">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {entityFieldLabels[key]}
+                            </span>
+                            {ref && (
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                nativeButton={false}
+                                aria-label={`Открыть: ${ref.label}`}
+                                render={
+                                  <Link
+                                    href={entityDetailHref(ref.entity, ref.id)}
+                                  />
+                                }
+                              >
+                                <ArrowUpRight className="size-4" />
+                              </Button>
+                            )}
+                          </div>
+                          {fieldEditor(key, detail.item[key])}
+                          {meta && (
+                            <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              {meta.status ? (
+                                <Badge
+                                  variant="secondary"
+                                  className={statusToneClass(
+                                    String(
+                                      meta.status_tone ?? "neutral"
+                                    ) as Parameters<typeof statusToneClass>[0]
+                                  )}
+                                >
+                                  {String(
+                                    meta.status_label ??
+                                      valueLabels[String(meta.status)] ??
+                                      "Другой статус"
+                                  )}
+                                </Badge>
+                              ) : null}
+                              {meta.registration_number ? (
+                                <span>{String(meta.registration_number)}</span>
+                              ) : null}
+                              {meta.capacity ? (
+                                <span>Мест: {String(meta.capacity)}</span>
+                              ) : null}
+                              {meta.origin_name && meta.destination_name ? (
+                                <span className="[overflow-wrap:anywhere]">
+                                  {String(meta.origin_name)} →{" "}
+                                  {String(meta.destination_name)}
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : undefined
+              }
               createHref={
                 entity === "routes"
                   ? `/trips?createForRoute=${encodeURIComponent(id)}`

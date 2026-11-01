@@ -2882,19 +2882,22 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 }
 
 type createTripRequest struct {
-	Navigation  *routeNavigation `json:"navigation,omitempty"`
-	Kind        string           `json:"kind"`
-	RouteID     string           `json:"routeId"`
-	Origin      string           `json:"origin"`
-	Destination string           `json:"destination"`
-	StartsAt    string           `json:"startsAt"`
-	EndsAt      string           `json:"endsAt"`
-	VehicleID   string           `json:"vehicleId"`
-	DriverID    string           `json:"driverId"`
-	Notes       string           `json:"notes"`
-	PriceMinor  int64            `json:"priceMinor"`
-	PricingMode string           `json:"pricingMode"`
-	CustomData  map[string]any   `json:"customData"`
+	Currency       string           `json:"currency,omitempty"`
+	Capacity       *int16           `json:"capacity,omitempty"`
+	DriverPayMinor *int64           `json:"driverPayMinor,omitempty"`
+	Navigation     *routeNavigation `json:"navigation,omitempty"`
+	Kind           string           `json:"kind"`
+	RouteID        string           `json:"routeId"`
+	Origin         string           `json:"origin"`
+	Destination    string           `json:"destination"`
+	StartsAt       string           `json:"startsAt"`
+	EndsAt         string           `json:"endsAt"`
+	VehicleID      string           `json:"vehicleId"`
+	DriverID       string           `json:"driverId"`
+	Notes          string           `json:"notes"`
+	PriceMinor     int64            `json:"priceMinor"`
+	PricingMode    string           `json:"pricingMode"`
+	CustomData     map[string]any   `json:"customData"`
 }
 
 type createTripScheduleRequest struct {
@@ -3096,6 +3099,11 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 			app.publicFailure(w, err)
 			return
 		}
+		actor, _ := identityFromContext(r.Context())
+		if err := recordTripCreation(r.Context(), tx, tenant.ID, createdID, actor); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		app.log.Error("commit trip schedule", "error", err, "tenant", slug)
@@ -3103,6 +3111,7 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	tripCreationAuditDone(r)
 	writeJSON(w, http.StatusCreated, tripScheduleResponse{
 		CreatedCount:  len(instances),
 		FirstStartsAt: instances[0].startsAt,
@@ -3284,10 +3293,16 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
+	actor, _ := identityFromContext(r.Context())
+	if err = recordTripCreation(r.Context(), tx, tenant.ID, trip.ID, actor); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
 	if err = tx.Commit(r.Context()); err != nil {
 		app.publicFailure(w, err)
 		return
 	}
+	tripCreationAuditDone(r)
 	writeJSON(w, http.StatusCreated, map[string]any{"item": trip, "timezone": tenant.Timezone})
 }
 
@@ -3384,6 +3399,63 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	var oldVehicle, oldCurrency string
+	var oldCapacity int16
+	var oldPay int64
+	if err = tx.QueryRow(r.Context(), "SELECT vehicle_id::text,capacity,driver_pay_minor,currency FROM trips WHERE id=$1 AND tenant_id=$2 FOR UPDATE", tripID, tenant.ID).Scan(&oldVehicle, &oldCapacity, &oldPay, &oldCurrency); err != nil {
+		app.writeResourceLookupError(w, err, "trip")
+		return
+	}
+	if input.Capacity != nil {
+		capacity = *input.Capacity
+	} else if oldVehicle == input.VehicleID {
+		capacity = oldCapacity
+	}
+	if capacity < 1 {
+		writeJSON(w, 400, map[string]string{"error": "Укажите не меньше одного места."})
+		return
+	}
+	tripCurrency = oldCurrency
+	if input.Currency != "" {
+		tripCurrency = strings.ToUpper(strings.TrimSpace(input.Currency))
+	}
+	if !validBookingCurrency(tripCurrency) {
+		writeJSON(w, 400, map[string]string{"error": "Выберите поддерживаемую валюту."})
+		return
+	}
+	if tripCurrency != oldCurrency {
+		var hasBookings bool
+		if err = tx.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM bookings WHERE trip_id=$1 AND tenant_id=$2)", tripID, tenant.ID).Scan(&hasBookings); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if hasBookings {
+			writeJSON(w, 409, map[string]string{"error": "В рейсе уже есть бронирования. Валюту можно изменить только до первой брони."})
+			return
+		}
+	}
+	var vehicleCapacity int16
+	if err = tx.QueryRow(r.Context(), "SELECT capacity FROM vehicles WHERE id=$1 AND tenant_id=$2", input.VehicleID, tenant.ID).Scan(&vehicleCapacity); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	var occupied int
+	if err = tx.QueryRow(r.Context(), "SELECT COALESCE(sum(seats),0) FROM bookings WHERE trip_id=$1 AND tenant_id=$2 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed','completed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at>now()))", tripID, tenant.ID).Scan(&occupied); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if capacity > vehicleCapacity || int(capacity) < occupied {
+		writeJSON(w, 409, map[string]string{"error": "Мест должно быть не меньше занятых бронями и не больше вместимости автомобиля."})
+		return
+	}
+	tripDriverPayMinor = oldPay
+	if input.DriverPayMinor != nil {
+		tripDriverPayMinor = *input.DriverPayMinor
+	}
+	if tripDriverPayMinor < 0 || tripDriverPayMinor > 10_000_000_000 {
+		writeJSON(w, 400, map[string]string{"error": "Укажите корректную зарплату водителя."})
+		return
+	}
 	var trip tripResponse
 	var responseCustomData []byte
 	err = tx.QueryRow(r.Context(), `
@@ -5396,7 +5468,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	if _, err := app.db.Exec(r.Context(), `UPDATE bookings SET status = 'expired', updated_at = now() WHERE tenant_id = $1 AND status = 'awaiting_payment' AND payment_hold_expires_at <= now()`, tenant.ID); err != nil {
+	if _, err := app.db.Exec(r.Context(), `WITH expired AS (UPDATE bookings SET status='expired',updated_at=now() WHERE tenant_id=$1 AND status='awaiting_payment' AND payment_hold_expires_at<=now() RETURNING id) INSERT INTO activity_events(tenant_id,actor_kind,action,entity_type,entity_id,details) SELECT $1,'system','booking.holds.expired','bookings',id::text,jsonb_build_object('changes',jsonb_build_array(jsonb_build_object('field','status','before','awaiting_payment','after','expired'))) FROM expired`, tenant.ID); err != nil {
 		app.log.Error("expire booking holds", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load bookings"})
 		return

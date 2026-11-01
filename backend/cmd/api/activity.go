@@ -86,6 +86,10 @@ func auditTarget(r *http.Request) (string, string) {
 }
 func (app *application) auditSnapshot(ctx context.Context, actor identity, entity, id string) map[string]any {
 	query, ok := entityDetailQueries[entity]
+	if entity == "payments" {
+		query = "SELECT jsonb_build_object('status',status,'amount_minor',amount_minor,'currency',currency,'payment_method',payment_method,'booking_id',booking_id,'paid_at',paid_at) FROM payments WHERE id=$1 AND tenant_id=$2"
+		ok = true
+	}
 	if !ok || id == "" {
 		return nil
 	}
@@ -178,6 +182,9 @@ func (app *application) requestAudit(next http.Handler) http.Handler {
 					}
 				}
 			}
+			if after == nil && id != "" && r.Method == "POST" {
+				after = app.auditSnapshot(ctx, actor, entity, id)
+			}
 			if !entityRecordID.MatchString(id) {
 				id = ""
 			}
@@ -217,8 +224,12 @@ func (app *application) requestAudit(next http.Handler) http.Handler {
 				sort.Strings(fields)
 				details["submittedFields"] = fields
 			}
-			if state.before != nil && after != nil {
-				changes := auditChanges(state.before, after)
+			if after != nil {
+				before := state.before
+				if before == nil {
+					before = map[string]any{}
+				}
+				changes := auditChanges(before, after)
 				app.labelAuditChanges(ctx, actor, entity, changes)
 				if len(changes) > 0 {
 					details["changes"] = changes

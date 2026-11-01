@@ -116,6 +116,37 @@ func TestEntityDetailsDatabasePrivacyAndRelations(t *testing.T) {
 			call(entity, "00000000-0000-0000-0000-000000000000", &actor, 404)
 		})
 	}
+	t.Run("trip history includes bookings and payments with rich relations", func(t *testing.T) {
+		exec(`INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,$2,'human','record_created','trips',$3,'{}'),($1,$2,'human','record_created','bookings',$4,'{}')`, tenant, member, trip, booking)
+		payment := row(`SELECT id::text FROM payments WHERE tenant_id=$1 AND booking_id=$2`, tenant, booking)
+		exec(`INSERT INTO activity_events(tenant_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,'system','payment.reconciled','payment',$2,'{"amountMinor":7900,"currency":"EUR","secret":"not exposed"}'),($1,'system','unrelated_same_company','trips','11111111-1111-4111-8111-111111111111','{}')`, tenant, payment)
+		w := call("trips", trip, &actor, 200)
+		var payload struct {
+			Related  []entityRelation
+			Activity []entityActivity
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Activity) != 3 || strings.Contains(w.Body.String(), "unrelated_same_company") || strings.Contains(w.Body.String(), "not exposed") {
+			t.Fatalf("history scope or privacy: %s", w.Body)
+		}
+		if !strings.Contains(w.Body.String(), "payment.reconciled") || !strings.Contains(w.Body.String(), "amountMinor") || !strings.Contains(w.Body.String(), member) {
+			t.Fatalf("payment or authors missing: %s", w.Body)
+		}
+		foundRoute, foundVehicle := false, false
+		for _, ref := range payload.Related {
+			if ref.ID == route {
+				foundRoute = ref.Label == "Kyiv Warsaw" && strings.Contains(string(ref.Meta), "status")
+			}
+			if ref.ID == vehicle {
+				foundVehicle = ref.Label == "Test bus" && strings.Contains(string(ref.Meta), "DETAIL-1") && strings.Contains(string(ref.Meta), "capacity")
+			}
+		}
+		if !foundRoute || !foundVehicle {
+			t.Fatalf("rich direct links missing: %+v", payload.Related)
+		}
+	})
 	call("customers", outsider, &actor, 404)
 	foreign := identity{TenantID: other, Role: "developer"}
 	call("customers", customer, &foreign, 403)

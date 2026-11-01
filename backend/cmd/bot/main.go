@@ -1427,6 +1427,9 @@ func (app *app) cancelTelegramBooking(ctx context.Context, telegramID int64, boo
 	`, bookingID, app.tenantID); err != nil {
 		return customerTrip{}, err
 	}
+	if err := app.writeBookingActivity(ctx, tx, bookingID, "telegram.booking_cancelled"); err != nil {
+		return customerTrip{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return customerTrip{}, err
 	}
@@ -1985,6 +1988,9 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 	`, app.tenantID, bookingID, bookingPrice, trip.Currency, "internal:"+bookingID, payload).Scan(&paymentID); err != nil {
 		return createdBooking{}, err
 	}
+	if err := app.writeBookingActivity(ctx, tx, bookingID, "telegram.booking_created"); err != nil {
+		return createdBooking{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return createdBooking{}, err
 	}
@@ -2220,6 +2226,9 @@ func (app *app) chooseCashBooking(ctx context.Context, paymentID string) error {
 	if result.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+	if err := app.writeBookingActivity(ctx, tx, bookingID, "payment.cash_selected"); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -2249,6 +2258,9 @@ func (app *app) setTelegramPaymentMethod(ctx context.Context, paymentID, method,
 	}
 	if result.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+	if err := app.writeBookingActivity(ctx, tx, bookingID, "payment.method_selected"); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
@@ -2460,12 +2472,11 @@ func expireBookingHoldsWith(ctx context.Context, executor sqlExecutor, tenantID,
 			SELECT count(*)::bigint AS booking_count FROM expired
 		)
 		INSERT INTO activity_events (
-			tenant_id, actor_membership_id, actor_kind, action, entity_type, details
+			tenant_id, actor_membership_id, actor_kind, action, entity_type, entity_id, details
 		)
-		SELECT $1, $2, 'system', 'booking.holds.expired', 'booking',
-			jsonb_build_object('count', totals.booking_count)
-		FROM totals
-		WHERE totals.booking_count > 0
+		SELECT $1, $2, 'system', 'booking.holds.expired', 'booking', expired.id,
+			jsonb_build_object('changes',jsonb_build_array(jsonb_build_object('field','status','before','awaiting_payment','after','expired')))
+		FROM expired
 	`, tenantID, systemMembershipID)
 	return err
 }

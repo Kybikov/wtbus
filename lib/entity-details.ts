@@ -59,7 +59,7 @@ export const entityFieldLabels: Record<string, string> = {
   capacity: "Вместимость",
   price_minor: "Стоимость",
   default_price_minor: "Базовая цена",
-  driver_pay_minor: "Зарплата водителя за маршрут",
+  driver_pay_minor: "Зарплата водителя",
   tariff_mode: "Тип тарифа",
   default_driver_id: "Основной водитель",
   distance_km: "Расстояние по дороге, км",

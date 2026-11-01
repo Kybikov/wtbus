@@ -47,6 +47,10 @@ type entityActivity struct {
 	CreatedAt     string             `json:"createdAt"`
 	ChangedFields []string           `json:"changedFields,omitempty"`
 	Changes       []auditFieldChange `json:"changes,omitempty"`
+	Entity        string             `json:"entity,omitempty"`
+	EntityID      string             `json:"entityId,omitempty"`
+	RecordLabel   string             `json:"recordLabel,omitempty"`
+	Summary       json.RawMessage    `json:"summary,omitempty"`
 }
 
 func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
@@ -142,15 +146,21 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	direct, err := app.directEntityRelations(r.Context(), actor, item)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	related = append(direct, related...)
 	events := make([]entityActivity, 0)
-	rows, err := app.db.Query(r.Context(), `SELECT e.id::text,coalesce(e.actor_membership_id::text,'system'),e.action,coalesce(u.display_name,'Система'),e.actor_kind,e.created_at::text,coalesce(e.details->'changedFields','[]'::jsonb),coalesce(e.details->'changes','[]'::jsonb) FROM activity_events e LEFT JOIN memberships m ON m.id=e.actor_membership_id AND m.tenant_id=e.tenant_id LEFT JOIN users u ON u.id=m.user_id WHERE e.tenant_id=$2 AND (e.entity_id=$1 OR ($3='team' AND e.actor_membership_id::text=$1)) ORDER BY e.created_at DESC,e.id DESC LIMIT 30`, id, company.ID, entity)
+	rows, err := app.db.Query(r.Context(), entityHistoryQuery, id, company.ID, entity)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
 	}
 	for rows.Next() {
 		var event entityActivity
-		if err = rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.Actor, &event.Kind, &event.CreatedAt, &event.ChangedFields, &event.Changes); err != nil {
+		if err = rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.Actor, &event.Kind, &event.CreatedAt, &event.ChangedFields, &event.Changes, &event.Entity, &event.EntityID, &event.RecordLabel, &event.Summary); err != nil {
 			rows.Close()
 			app.publicFailure(w, err)
 			return
@@ -162,6 +172,21 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.publicFailure(w, err)
 		return
+	}
+	// Old records may predate journaling. Preserve the known creation time without inventing an author or assignment history.
+	if entity == "trips" && len(events) < 500 {
+		created := false
+		for _, event := range events {
+			if event.EntityID == id && event.Action == "record_created" {
+				created = true
+			}
+		}
+		var fields map[string]any
+		if !created && json.Unmarshal(item, &fields) == nil {
+			if at, ok := fields["created_at"].(string); ok {
+				events = append(events, entityActivity{ID: "legacy-created:" + id, Action: "record_created", Actor: "Автор не записан", Kind: "legacy", CreatedAt: at, Entity: entity, EntityID: id})
+			}
+		}
 	}
 	restriction := ""
 	if entity == "fleet" && actor.Role == "dispatcher" {

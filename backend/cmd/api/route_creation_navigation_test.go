@@ -51,6 +51,9 @@ func TestRouteCreationStoresRoadAndDistanceAtomically(t *testing.T) {
 		r := httptest.NewRequest(method, "/", bytes.NewReader(raw))
 		r.SetPathValue("slug", slug)
 		r.SetPathValue("routeID", route)
+		if method == "PUT" {
+			r.SetPathValue("tripID", route)
+		}
 		r = r.WithContext(context.WithValue(r.Context(), identityContextKey{}, identity{TenantID: tenant, TenantSlug: slug, Role: "developer"}))
 		w := httptest.NewRecorder()
 		handler(w, r)
@@ -160,6 +163,62 @@ func TestRouteCreationStoresRoadAndDistanceAtomically(t *testing.T) {
 				Item tripResponse `json:"item"`
 			}
 			json.Unmarshal(w.Body.Bytes(), &created)
+			var recorded int
+			if err := db.QueryRow(ctx, `SELECT count(*) FROM activity_events WHERE tenant_id=$1 AND entity_id=$2 AND action='record_created' AND details->'changes' @> '[{"field":"driver_id"}]'::jsonb`, tenant, created.Item.ID).Scan(&recorded); err != nil || recorded != 1 {
+				t.Fatalf("trip creation journal missing %d %v", recorded, err)
+			}
+			if i == 0 {
+				edit := tripInput
+				edit.DriverID = defaultDriver
+				edit.Origin = "Kyiv"
+				edit.Destination = "Berlin"
+				edit.Navigation = nil
+				seats := int16(6)
+				pay := int64(12345)
+				edit.Capacity = &seats
+				edit.DriverPayMinor = &pay
+				update := request(app.updateTrip, "PUT", created.Item.ID, edit)
+				if update.Code != 200 {
+					t.Fatalf("inline fields update: %d %s", update.Code, update.Body)
+				}
+				var capacity int16
+				var salary int64
+				var city string
+				db.QueryRow(ctx, `SELECT capacity,driver_pay_minor,origin_name FROM trips WHERE id=$1`, created.Item.ID).Scan(&capacity, &salary, &city)
+				if capacity != 6 || salary != 12345 || city != "Kyiv" {
+					t.Fatalf("field edits ignored %d %d %s", capacity, salary, city)
+				}
+				seats = 9
+				over := request(app.updateTrip, "PUT", created.Item.ID, edit)
+				if over.Code != 409 {
+					t.Fatalf("over-capacity accepted: %d %s", over.Code, over.Body)
+				}
+				var customer string
+				if err := db.QueryRow(ctx, `INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Capacity QA','+123455501') RETURNING id::text`, tenant).Scan(&customer); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(ctx, `INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,currency) VALUES($1,$2,$3,'cash_on_boarding',2,'EUR')`, tenant, created.Item.ID, customer); err != nil {
+					t.Fatal(err)
+				}
+				seats = 1
+				if tooSmall := request(app.updateTrip, "PUT", created.Item.ID, edit); tooSmall.Code != 409 {
+					t.Fatalf("occupied seats lost: %d %s", tooSmall.Code, tooSmall.Body)
+				}
+				edit.Currency = "PLN"
+				seats = 6
+				if changedCurrency := request(app.updateTrip, "PUT", created.Item.ID, edit); changedCurrency.Code != 409 {
+					t.Fatalf("existing booking currency changed: %d %s", changedCurrency.Code, changedCurrency.Body)
+				}
+				edit.Currency = ""
+				// Restore the direction for the existing per-trip override assertions.
+				edit.Origin = tripInput.Origin
+				edit.Destination = tripInput.Destination
+				seats = 6
+				if restored := request(app.updateTrip, "PUT", created.Item.ID, edit); restored.Code != 200 {
+					t.Fatal(restored.Code, restored.Body)
+				}
+			}
+
 			var selected, origin, endLabel string
 			if err := db.QueryRow(ctx, `SELECT driver_id::text,origin_name,navigation->>'endLabel' FROM trips WHERE id=$1`, created.Item.ID).Scan(&selected, &origin, &endLabel); err != nil {
 				t.Fatal(err)

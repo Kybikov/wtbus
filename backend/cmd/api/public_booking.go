@@ -516,7 +516,7 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		app.publicFailure(w, err)
 		return
 	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,$2,'system','public_booking_created','booking',$3,'{"source":"web"}')`, company.ID, actor, result.Reference); err != nil {
+	if _, err = tx.Exec(r.Context(), `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) SELECT $1,$2,'system','public_booking_created','booking',$3,jsonb_build_object('source','web','actorLabel','Пассажир · сайт','amountMinor',b.price_minor,'currency',b.currency,'changes',jsonb_build_array(jsonb_build_object('field','status','before',NULL,'after',b.status),jsonb_build_object('field','seats','before',NULL,'after',b.seats))) FROM bookings b WHERE b.id::text=$3 AND b.tenant_id=$1`, company.ID, actor, result.Reference); err != nil {
 		app.publicFailure(w, err)
 		return
 	}

@@ -1,4 +1,5 @@
 "use client"
+import Link from "next/link"
 // Activity timeline adapted from React Bits Pro billing-8 for recorded tenant events.
 import {
   Bot,
@@ -19,7 +20,7 @@ import { ActivityChanges } from "@/components/activity-changes"
 import { groupActivityEvents, type ActivityEvent } from "@/lib/activity-changes"
 import { Badge } from "@/components/ui/badge"
 import { activityActions, activityFieldNames } from "@/lib/activity-labels"
-import { entityNames } from "@/lib/entity-details"
+import { entityNames, entityDetailHref } from "@/lib/entity-details"
 import type { EntityCollection } from "@/lib/entity-views"
 import { formatEntityDate } from "@/lib/entity-columns"
 
@@ -32,9 +33,19 @@ function presentation(
   const fields = event.changedFields ?? []
   if (event.action === "record_created")
     return {
-      title: entity
-        ? `${entityNames[entity]} создан${["bookings"].includes(entity) ? "о" : ["requests", "availability"].includes(entity) ? "а" : ""}`
-        : "Создана запись",
+      title:
+        (
+          {
+            trips: "Создан рейс",
+            routes: "Создан маршрут",
+            fleet: "Добавлен автомобиль",
+            bookings: "Создано бронирование",
+            customers: "Добавлен клиент",
+            team: "Добавлен сотрудник",
+            requests: "Создана заявка",
+            payments: "Создан платёж",
+          } as Record<string, string>
+        )[event.entity ?? entity ?? ""] ?? "Создана запись",
       icon: FilePlus2,
       color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     }
@@ -123,7 +134,11 @@ export default function EntityActivityTimeline({
     <ol className="min-w-0">
       {grouped.map((event, index) => {
         const day = date(event.createdAt)
-        const { title, icon: Icon, color } = presentation(event, entity)
+        const eventEntity =
+          event.entity && event.entity in entityNames
+            ? (event.entity as EntityCollection)
+            : entity
+        const { title, icon: Icon, color } = presentation(event, eventEntity)
         const ActorIcon = event.kind === "system" ? Bot : UserRound
         return (
           <li
@@ -160,6 +175,45 @@ export default function EntityActivityTimeline({
                 </p>
               </div>
               <div className="col-start-2 row-start-2 min-w-0 text-xs leading-5 [overflow-wrap:anywhere] text-muted-foreground @min-[30rem]:col-start-3 @min-[30rem]:row-start-1">
+                {event.recordLabel &&
+                  event.entityId &&
+                  eventEntity &&
+                  eventEntity !== entity && (
+                    <Link
+                      className="mb-2 block font-medium text-foreground hover:underline"
+                      href={entityDetailHref(eventEntity, event.entityId)}
+                    >
+                      {entityNames[eventEntity]} · {event.recordLabel}
+                    </Link>
+                  )}
+                {event.recordLabel && event.entity === "payments" && (
+                  <p className="mb-2 font-medium text-foreground">
+                    {event.recordLabel}
+                  </p>
+                )}
+                {event.summary?.amountMinor !== undefined &&
+                  event.summary.currency && (
+                    <p className="mb-2 font-medium text-foreground">
+                      {new Intl.NumberFormat("ru-RU", {
+                        style: "currency",
+                        currency: event.summary.currency,
+                      }).format(event.summary.amountMinor / 100)}
+                    </p>
+                  )}
+                {event.summary?.boarding && (
+                  <p className="mb-2">
+                    Пассажир {Number(event.summary.passengerIndex ?? 0) + 1}:{" "}
+                    {(
+                      {
+                        boarded: "пришёл",
+                        no_show: "не пришёл",
+                        absent: "не пришёл",
+                        waiting: "ожидается",
+                        pending: "ожидается",
+                      } as Record<string, string>
+                    )[event.summary.boarding] ?? event.summary.boarding}
+                  </p>
+                )}
                 {!!event.changes?.length && (
                   <ActivityChanges
                     changes={event.changes}
