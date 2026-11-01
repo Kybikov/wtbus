@@ -323,7 +323,10 @@ export function AccountingWorkspace({
     requestId.current = crypto.randomUUID()
     setForm({
       driverId: balance?.driverId ?? snapshot?.driverId ?? "",
-      amount: "",
+      amount:
+        next === "request_handover" && balance
+          ? String(Math.max(balance.cashMinor - balance.pendingMinor, 0) / 100)
+          : "",
       currency: balance?.currency ?? "UAH",
       paymentSource: "cash",
       description: "",
@@ -383,32 +386,61 @@ export function AccountingWorkspace({
   }
   const pending =
     snapshot?.handovers.filter((h) => h.status === "pending") ?? []
-  const title = driver ? "Мои деньги" : "Касса и расчёты"
+  const title = "Касса и расчёты"
+  const driverBalances: Balance[] = snapshot?.balances.length
+    ? snapshot.balances
+    : snapshot?.driverId
+      ? [
+          {
+            driverId: snapshot.driverId,
+            driverName: "",
+            connected: true,
+            currency: snapshot.currency ?? "UAH",
+            cashMinor: 0,
+            pendingMinor: 0,
+            grossMinor: 0,
+            withheldMinor: 0,
+            employerMinor: 0,
+            paidMinor: 0,
+            payableMinor: 0,
+          },
+        ]
+      : []
   return (
-    <section className="workspace-panel min-w-0 space-y-4 p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-semibold">
-          <Wallet className="size-4 text-primary" />
-          {title}
-        </h2>
-        {!driver ? (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => open("receipt")}>
-              <Plus />
-              Поступление
-            </Button>
-            <Button variant="outline" onClick={() => open("expense")}>
-              Расход
-            </Button>
-            <Link
-              className="self-center px-2 text-sm text-muted-foreground hover:text-foreground"
-              href="/settings/accounting"
-            >
-              Ставки
-            </Link>
+    <section
+      className={
+        driver
+          ? "min-w-0 space-y-5"
+          : "workspace-panel min-w-0 space-y-4 p-4 sm:p-5"
+      }
+    >
+      {!driver ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <Wallet className="size-4 text-primary" />
+              {title}
+            </h2>
+            {!driver ? (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={() => open("receipt")}>
+                  <Plus />
+                  Поступление
+                </Button>
+                <Button variant="outline" onClick={() => open("expense")}>
+                  Расход
+                </Button>
+                <Link
+                  className="self-center px-2 text-sm text-muted-foreground hover:text-foreground"
+                  href="/settings/accounting"
+                >
+                  Ставки
+                </Link>
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
+        </>
+      ) : null}
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -486,7 +518,83 @@ export function AccountingWorkspace({
           ))}
         </div>
       ) : null}
-      {driver || tab === "drivers" ? (
+      {driver
+        ? driverBalances.map((balance) => (
+            <div
+              key={balance.currency}
+              className="space-y-5 border-b border-border pb-6 last:border-b-0"
+            >
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Наличные на руках · {balance.currency}
+                </p>
+                <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums">
+                  {money(balance.cashMinor, balance.currency)}
+                </p>
+              </div>
+              <Button
+                className="h-12 w-full"
+                disabled={balance.cashMinor <= balance.pendingMinor || busy}
+                disabledReason={
+                  busy
+                    ? "Операция выполняется. Дождитесь результата."
+                    : "Нет свободных наличных для передачи: получите оплату или дождитесь подтверждения кассира."
+                }
+                onClick={() => open("request_handover", balance)}
+              >
+                <ArrowUpRight />
+                Передать в кассу
+              </Button>
+              {balance.pendingMinor > 0 ? (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Ожидает кассира</span>
+                  <span className="font-medium tabular-nums">
+                    {money(balance.pendingMinor, balance.currency)}
+                  </span>
+                </div>
+              ) : null}
+              <dl className="divide-y divide-border text-sm">
+                {[
+                  ["Зарплата к выплате", balance.payableMinor],
+                  ["Уже выплачено", balance.paidMinor],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-3 py-3"
+                  >
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="font-semibold tabular-nums">
+                      {money(Number(value), balance.currency)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <details className="text-sm">
+                <summary className="cursor-pointer py-2 text-muted-foreground">
+                  Расчёт зарплаты
+                </summary>
+                <dl className="divide-y divide-border">
+                  {[
+                    ["Начислено", balance.grossMinor],
+                    ["Удержания", balance.withheldMinor],
+                    ["Начисления компании", balance.employerMinor],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between gap-3 py-3"
+                    >
+                      <dt>{label}</dt>
+                      <dd className="tabular-nums">
+                        {money(Number(value), balance.currency)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            </div>
+          ))
+        : null}
+      {!driver && tab === "drivers" ? (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             Текущие остатки за всю историю
@@ -580,7 +688,11 @@ export function AccountingWorkspace({
         </div>
       ) : null}
       {driver || tab === "handovers" ? (
-        <div className="divide-y rounded-xl border">
+        <div
+          className={
+            driver ? "divide-y divide-border" : "divide-y rounded-xl border"
+          }
+        >
           {snapshot?.handovers.length === 0 ? (
             <p className="p-5 text-center text-sm text-muted-foreground">
               Передач в кассу пока нет

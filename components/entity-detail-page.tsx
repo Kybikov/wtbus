@@ -1,4 +1,5 @@
 "use client"
+import { CreateRouteFromTrip } from "@/components/create-route-from-trip"
 import { RouteNavigationEditor } from "@/components/route-navigation-editor"
 import { useRecordDeletion } from "@/components/use-record-deletion"
 import { useRouter } from "next/navigation"
@@ -897,19 +898,34 @@ export function EntityDetailPage({
       onRefresh={load}
       refreshing={loading}
       pageActions={
-        detail && deletion.available ? (
-          <Button
-            aria-label="Удалить запись"
-            title="Удалить запись"
-            size="icon-sm"
-            variant="ghost"
-            className="text-destructive"
-            disabled={saveState === "saving"}
-            disabledReason="Дождитесь сохранения изменений перед удалением."
-            onClick={() => deletion.open(id, title)}
-          >
-            <Trash2 />
-          </Button>
+        detail ? (
+          <>
+            {entity === "trips" && !detail.item.route_id ? (
+              <CreateRouteFromTrip
+                tripId={id}
+                origin={String(detail.item.origin_name ?? "")}
+                destination={String(detail.item.destination_name ?? "")}
+                pricingMode={String(detail.item.pricing_mode ?? "")}
+                status={String(detail.item.status ?? "")}
+                busy={saveState === "saving"}
+                onCreated={() => void load()}
+              />
+            ) : null}
+            {deletion.available ? (
+              <Button
+                aria-label="Удалить запись"
+                title="Удалить запись"
+                size="icon-sm"
+                variant="ghost"
+                className="text-destructive"
+                disabled={saveState === "saving"}
+                disabledReason="Дождитесь сохранения изменений перед удалением."
+                onClick={() => deletion.open(id, title)}
+              >
+                <Trash2 />
+              </Button>
+            ) : null}
+          </>
         ) : undefined
       }
     >

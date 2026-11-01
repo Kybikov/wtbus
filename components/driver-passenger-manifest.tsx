@@ -3,7 +3,6 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { FieldSelect } from "@/components/ui/field-select"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -103,18 +102,31 @@ function BoardingSelect({
     void autosave.commit({ boarding: next })
   }
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_8.5rem] items-center gap-2">
+    <div className="min-w-0 space-y-2">
       <span className="min-w-0 text-sm font-medium break-words">{name}</span>
-      <FieldSelect
+      <div
+        role="group"
         aria-label={`Посадка: ${name}`}
-        value={value}
-        onValueChange={commit}
-        options={[
+        className="flex gap-1.5"
+      >
+        {[
           { value: "waiting", label: "Ожидаем" },
           { value: "boarded", label: "Пришёл" },
           { value: "absent", label: "Не пришёл" },
-        ]}
-      />
+        ].map((option) => (
+          <Button
+            key={option.value}
+            size="sm"
+            className="h-10 min-w-0 flex-1 px-2 text-xs"
+            variant={value === option.value ? "secondary" : "outline"}
+            aria-pressed={value === option.value}
+            aria-label={`${option.label}: ${name}`}
+            onClick={() => commit(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
       {failure ? (
         <div className="col-span-2 text-xs text-destructive" role="alert">
           {failure}
@@ -315,7 +327,7 @@ export function DriverPassengerManifest({
                 {canReceive ? (
                   <Button
                     className="mt-3 w-full"
-                    variant="outline"
+                    variant="default"
                     disabled={!hasBoarded}
                     disabledReason="Сначала отметьте пришедшего пассажира."
                     onClick={() => {
