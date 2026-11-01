@@ -214,6 +214,10 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes", operations(app.listRoutes))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes", operations(app.requireActiveSubscription(app.createRoute)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.requireActiveSubscription(app.updateRoute)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.routeNavigation))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.routeNavigation))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/route-statuses", operations(app.listRouteStatuses))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/route-statuses", managers(app.requireActiveSubscription(app.createRouteStatus)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/route-statuses/{statusKey}", managers(app.requireActiveSubscription(app.updateRouteStatus)))
@@ -2453,12 +2457,13 @@ type fleetLocationResponse struct {
 }
 
 type fleetTripResponse struct {
-	ID          string    `json:"id"`
-	Status      string    `json:"status"`
-	Origin      string    `json:"origin"`
-	Destination string    `json:"destination"`
-	StartsAt    time.Time `json:"startsAt"`
-	EndsAt      time.Time `json:"endsAt"`
+	Progress    roadProgress `json:"progress"`
+	ID          string       `json:"id"`
+	Status      string       `json:"status"`
+	Origin      string       `json:"origin"`
+	Destination string       `json:"destination"`
+	StartsAt    time.Time    `json:"startsAt"`
+	EndsAt      time.Time    `json:"endsAt"`
 }
 
 type fleetVehicleResponse struct {
@@ -2502,11 +2507,11 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			v.id::text, v.name, v.registration_number, v.vehicle_class, v.capacity, v.is_active, v.status,
 			COALESCE(active_driver.full_name, ''),
 			active_trip.id::text, active_trip.status::text, active_trip.origin_name,
-			active_trip.destination_name, active_trip.starts_at, active_trip.ends_at,
+			active_trip.destination_name, active_trip.starts_at, active_trip.ends_at, active_trip.navigation,
 			latest.latitude, latest.longitude, latest.accuracy_meters, latest.recorded_at
 		FROM vehicles v
 		LEFT JOIN LATERAL (
-			SELECT t.id, t.status, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.driver_id
+			SELECT t.id, t.status, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.driver_id, to_jsonb(t)->'navigation' AS navigation
 			FROM trips t
 			WHERE t.tenant_id = $1 AND t.vehicle_id = v.id
 			  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=t.tenant_id AND ws.entity_type='trips' AND ws.key=t.status AND ws.semantic_phase IN ('assigned','in_progress'))
@@ -2518,7 +2523,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN LATERAL (
 			SELECT latitude, longitude, accuracy_meters, recorded_at
 			FROM gps_points p
-			WHERE p.tenant_id = $1 AND p.vehicle_id = v.id
+			WHERE p.tenant_id = $1 AND p.vehicle_id = v.id AND (active_trip.id IS NULL OR p.trip_id = active_trip.id)
 			ORDER BY p.recorded_at DESC
 			LIMIT 1
 		) latest ON true
@@ -2543,12 +2548,13 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 		var item fleetVehicleResponse
 		var tripID, tripStatus, tripOrigin, tripDestination *string
 		var tripStartsAt, tripEndsAt *time.Time
+		var navigationJSON []byte
 		var latitude, longitude *float64
 		var accuracy *float64
 		var recordedAt *time.Time
 		if err := rows.Scan(
 			&item.ID, &item.Name, &item.RegistrationNumber, &item.VehicleClass, &item.Capacity, &item.IsActive, &item.Status,
-			&item.Driver, &tripID, &tripStatus, &tripOrigin, &tripDestination, &tripStartsAt, &tripEndsAt,
+			&item.Driver, &tripID, &tripStatus, &tripOrigin, &tripDestination, &tripStartsAt, &tripEndsAt, &navigationJSON,
 			&latitude, &longitude, &accuracy, &recordedAt,
 		); err != nil {
 			app.log.Error("scan fleet", "error", err)
@@ -2565,6 +2571,13 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			item.LastLocation = &fleetLocationResponse{
 				Latitude: *latitude, Longitude: *longitude, AccuracyMeters: accuracy, RecordedAt: *recordedAt,
 			}
+		}
+		if item.ActiveTrip != nil {
+			var nav *routeNavigation
+			if len(navigationJSON) > 0 {
+				_ = json.Unmarshal(navigationJSON, &nav)
+			}
+			item.ActiveTrip.Progress = matchRoadProgress(nav, item.LastLocation, time.Now())
 		}
 		items = append(items, item)
 	}

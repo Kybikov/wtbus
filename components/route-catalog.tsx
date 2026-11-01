@@ -1,4 +1,5 @@
 "use client"
+import { useRouter } from "next/navigation"
 import { DeliverySwitch } from "@/components/ui/delivery-switch"
 import { useActionConfirmation } from "@/components/action-confirmation"
 
@@ -103,6 +104,7 @@ function getError(payload: unknown, fallback: string) {
 }
 
 export function RouteCatalog() {
+  const router = useRouter()
   const confirmAction = useActionConfirmation()
   const { statuses } = useRouteStatuses()
   const [routes, setRoutes] = React.useState<Route[]>([])
@@ -305,6 +307,15 @@ export function RouteCatalog() {
 
       closeEditor()
       await load()
+      if (
+        !isEditing &&
+        typeof payload === "object" &&
+        payload &&
+        "item" in payload
+      ) {
+        const created = payload.item as Route
+        if (created.id) router.push(`/routes/${created.id}`)
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : fallback)
     } finally {

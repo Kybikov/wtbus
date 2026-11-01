@@ -64,6 +64,12 @@ type FleetLocation = {
 }
 
 type FleetTrip = {
+  progress?: {
+    status: string
+    percent?: number
+    travelledMeters?: number
+    remainingMeters?: number
+  }
   id: string
   status: string
   origin: string
@@ -90,11 +96,13 @@ function isFleet(value: unknown): value is { items: FleetVehicle[] } {
   )
 }
 
-function timelineProgress(value: number, trip: FleetTrip) {
-  const start = new Date(trip.startsAt).getTime()
-  const end = new Date(trip.endsAt).getTime()
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0
-  return Math.max(0, Math.min(100, ((value - start) / (end - start)) * 100))
+const progressLabels: Record<string, string> = {
+  no_route: "Укажите точки маршрута",
+  no_gps: "Ожидаем GPS",
+  stale: "Нет свежего GPS",
+  inaccurate: "Низкая точность GPS",
+  off_route: "Авто вне маршрута",
+  ambiguous: "Уточняем позицию на маршруте",
 }
 
 const tripStatusMeta: Record<
@@ -359,13 +367,18 @@ export function OperationsDashboard({
             .filter((vehicle) => vehicle.activeTrip)
             .map((vehicle) => {
               const trip = vehicle.activeTrip as FleetTrip
-              const planned = timelineProgress(nowMillis, trip)
+              const progress = trip.progress
               const recordedAt = vehicle.lastLocation
                 ? new Date(vehicle.lastLocation.recordedAt).getTime()
                 : Number.NaN
-              const actual = Number.isFinite(recordedAt)
-                ? timelineProgress(recordedAt, trip)
-                : 0
+              const signalFresh =
+                Number.isFinite(recordedAt) &&
+                nowMillis - recordedAt <= 120_000 &&
+                nowMillis - recordedAt >= -5_000
+              const actual =
+                signalFresh && progress?.status === "on_route"
+                  ? progress.percent
+                  : undefined
               const signalAge = Number.isFinite(recordedAt)
                 ? Math.max(0, Math.round((nowMillis - recordedAt) / 60_000))
                 : null
@@ -412,22 +425,14 @@ export function OperationsDashboard({
                     <div className="relative h-3 rounded-full bg-muted">
                       <div
                         className="absolute inset-y-0 left-0 rounded-full bg-primary/25"
-                        style={{ width: `${planned}%` }}
+                        style={{ width: `${actual ?? 0}%` }}
                       />
-                      <span
-                        aria-label={`План ${Math.round(planned)}%`}
-                        className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-dashed border-primary/60 bg-background/80 text-primary/55"
-                        style={{ left: `${planned}%` }}
-                        title={`План: ${Math.round(planned)}%`}
-                      >
-                        <HugeiconsIcon icon={Car01Icon} size={16} />
-                      </span>
-                      {vehicle.lastLocation ? (
+                      {actual !== undefined ? (
                         <span
-                          aria-label={`Последний GPS ${Math.round(actual)}% временной шкалы`}
+                          aria-label={`Пройдено ${Math.round(actual ?? 0)}% маршрута`}
                           className="absolute top-1/2 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-[left] duration-500"
-                          style={{ left: `${actual}%` }}
-                          title="Последняя GPS-точка на временной шкале"
+                          style={{ left: `${actual ?? 0}%` }}
+                          title="Позиция GPS на дороге"
                         >
                           <HugeiconsIcon icon={Car01Icon} size={16} />
                         </span>
@@ -449,11 +454,27 @@ export function OperationsDashboard({
                             : `GPS ${signalAge} мин назад`}
                       </span>
                       <span className="text-muted-foreground">
-                        План выполнен на {Math.round(planned)}%
+                        {actual !== undefined && progress?.status === "on_route"
+                          ? `${Math.round(actual)}% · осталось ${((progress.remainingMeters ?? 0) / 1000).toFixed(1)} км`
+                          : progressLabels[
+                              vehicle.lastLocation && !signalFresh
+                                ? "stale"
+                                : (progress?.status ?? "no_route")
+                            ]}
                       </span>
                     </div>
                   </div>
-                  {mapsHref ? (
+                  {progress?.status === "no_route" ? (
+                    <Link
+                      className={buttonVariants({
+                        size: "sm",
+                        variant: "outline",
+                      })}
+                      href={`/trips/${trip.id}`}
+                    >
+                      Указать точки
+                    </Link>
+                  ) : mapsHref ? (
                     <a
                       className={buttonVariants({
                         size: "sm",

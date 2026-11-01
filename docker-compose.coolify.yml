@@ -103,6 +103,7 @@ services:
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://vivat.wtmelon.store}
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-https://vivat.wtmelon.store}
+      ROUTING_SERVICE_URL: ${ROUTING_SERVICE_URL:-https://router.project-osrm.org}
       PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:support@wtmelon.store}
       SAAS_CONTROL_SECRET: ${SAAS_CONTROL_SECRET:-}
       BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:?BOOTSTRAP_OWNER_EMAIL is required}

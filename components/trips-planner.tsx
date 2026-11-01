@@ -756,6 +756,16 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       )
       setEditingTripID(null)
       setRequestVersion((version) => version + 1)
+      if (
+        !isEditing &&
+        !isSchedule &&
+        typeof payload === "object" &&
+        payload &&
+        "item" in payload
+      ) {
+        const created = payload.item as { id?: string }
+        if (created.id) router.push(entityDetailHref("trips", created.id))
+      }
     } catch (error) {
       setFormError(
         error instanceof Error && error.message

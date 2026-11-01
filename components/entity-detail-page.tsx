@@ -1,4 +1,5 @@
 "use client"
+import { RouteNavigationEditor } from "@/components/route-navigation-editor"
 import { useRecordDeletion } from "@/components/use-record-deletion"
 import { useRouter } from "next/navigation"
 import { Trash2 } from "lucide-react"
@@ -962,6 +963,14 @@ export function EntityDetailPage({
           }
           overview={
             <dl className="min-w-0 divide-y divide-border/50">
+              {entity === "routes" || entity === "trips" ? (
+                <div className="py-3">
+                  <dt className="mb-3 text-sm font-semibold">Дорога и GPS</dt>
+                  <dd>
+                    <RouteNavigationEditor routeID={id} entity={entity} />
+                  </dd>
+                </div>
+              ) : null}
               {Object.entries(detail.item)
                 .sort(([left], [right]) => {
                   const order = [
@@ -998,6 +1007,7 @@ export function EntityDetailPage({
                       "route_name",
                       "customer_name",
                       "record_sequence",
+                      "navigation",
                     ].includes(key) &&
                     key !== "custom_data" &&
                     key !== "last_location" &&
