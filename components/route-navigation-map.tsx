@@ -27,6 +27,7 @@ export function RouteNavigationMap({
       scrollWheelZoom: false,
     }).setView([50.1, 23.8], 5)
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      referrerPolicy: "origin",
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(instance)
