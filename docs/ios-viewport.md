@@ -38,6 +38,10 @@ iOS version or installation state an individual user has.
 4. Layout and visual rectangles are separate. A focused input plus substantial
    occlusion indicates a software keyboard. Small stale offsets after dismissal
    do not shrink the idle application. Android may resize innerHeight itself.
+   While the keyboard is visible, the app shell itself uses the visual height
+   and top offset. Its inner canvas can then scroll the final fields above the
+   keyboard. Focus recovery reveals fields only inside their closest scroll
+   container; top/bottom sheets also stay within the visual rectangle.
 5. Bottom safe area is zero while the keyboard is visible. The full-width blurred
    dock consumes the home-indicator inset once, below the rounded navigation bar.
    The bar keeps equal top/bottom padding; safe area must never stretch its pill.

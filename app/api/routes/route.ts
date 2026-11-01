@@ -28,7 +28,11 @@ export async function GET() {
               ? payload.error
               : "Не удалось загрузить маршруты.",
         },
-        { status: [400, 401, 402, 403].includes(response.status) ? response.status : 502 }
+        {
+          status: [400, 401, 402, 403].includes(response.status)
+            ? response.status
+            : 502,
+        }
       )
     return NextResponse.json(payload)
   } catch {
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
     )
   }
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 5_000)
+  const timer = setTimeout(() => controller.abort(), 20_000)
   try {
     const response = await apiFetch(
       `${apiBaseURL}/api/v1/tenants/vivat-bus/routes`,
@@ -80,7 +84,11 @@ export async function POST(request: NextRequest) {
           : "Не удалось создать маршрут."
       return NextResponse.json(
         { error },
-        { status: [400, 402].includes(response.status) ? response.status : 502 }
+        {
+          status: [400, 401, 402, 403, 422].includes(response.status)
+            ? response.status
+            : 502,
+        }
       )
     }
     return NextResponse.json(body, { status: 201 })

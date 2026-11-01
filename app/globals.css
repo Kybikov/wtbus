@@ -410,6 +410,16 @@ body:has([data-public-booking]) {
     gap: 0;
     padding: calc(0.5rem + var(--mobile-safe-top)) 0 0;
   }
+  html[data-mobile-keyboard="true"] .app-shell-frame {
+    position: relative;
+    top: var(--mobile-viewport-top, 0px);
+    height: var(--mobile-viewport-height);
+  }
+  .dashboard-content [data-slot="scroll-area-viewport"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-content"] {
+    scroll-padding-block: 12px;
+  }
   .app-shell-frame::before {
     content: "";
     position: fixed;
@@ -870,5 +880,20 @@ body:has([data-disabled-action-hint][data-open])
     top: var(--mobile-viewport-top, 0px);
     bottom: auto;
     height: var(--mobile-viewport-height, var(--mobile-root-height));
+  }
+  [data-slot="sheet-content"][data-side="bottom"],
+  [data-slot="sheet-content"][data-side="top"] {
+    max-height: calc(
+      var(--mobile-viewport-height, 100dvh) -
+        max(12px, var(--mobile-safe-top)) - max(12px, var(--mobile-safe-bottom))
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  [data-slot="sheet-content"][data-side="bottom"] {
+    bottom: var(--mobile-viewport-bottom, 0px);
+  }
+  [data-slot="sheet-content"][data-side="top"] {
+    top: var(--mobile-viewport-top, 0px);
   }
 }

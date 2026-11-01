@@ -103,8 +103,8 @@ func TestRoadNavigationPostgres(t *testing.T) {
 			t.Fatal("cross-company place exposed")
 		}
 	}
-	if got := row(`SELECT distance_km::text FROM routes WHERE id=$1`, route); got != "123" && got != "123.00" {
-		t.Fatal("tariff distance changed", got)
+	if got := row(`SELECT (distance_km=round((navigation->>'distanceMeters')::numeric/1000,2))::text FROM routes WHERE id=$1`, route); got != "true" {
+		t.Fatal("tariff distance does not match the road", got)
 	}
 	trip := row(`INSERT INTO trips(tenant_id,route_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,currency) VALUES($1,$2,'regular','assigned','A','B',now(),now()+interval '2 hours',8,'EUR') RETURNING id::text`, company, route)
 	before := row(`SELECT navigation::text FROM trips WHERE id=$1`, trip)
@@ -130,6 +130,9 @@ func TestRoadNavigationPostgres(t *testing.T) {
 	seed := row(`SELECT navigation::text FROM trips WHERE id=$1`, seedTrip)
 	if got := row(`SELECT navigation::text FROM routes WHERE id=$1`, virgin); got != seed {
 		t.Fatal("route did not inherit first trip points")
+	}
+	if got := row(`SELECT (distance_km>0 AND distance_km=round((navigation->>'distanceMeters')::numeric/1000,2))::text FROM routes WHERE id=$1`, virgin); got != "true" {
+		t.Fatal("inherited route lost road distance", got)
 	}
 	exec(`UPDATE routes SET navigation=jsonb_set(navigation,'{distanceMeters}','5555') WHERE id=$1`, virgin)
 	if got := row(`SELECT navigation::text FROM trips WHERE id=$1`, seedTrip); got != seed {

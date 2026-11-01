@@ -146,8 +146,15 @@ export function RoutePlacePicker({
               Поиск по адресу или ссылке Google Maps, выбор из ваших мест.
             </DialogDescription>
           </DialogHeader>
-          <form
-            onSubmit={(event) => void search(event)}
+          <div
+            role="search"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                event.stopPropagation()
+                void search()
+              }
+            }}
             className="flex min-w-0 gap-2"
           >
             <Input
@@ -166,7 +173,8 @@ export function RoutePlacePicker({
               autoComplete="off"
             />
             <Button
-              type="submit"
+              type="button"
+              onClick={() => void search()}
               size="icon"
               aria-label="Найти место"
               disabled={searching || query.trim().length < 2}
@@ -182,7 +190,7 @@ export function RoutePlacePicker({
                 <Search className="size-4" />
               )}
             </Button>
-          </form>
+          </div>
           {error ? (
             <p role="alert" className="text-sm text-destructive">
               {error}

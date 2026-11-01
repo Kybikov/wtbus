@@ -215,6 +215,46 @@ func buildRoad(ctx context.Context, base string, input routeNavigation) (routeNa
 	return input, nil
 }
 
+func prepareRouteNavigation(ctx context.Context, input routeNavigation) (routeNavigation, error) {
+	if input.Start == nil || input.End == nil || !validRoadPoint(*input.Start) || !validRoadPoint(*input.End) {
+		return input, errors.New("Укажите места отправления и прибытия.")
+	}
+	input.StartLabel = cleanPlaceLabel(input.StartLabel)
+	input.EndLabel = cleanPlaceLabel(input.EndLabel)
+	if !validPlaceLabel(input.StartLabel) || !validPlaceLabel(input.EndLabel) {
+		return input, errors.New("Название места слишком длинное.")
+	}
+	// Geometry and distance always come from the routing service, never the client.
+	input.Coordinates = nil
+	input.DistanceMeters = 0
+	base := os.Getenv("ROUTING_SERVICE_URL")
+	if base == "" {
+		base = "https://router.project-osrm.org"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return buildRoad(ctx, base, input)
+}
+
+func (app *application) previewRouteNavigation(w http.ResponseWriter, r *http.Request) {
+	if _, ok := app.loadTenant(w, r, r.PathValue("slug")); !ok {
+		return
+	}
+	var input routeNavigation
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil {
+		writeJSON(w, 400, map[string]string{"error": "Проверьте места отправления и прибытия."})
+		return
+	}
+	built, err := prepareRouteNavigation(r.Context(), input)
+	if err != nil {
+		writeJSON(w, 422, map[string]string{"error": "Не удалось построить дорогу. Уточните точки или повторите попытку."})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"navigation": built})
+}
+
 func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) {
 	tenant, ok := app.loadTenant(w, r, r.PathValue("slug"))
 	if !ok {
@@ -309,13 +349,38 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	data, _ := json.Marshal(built)
-	tag, err := app.db.Exec(r.Context(), `UPDATE `+table+` SET navigation=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3`, data, id, tenant.ID)
+	query := `UPDATE ` + table + ` SET navigation=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3`
+	args := []any{data, id, tenant.ID}
+	if table == "routes" {
+		query = `UPDATE routes SET navigation=$1,distance_km=$4,updated_at=now() WHERE id=$2 AND tenant_id=$3`
+		args = append(args, math.Round(built.DistanceMeters/10)/100)
+	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	tag, err := tx.Exec(r.Context(), query, args...)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
 	}
 	if tag.RowsAffected() == 0 {
 		writeJSON(w, 404, map[string]string{"error": "Маршрут удалён."})
+		return
+	}
+	if table == "trips" {
+		// The existing trigger can seed an empty route from its first trip.
+		// Only synchronize that same road; independent route points stay intact.
+		_, err = tx.Exec(r.Context(), `UPDATE routes r SET distance_km=$3 FROM trips t WHERE t.id=$1 AND t.tenant_id=$2 AND r.id=t.route_id AND r.tenant_id=$2 AND r.navigation=t.navigation`, id, tenant.ID, math.Round(built.DistanceMeters/10)/100)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"navigation": built})

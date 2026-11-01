@@ -217,6 +217,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.requireActiveSubscription(app.updateRoute)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/navigation-places", operations(app.navigationPlaces))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/navigation-preview", operations(app.previewRouteNavigation))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
@@ -1951,6 +1952,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 type routeInput struct {
+	Navigation         *routeNavigation `json:"navigation,omitempty"`
 	Name               string           `json:"name"`
 	Origin             string           `json:"origin"`
 	Destination        string           `json:"destination"`
@@ -2048,7 +2050,20 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 	var input routeInput
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil || !validateRouteInput(&input, tenant.BaseCurrency) {
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Проверьте поля маршрута."})
+		return
+	}
+	if input.Navigation != nil {
+		built, err := prepareRouteNavigation(r.Context(), *input.Navigation)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Не удалось построить дорогу. Уточните точки или повторите попытку."})
+			return
+		}
+		input.Navigation = &built
+		input.DistanceKM = math.Round(built.DistanceMeters/10) / 100
+	}
+	if !validateRouteInput(&input, tenant.BaseCurrency) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route name, cities, tariff and a supported currency are required"})
 		return
 	}
@@ -2063,11 +2078,15 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var item routeResponse
 	ratesJSON, _ := json.Marshal(input.VehicleClassRates)
+	var navigationJSON any
+	if input.Navigation != nil {
+		navigationJSON, _ = json.Marshal(input.Navigation)
+	}
 	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km, vehicle_class_rates)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km, vehicle_class_rates, navigation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
-	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON)
+	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON, navigationJSON).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON)
 	if err != nil {
 		app.log.Error("create route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create route"})

@@ -11,6 +11,8 @@ import * as React from "react"
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { RouteNavigationDraft } from "@/components/route-navigation-draft"
+import type { RouteNavigation } from "@/components/route-navigation-editor"
 import { EntityDataView } from "@/components/entity-data-view"
 import {
   textColumn,
@@ -62,7 +64,7 @@ const emptyForm: RouteForm = {
   origin: "",
   destination: "",
   currency: "EUR",
-  price: "79",
+  price: "",
   driverPay: "0",
   defaultPricingMode: "per_passenger",
   isActive: true,
@@ -115,6 +117,11 @@ export function RouteCatalog() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [navigation, setNavigation] = React.useState<RouteNavigation>({
+    start: null,
+    end: null,
+  })
+  const [roadBusy, setRoadBusy] = React.useState(false)
 
   const [query, setQuery] = usePageSearch()
   const selection = useEntitySelection<Route>((item) => item.id)
@@ -236,6 +243,7 @@ export function RouteCatalog() {
     setError(null)
     setEditingID(null)
     setForm({ ...emptyForm, currency })
+    setNavigation({ start: null, end: null })
     setEditorOpen(true)
   }
 
@@ -249,11 +257,22 @@ export function RouteCatalog() {
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    const defaultPriceMinor = parsePriceMinor(form.price)
+    if (
+      !navigation.start ||
+      !navigation.end ||
+      !navigation.distanceMeters ||
+      roadBusy
+    ) {
+      setError(
+        "Выберите места отправления и прибытия и дождитесь построения дороги."
+      )
+      return
+    }
+    const defaultPriceMinor = parsePriceMinor(
+      form.tariffMode === "per_km" ? "0" : form.price
+    )
     const driverPayMinor = parsePriceMinor(form.driverPay)
-    const distanceKm = form.distance.trim()
-      ? Number(form.distance.replace(",", "."))
-      : 0
+    const distanceKm = Math.round(navigation.distanceMeters / 10) / 100
     const vehicleClassRates = Object.fromEntries(
       Object.entries(form.classRates)
         .filter(([, value]) => value.trim())
@@ -287,8 +306,14 @@ export function RouteCatalog() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name,
-          origin: form.origin,
-          destination: form.destination,
+          origin: (navigation.startLabel || "Точка отправления").slice(0, 120),
+          destination: (navigation.endLabel || "Точка прибытия").slice(0, 120),
+          navigation: {
+            start: navigation.start,
+            end: navigation.end,
+            startLabel: navigation.startLabel,
+            endLabel: navigation.endLabel,
+          },
           currency: form.currency,
           defaultPriceMinor,
           defaultPricingMode: form.defaultPricingMode,
@@ -488,33 +513,39 @@ export function RouteCatalog() {
               />
             </label>
             <label className="grid gap-2 text-sm font-semibold">
-              Конструктор тарифа
+              Расчёт стоимости для клиента
               <FieldSelect
                 onValueChange={(value) =>
                   updateForm("tariffMode", value as RouteForm["tariffMode"])
                 }
                 options={[
-                  { value: "fixed", label: "Фиксированная цена" },
-                  { value: "per_km", label: "За километр по классу авто" },
+                  { value: "fixed", label: "Заданная цена" },
+                  { value: "per_km", label: "По расстоянию и классу авто" },
                 ]}
                 value={form.tariffMode}
               />
             </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Плановая длина, км
-              <Input
-                inputMode="decimal"
-                min={form.tariffMode === "per_km" ? "0.01" : "0"}
-                placeholder="Не указана"
-                onChange={(event) => updateForm("distance", event.target.value)}
-                step="0.01"
-                type="number"
-                value={form.distance}
-              />
-            </label>
+            <RouteNavigationDraft
+              value={navigation}
+              onChange={setNavigation}
+              onBusyChange={setRoadBusy}
+            />
+            <div className="grid gap-2 text-sm font-semibold">
+              <span>Расстояние по дороге</span>
+              <output
+                className="text-sm font-normal text-muted-foreground"
+                aria-live="polite"
+              >
+                {roadBusy
+                  ? "Рассчитываем…"
+                  : navigation.distanceMeters
+                    ? `${(navigation.distanceMeters / 1000).toFixed(2)} км`
+                    : "Выберите отправление и прибытие"}
+              </output>
+            </div>
             {form.tariffMode === "per_km" ? (
               <>
-                <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-3 md:col-span-2">
+                <div className="grid gap-3 sm:grid-cols-3 md:col-span-2">
                   {(["minivan", "microbus", "bus"] as const).map(
                     (vehicleClass) => (
                       <label
@@ -555,48 +586,27 @@ export function RouteCatalog() {
                 onValueChange={(value) => updateForm("status", value)}
               />
             </div>
-            <label className="grid gap-2 text-sm font-semibold">
-              {form.defaultPricingMode === "per_booking"
-                ? "Цена за всю бронь"
-                : "Цена за пассажира"}
-              <Input
-                className="h-11 rounded-xl border border-border bg-control px-3 font-normal tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                inputMode="decimal"
-                min="0"
-                onChange={(event) => updateForm("price", event.target.value)}
-                placeholder="Например, 79"
-                required
-                step="0.01"
-                type="number"
-                value={form.price}
-              />
-              <span className="text-xs font-normal text-muted-foreground">
-                Подставляется в регулярный рейс, но её можно изменить для
-                конкретного выезда.
-              </span>
-            </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Откуда
-              <Input
-                className="h-11 rounded-xl border border-border bg-control px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                maxLength={120}
-                onChange={(event) => updateForm("origin", event.target.value)}
-                required
-                value={form.origin}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Куда
-              <Input
-                className="h-11 rounded-xl border border-border bg-control px-3 font-normal transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                maxLength={120}
-                onChange={(event) =>
-                  updateForm("destination", event.target.value)
-                }
-                required
-                value={form.destination}
-              />
-            </label>
+            {form.tariffMode === "fixed" ? (
+              <label className="grid gap-2 text-sm font-semibold">
+                {form.defaultPricingMode === "per_booking"
+                  ? "Цена за всю бронь"
+                  : "Цена за пассажира"}
+                <Input
+                  className="h-11 rounded-xl border border-border bg-control px-3 font-normal tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) => updateForm("price", event.target.value)}
+                  placeholder="Укажите цену"
+                  required
+                  step="0.01"
+                  type="number"
+                  value={form.price}
+                />
+                <span className="text-xs font-normal text-muted-foreground">
+                  Стоимость для клиента. Её можно изменить в рейсе.
+                </span>
+              </label>
+            ) : null}
             <div className="flex justify-end gap-2 md:col-span-2">
               <Button
                 disabled={saving}
@@ -608,8 +618,22 @@ export function RouteCatalog() {
                 Отмена
               </Button>
               <Button
-                disabled={saving}
-                disabledReason={"Данные сохраняются. Дождитесь завершения."}
+                disabled={
+                  saving ||
+                  roadBusy ||
+                  !navigation.start ||
+                  !navigation.end ||
+                  !navigation.distanceMeters
+                }
+                disabledReason={
+                  saving
+                    ? "Создаём маршрут. Дождитесь завершения."
+                    : roadBusy
+                      ? "Строим дорогу. Дождитесь завершения."
+                      : !navigation.start || !navigation.end
+                        ? "Выберите отправление и прибытие на карте или по адресу."
+                        : "Постройте дорогу между выбранными местами."
+                }
                 type="submit"
               >
                 {saving

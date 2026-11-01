@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 
@@ -63,7 +64,10 @@ func (app *application) createRouteFromTrip(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var routeID string
-	err = tx.QueryRow(r.Context(), `INSERT INTO routes(tenant_id,name,origin_name,destination_name,currency,default_price_minor,default_pricing_mode,driver_pay_minor,navigation,is_active,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true,'active') RETURNING id::text`, company.ID, input.Name, origin, destination, currency, price, pricing, pay, navigation).Scan(&routeID)
+	var road routeNavigation
+	_ = json.Unmarshal(navigation, &road)
+	distanceKM := math.Round(road.DistanceMeters/10) / 100
+	err = tx.QueryRow(r.Context(), `INSERT INTO routes(tenant_id,name,origin_name,destination_name,currency,default_price_minor,default_pricing_mode,driver_pay_minor,navigation,distance_km,is_active,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,'active') RETURNING id::text`, company.ID, input.Name, origin, destination, currency, price, pricing, pay, navigation, distanceKM).Scan(&routeID)
 	if err == nil {
 		_, err = tx.Exec(r.Context(), `UPDATE trips SET route_id=$3,kind='regular',updated_at=now() WHERE tenant_id=$1 AND id=$2`, company.ID, tripID, routeID)
 	}

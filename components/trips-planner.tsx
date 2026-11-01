@@ -115,9 +115,7 @@ function routePrice(
   const rate = vehicleClass
     ? route.vehicleClassRates[vehicleClass.toLowerCase()]
     : undefined
-  return rate === undefined
-    ? route.defaultPriceMinor
-    : Math.round(rate * route.distanceKm)
+  return rate === undefined ? null : Math.round(rate * route.distanceKm)
 }
 
 type TripForm = {
@@ -347,7 +345,7 @@ function createEmptyTripForm(day: string): TripForm {
     vehicleId: "",
     driverId: "",
     notes: "",
-    price: "79",
+    price: "",
     pricingMode: "per_passenger",
     repeatUntil: "",
     weekdays: [new Date(`${day}T12:00:00`).getDay()],
@@ -1327,23 +1325,27 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                       const route = resources.routes.find(
                         (item) => item.id === value
                       )
-                      setTripForm((current) => ({
-                        ...current,
-                        routeId: value,
-                        origin: route?.origin ?? current.origin,
-                        destination: route?.destination ?? current.destination,
-                        price: route
-                          ? (
-                              (routePrice(
-                                route,
-                                current.vehicleId,
-                                resources.vehicles
-                              ) ?? route.defaultPriceMinor) / 100
-                            ).toFixed(2)
-                          : current.price,
-                        pricingMode:
-                          route?.defaultPricingMode ?? current.pricingMode,
-                      }))
+                      setTripForm((current) => {
+                        const price = routePrice(
+                          route,
+                          current.vehicleId,
+                          resources.vehicles
+                        )
+                        return {
+                          ...current,
+                          routeId: value,
+                          origin: route?.origin ?? current.origin,
+                          destination:
+                            route?.destination ?? current.destination,
+                          price: route
+                            ? price === null
+                              ? ""
+                              : (price / 100).toFixed(2)
+                            : current.price,
+                          pricingMode:
+                            route?.defaultPricingMode ?? current.pricingMode,
+                        }
+                      })
                     }}
                     options={[
                       { value: "", label: "Ввести маршрут вручную" },
@@ -1376,7 +1378,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                         ...current,
                         vehicleId: value,
                         ...(nextPrice === null
-                          ? {}
+                          ? route?.tariffMode === "per_km"
+                            ? { price: "" }
+                            : {}
                           : { price: (nextPrice / 100).toFixed(2) }),
                       }
                     })
@@ -1497,7 +1501,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                       price: event.target.value,
                     }))
                   }
-                  placeholder="Например, 79"
+                  placeholder="Укажите цену"
                   required
                   step="0.01"
                   type="number"

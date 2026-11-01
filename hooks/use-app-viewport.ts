@@ -70,6 +70,38 @@ export function useAppViewport(enabled: boolean) {
       )
         window.scrollTo({ left: 0, top: 0, behavior: "instant" })
     }
+    const revealFocusedField = () => {
+      const field = document.activeElement
+      if (
+        !mobile.matches ||
+        !keyboard ||
+        !editable(field) ||
+        !(field instanceof HTMLElement)
+      )
+        return
+      // Scroll only the field's own canvas/dialog, never pan the locked document.
+      for (
+        let parent = field.parentElement;
+        parent && parent !== document.body;
+        parent = parent.parentElement
+      ) {
+        if (
+          !/(auto|scroll)/.test(getComputedStyle(parent).overflowY) ||
+          parent.scrollHeight <= parent.clientHeight
+        )
+          continue
+        const rect = field.getBoundingClientRect(),
+          bounds = parent.getBoundingClientRect()
+        const delta =
+          rect.bottom > bounds.bottom - 12
+            ? rect.bottom - bounds.bottom + 12
+            : rect.top < bounds.top + 12
+              ? rect.top - bounds.top - 12
+              : 0
+        if (delta) parent.scrollBy({ top: delta, behavior: "instant" })
+        break
+      }
+    }
     const measure = () => {
       frame = 0
       if (!mobile.matches) {
@@ -115,6 +147,7 @@ export function useAppViewport(enabled: boolean) {
           : next
       )
       if (ios && window.scrollY !== 0) resetRootScroll()
+      revealFocusedField()
     }
     const schedule = () => {
       cancelAnimationFrame(frame)
