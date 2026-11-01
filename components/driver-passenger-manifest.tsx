@@ -118,7 +118,7 @@ function BoardingSelect({
             key={option.value}
             size="sm"
             className="h-10 min-w-0 flex-1 px-2 text-xs"
-            variant={value === option.value ? "secondary" : "outline"}
+            variant={value === option.value ? "default" : "outline"}
             aria-pressed={value === option.value}
             aria-label={`${option.label}: ${name}`}
             onClick={() => commit(option.value)}
