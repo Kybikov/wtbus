@@ -22,7 +22,6 @@ export function RoutePlacePicker({
   disabled,
   disabledReason,
   onChoose,
-  onOpen,
 }: {
   title: string
   label?: string
@@ -30,7 +29,6 @@ export function RoutePlacePicker({
   disabled: boolean
   disabledReason: string
   onChoose: (point: RoadPoint | null, label: string) => void
-  onOpen: () => void
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
@@ -101,21 +99,22 @@ export function RoutePlacePicker({
   function select(place: Place) {
     finish(place.point, place.label)
   }
-  const available = saved.filter((place) =>
-    place.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+  const available = saved.filter(
+    (place) =>
+      place.label !== "Точка на карте" &&
+      place.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
   )
   return (
     <>
-      <div className="min-w-0 space-y-1">
+      <div className="flex h-full min-w-0 flex-col gap-1">
         <p className="text-xs text-muted-foreground">{title}</p>
         <Button
           variant="outline"
-          className="h-auto min-h-11 w-full justify-start gap-2 rounded-xl px-3 py-2.5 text-left font-normal whitespace-normal"
+          className="h-16 w-full justify-start gap-2 rounded-xl px-3 py-2.5 text-left font-normal whitespace-normal"
           aria-label={`Выбрать: ${title}`}
           disabled={disabled}
           disabledReason={disabledReason}
           onClick={() => {
-            onOpen()
             setQuery("")
             setResults(null)
             setError(null)
@@ -123,8 +122,15 @@ export function RoutePlacePicker({
           }}
         >
           <MapPin className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 break-words">
-            {label || (point ? "Точка на карте" : "Выбрать место")}
+          <span
+            title={label || undefined}
+            className="line-clamp-2 min-w-0 text-sm leading-5 break-words"
+          >
+            {label && label !== "Точка на карте"
+              ? label
+              : point
+                ? "Выберите адрес"
+                : "Выбрать место"}
           </span>
         </Button>
       </div>

@@ -194,6 +194,16 @@ func TestPassengerPaymentJourneyPostgres(t *testing.T) {
 			t.Fatal("expired passenger still appears for boarding")
 		}
 	}
+	call("PATCH", "tenants/passenger-qa/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, session.SessionToken, 409)
+	for _, booking := range manifest.Items {
+		if booking.PaymentMethod == "bank_transfer" && booking.PaymentStatus != "paid" {
+			continue
+		}
+		for i := 0; i < int(booking.Seats); i++ {
+			index := i
+			call("POST", "tenants/passenger-qa/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: booking.ID, PassengerIndex: &index, Boarding: "boarded"}, session.SessionToken, 200)
+		}
+	}
 	call("PATCH", "tenants/passenger-qa/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, session.SessionToken, 200)
 	var cashDue struct {
 		Item driverCashSummaryItem `json:"item"`
@@ -204,7 +214,8 @@ func TestPassengerPaymentJourneyPostgres(t *testing.T) {
 	if cashDue.Item.AmountMinor != 125000 {
 		t.Fatalf("driver is asked to collect prepaid passengers again: %+v", cashDue.Item)
 	}
-	call("POST", "tenants/passenger-qa/driver/cash-received", confirmDriverCashReceivedRequest{TripID: trip}, session.SessionToken, 200)
+	cashAmount := int64(125000)
+	call("POST", "tenants/passenger-qa/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: cash.Reference, CashMinor: &cashAmount}, session.SessionToken, 200)
 	readManifest()
 	if m := find(cash.Reference); m.PaymentStatus != "paid" || m.PaymentMethod != "cash_on_boarding" {
 		t.Fatalf("cash receipt missing from manifest: %+v", m)

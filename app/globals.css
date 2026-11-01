@@ -36,7 +36,27 @@ body:has([data-public-booking]) {
   [data-trip-checkout] ol {
     display: none;
   }
+  [data-trip-checkout] [data-checkout-layout] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.55fr);
+    gap: 1.5rem;
+  }
+  [data-trip-checkout] [data-checkout-layout] > aside {
+    border-top: 0;
+    border-left: 1px solid #ccc;
+    padding: 0 0 0 1.5rem;
+  }
+  [data-trip-checkout] [data-receipt-brand] {
+    border-color: #b38728;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    break-inside: avoid;
+  }
+  [data-trip-checkout] [data-booking-reference] {
+    color: #805c16;
+  }
   [data-trip-checkout] {
+    break-inside: avoid;
     min-height: 0;
     border: 0;
   }

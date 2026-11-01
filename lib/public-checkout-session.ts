@@ -56,6 +56,12 @@ export function restorePublicCheckout(
       return null
     const confirmation: PublicConfirmation = {
       reference: c.reference,
+      ...(typeof c.recordNumber === "string" &&
+      c.recordNumber.length > 0 &&
+      c.recordNumber.length <= 96 &&
+      !/[\u0000-\u001f\u007f]/.test(c.recordNumber)
+        ? { recordNumber: c.recordNumber }
+        : {}),
       status: c.status,
       seats: Number(c.seats),
       priceMinor: c.priceMinor,

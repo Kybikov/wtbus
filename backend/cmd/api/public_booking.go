@@ -125,7 +125,12 @@ func (app *application) publicCatalog(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": company.Name, "timezone": company.Timezone, "routes": routes, "fields": fields, "payment": map[string]bool{"bankTransferAvailable": bankTransferAvailable}})
+	var logoURL string
+	if err := app.db.QueryRow(r.Context(), "SELECT COALESCE((SELECT logo_url FROM tenant_branding WHERE tenant_id=$1),'')", company.ID).Scan(&logoURL); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"logoUrl": logoURL, "name": company.Name, "timezone": company.Timezone, "routes": routes, "fields": fields, "payment": map[string]bool{"bankTransferAvailable": bankTransferAvailable}})
 }
 
 func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
@@ -260,12 +265,13 @@ func normalizePublicPassengers(input *publicBookingInput, now time.Time) (bookin
 }
 
 type publicConfirmation struct {
-	Reference  string                     `json:"reference"`
-	Status     string                     `json:"status"`
-	Seats      int16                      `json:"seats"`
-	PriceMinor int64                      `json:"priceMinor"`
-	Currency   string                     `json:"currency"`
-	Payment    *publicPaymentConfirmation `json:"payment,omitempty"`
+	RecordNumber string                     `json:"recordNumber"`
+	Reference    string                     `json:"reference"`
+	Status       string                     `json:"status"`
+	Seats        int16                      `json:"seats"`
+	PriceMinor   int64                      `json:"priceMinor"`
+	Currency     string                     `json:"currency"`
+	Payment      *publicPaymentConfirmation `json:"payment,omitempty"`
 }
 
 type publicPaymentConfirmation struct {
@@ -373,6 +379,10 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 	if err == nil {
 		if string(previousHash) != string(hash[:]) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Дані змінились. Почніть нове бронювання."})
+			return
+		}
+		if err = tx.QueryRow(r.Context(), "SELECT number FROM record_numbers WHERE tenant_id=$1 AND entity='bookings' AND record_id=$2", company.ID, result.Reference).Scan(&result.RecordNumber); err != nil {
+			app.publicFailure(w, err)
 			return
 		}
 		result.Payment, err = loadPublicPaymentConfirmation(r.Context(), tx, company.ID, result.Reference)
@@ -483,6 +493,10 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		RETURNING id::text,status::text,seats,price_minor,currency
 	`, company.ID, input.TripID, customerID, bookingStatus, input.Seats, total, currency, data, holdExpiresAt).Scan(&result.Reference, &result.Status, &result.Seats, &result.PriceMinor, &result.Currency)
 	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if err = tx.QueryRow(r.Context(), "SELECT number FROM record_numbers WHERE tenant_id=$1 AND entity='bookings' AND record_id=$2", company.ID, result.Reference).Scan(&result.RecordNumber); err != nil {
 		app.publicFailure(w, err)
 		return
 	}

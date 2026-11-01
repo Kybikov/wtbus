@@ -125,6 +125,8 @@ func main() {
 	go func() { defer close(bankDone); app.bankWorker(signalContext) }()
 	currencyDone := make(chan struct{})
 	go func() { defer close(currencyDone); app.currencyWorker(signalContext) }()
+	progressDone := make(chan struct{})
+	go func() { defer close(progressDone); app.tripProgressWorker(signalContext) }()
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           app.routes(),
@@ -156,6 +158,10 @@ func main() {
 	}
 	select {
 	case <-bankDone:
+	case <-shutdownContext.Done():
+	}
+	select {
+	case <-progressDone:
 	case <-shutdownContext.Done():
 	}
 }
@@ -2550,7 +2556,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			WHERE t.tenant_id = $1 AND t.vehicle_id = v.id
 			  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=t.tenant_id AND ws.entity_type='trips' AND ws.key=t.status AND ws.semantic_phase IN ('assigned','in_progress'))
 			  AND ($2 = '' OR t.driver_id = NULLIF($2, '')::uuid)
-			ORDER BY CASE WHEN t.status = 'in_progress' THEN 0 ELSE 1 END, t.starts_at ASC
+			ORDER BY CASE WHEN workflow_status_phase(t.tenant_id,'trips',t.status) = 'in_progress' THEN 0 ELSE 1 END, t.starts_at ASC
 			LIMIT 1
 		) active_trip ON true
 		LEFT JOIN drivers active_driver ON active_driver.id = active_trip.driver_id
@@ -3631,6 +3637,18 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if nextMeta.Phase == "in_progress" && currentMeta.Phase != "in_progress" {
+		if driverID != "" {
+			var waiting bool
+			err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings b LEFT JOIN driver_booking_checkins c ON c.booking_id=b.id AND c.tenant_id=b.tenant_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' AND EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting') NOT IN ('boarded','absent')))`, tenant.ID, tripID).Scan(&waiting)
+			if err != nil {
+				app.publicFailure(w, err)
+				return
+			}
+			if waiting {
+				writeJSON(w, 409, map[string]string{"error": "Перед выездом подтвердите, кто пришёл и кто не пришёл."})
+				return
+			}
+		}
 		var conflict bool
 		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips active JOIN trips selected ON selected.id=$2 AND selected.tenant_id=active.tenant_id WHERE active.tenant_id=$1 AND active.id<>selected.id AND workflow_status_phase(active.tenant_id,'trips',active.status)='in_progress' AND (active.driver_id=selected.driver_id OR active.vehicle_id=selected.vehicle_id))`, tenant.ID, tripID).Scan(&conflict)
 		if err != nil {
@@ -5478,7 +5496,7 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 			COALESCE(c.full_name, ''), c.phone_e164,
 			t.id::text, t.status::text, t.origin_name, t.destination_name, t.starts_at, t.capacity,
 			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status)='awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
-			COALESCE(payment.id::text, ''), COALESCE(payment.status::text,CASE WHEN ci.cash_minor>=b.price_minor THEN 'paid' WHEN ci.cash_minor>0 THEN 'partial' ELSE '' END), COALESCE(payment.payment_method,CASE WHEN ci.cash_minor>0 OR b.status='cash_on_boarding' THEN 'cash_on_boarding' ELSE '' END), b.payment_hold_expires_at,
+			COALESCE(payment.id::text, ''), CASE WHEN ci.cash_minor>0 THEN CASE WHEN ci.cash_minor>=b.price_minor THEN 'paid' ELSE 'partial' END ELSE COALESCE(payment.status::text,'') END, COALESCE(payment.payment_method,CASE WHEN ci.cash_minor>0 OR b.status='cash_on_boarding' THEN 'cash_on_boarding' ELSE '' END), b.payment_hold_expires_at,
 			COALESCE(request.id::text, ''), count(*) OVER()
 		FROM bookings b
 		JOIN customers c ON c.id = b.customer_id
@@ -6787,6 +6805,14 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
  FROM bookings b WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed'
  AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.tenant_id=b.tenant_id AND p.booking_id=b.id AND p.payment_method='bank_transfer')
  ON CONFLICT(booking_id) DO NOTHING`, tenant.ID, input.TripID, actor.MembershipID); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `WITH corrected AS (
+ UPDATE bookings b SET status='confirmed',updated_at=now() FROM driver_booking_checkins c
+ WHERE b.tenant_id=$1 AND b.trip_id=$2 AND b.status='cash_on_boarding' AND c.tenant_id=b.tenant_id AND c.booking_id=b.id AND c.cash_minor>=b.price_minor AND c.cash_minor>0 RETURNING b.id,b.tenant_id)
+ INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details)
+ SELECT tenant_id,NULLIF($3,'')::uuid,'human','record_updated','bookings',id,'{"changes":[{"field":"status","before":"cash_on_boarding","after":"confirmed"}]}'::jsonb FROM corrected`, tenant.ID, input.TripID, actor.MembershipID); err != nil {
 		app.publicFailure(w, err)
 		return
 	}

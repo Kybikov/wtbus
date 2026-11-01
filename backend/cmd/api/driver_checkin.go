@@ -10,10 +10,11 @@ import (
 )
 
 type driverCheckinRequest struct {
-	TripID         string `json:"tripId"`
-	BookingID      string `json:"bookingId"`
-	PassengerIndex *int   `json:"passengerIndex,omitempty"`
-	Boarding       string `json:"boarding,omitempty"`
+	TripID           string `json:"tripId"`
+	BookingID        string `json:"bookingId"`
+	PassengerIndex   *int   `json:"passengerIndex,omitempty"`
+	Boarding         string `json:"boarding,omitempty"`
+	ExpectedBoarding string `json:"expectedBoarding,omitempty"`
 	// Cumulative received amount, not a delta: repeated submissions cannot double-charge.
 	CashMinor *int64 `json:"cashMinor,omitempty"`
 }
@@ -66,7 +67,7 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
-	if phase != "assigned" && phase != "in_progress" {
+	if phase != "planned" && phase != "assigned" && phase != "in_progress" {
 		writeJSON(w, 409, map[string]string{"error": "Посадка и оплата доступны только в назначенном или текущем рейсе."})
 		return
 	}
@@ -108,6 +109,16 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		if *input.PassengerIndex < 0 || *input.PassengerIndex >= seats {
 			writeJSON(w, 400, map[string]string{"error": "Пассажир не найден в брони."})
 			return
+		}
+		if input.ExpectedBoarding != "" {
+			current := boarding[strconv.Itoa(*input.PassengerIndex)]
+			if current == "" {
+				current = "waiting"
+			}
+			if input.ExpectedBoarding != current {
+				writeJSON(w, 409, map[string]string{"error": "Отметка пассажира уже изменилась. Проверьте посадку и повторите выезд."})
+				return
+			}
 		}
 		boarding[strconv.Itoa(*input.PassengerIndex)] = input.Boarding
 		absent := 0
@@ -161,6 +172,25 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 	if err == nil && input.PassengerIndex != nil {
 		details, _ := json.Marshal(map[string]any{"tripId": input.TripID, "passengerIndex": *input.PassengerIndex, "boarding": input.Boarding})
 		_, err = tx.Exec(r.Context(), `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,NULLIF($2,'')::uuid,'human',$3,'bookings',$4,$5)`, company.ID, actor.MembershipID, action, input.BookingID, details)
+	}
+	if err == nil && input.PassengerIndex != nil && input.Boarding == "boarded" {
+		var previous string
+		// A reservation or a payment is not evidence that boarding has started.
+		e := tx.QueryRow(r.Context(), `UPDATE trips SET status='boarding',updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status IN ('assigned','new') RETURNING CASE WHEN $3='planned' THEN 'new' ELSE 'assigned' END`, company.ID, input.TripID, phase).Scan(&previous)
+		if e == nil {
+			err = recordAutomaticStatus(r.Context(), tx, company.ID, "trips", input.TripID, previous, "boarding", actor.MembershipID)
+		} else if !errors.Is(e, pgx.ErrNoRows) {
+			err = e
+		}
+	}
+	if err == nil && input.CashMinor != nil && received >= price {
+		var previous string
+		e := tx.QueryRow(r.Context(), `UPDATE bookings SET status='confirmed',updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='cash_on_boarding' RETURNING 'cash_on_boarding'`, company.ID, input.BookingID).Scan(&previous)
+		if e == nil {
+			err = recordAutomaticStatus(r.Context(), tx, company.ID, "bookings", input.BookingID, previous, "confirmed", actor.MembershipID)
+		} else if !errors.Is(e, pgx.ErrNoRows) {
+			err = e
+		}
 	}
 	if err == nil {
 		err = tx.Commit(r.Context())

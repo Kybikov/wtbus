@@ -221,6 +221,10 @@ func TestPublicBookingPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		first = payload.Item
+		var number string
+		if err = db.QueryRow(ctx, `SELECT number FROM record_numbers WHERE record_id=$1 AND entity='bookings'`, first.Reference).Scan(&number); err != nil || number == "" || first.RecordNumber != number {
+			t.Fatalf("receipt number differs from CRM: %q / %q: %v", first.RecordNumber, number, err)
+		}
 		if first.Status != "cash_on_boarding" || first.PriceMinor != 5000 {
 			t.Fatal(created.Body)
 		}

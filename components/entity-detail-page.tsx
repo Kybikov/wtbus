@@ -1076,6 +1076,10 @@ export function EntityDetailPage({
                   ([key]) =>
                     !(entity === "team" && key === "driver_id") &&
                     !(
+                      (entity === "routes" || entity === "trips") &&
+                      key === "distance_km"
+                    ) &&
+                    !(
                       entity === "trips" &&
                       ["route_id", "vehicle_id", "driver_id"].includes(key)
                     ) &&

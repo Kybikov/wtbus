@@ -120,11 +120,31 @@ func TestTelegramPassengerJourneyPostgres(t *testing.T) {
 		app.handleCallback(&tgbotapi.CallbackQuery{ID: "qa", From: from, Message: &tgbotapi.Message{Chat: chat, MessageID: 1}, Data: data})
 	}
 	date := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
-	app.saveState(chatID, bookingState{Date: date})
+	app.saveState(chatID, bookingState{Date: "2000-01-01", Origin: "Old search", Destination: "Old search"})
 	callback("book:" + trip)
 	state, _ := app.getState(chatID)
+	if state.Date != date || state.Origin != "Kyiv" || state.Destination != "Lviv" {
+		t.Fatalf("selected trip did not replace stale search date/direction: %+v", state)
+	}
 	if state.Step != "contact" {
 		t.Fatalf("first booking did not request contact: %s", state.Step)
+	}
+	app.saveState(chatID, bookingState{})
+	callback("book:" + trip)
+	state, _ = app.getState(chatID)
+	if state.Date != date {
+		t.Fatal("upcoming trip without a search date lost its departure date")
+	}
+	mu.Lock()
+	beforeRepeat := len(messages)
+	mu.Unlock()
+	callback("book:" + trip)
+	mu.Lock()
+	afterRepeat := len(messages)
+	mu.Unlock()
+	// Telegram callback acknowledgements carry no message text.
+	if afterRepeat != beforeRepeat+1 {
+		t.Fatalf("repeated trip tap restarted the booking: %d -> %d", beforeRepeat, afterRepeat)
 	}
 	app.handleMessage(&tgbotapi.Message{From: from, Chat: chat, Contact: &tgbotapi.Contact{UserID: chatID, PhoneNumber: "+380500005001"}})
 	for _, text := range []string{"Ivan Test", "+380500005001", "01011990"} {

@@ -14,7 +14,10 @@ import { Clock01Icon, Route01Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { DriverPassengerManifest } from "@/components/driver-passenger-manifest"
+import {
+  DriverPassengerManifest,
+  type ManifestBooking,
+} from "@/components/driver-passenger-manifest"
 import { useDriverGPS } from "@/hooks/use-driver-gps"
 
 type FleetTrip = {
@@ -314,19 +317,87 @@ export function DriverLocationTracker() {
       setError("Сначала подтвердите получение наличных по этому рейсу.")
       return
     }
-    const action = status === "in_progress" ? "начать" : "завершить"
-    if (
-      !(await confirm({
-        title: `${status === "in_progress" ? "Начать" : "Завершить"} рейс?`,
-        description: `Подтвердите: ${action} рейс ${selectedVehicle?.activeTrip?.origin} → ${selectedVehicle?.activeTrip?.destination}.`,
-        label: status === "in_progress" ? "Начать рейс" : "Завершить рейс",
-        tone: "archive",
-      }))
-    )
-      return
     setUpdatingTripStatus(true)
     setError(null)
     try {
+      const waiting: {
+        bookingId: string
+        passengerIndex: number
+        name: string
+      }[] = []
+      if (status === "in_progress" && identity?.role === "driver") {
+        const response = await sessionFetch(
+          `/api/driver-passengers?${new URLSearchParams({ tripId: tripID })}`,
+          { cache: "no-store", signal: AbortSignal.timeout(12000) }
+        )
+        const data = await response.json()
+        if (!response.ok || !Array.isArray(data.items))
+          throw new Error(
+            data.error ?? "Не удалось проверить посадку. Повторите попытку."
+          )
+        for (const booking of data.items as ManifestBooking[]) {
+          // Unconfirmed bank bookings cannot board and are not no-shows.
+          if (
+            booking.paymentMethod !== "cash_on_boarding" &&
+            booking.paymentStatus !== "paid"
+          )
+            continue
+          for (let index = 0; index < booking.seats; index++) {
+            if (
+              ["boarded", "absent"].includes(
+                booking.boarding?.[String(index)] ?? "waiting"
+              )
+            )
+              continue
+            const person = booking.passengers[index]
+            waiting.push({
+              bookingId: booking.id,
+              passengerIndex: index,
+              name: person
+                ? `${person.firstName} ${person.lastName}`
+                : `${booking.name}${booking.seats > 1 ? ` · пассажир ${index + 1}` : ""}`,
+            })
+          }
+        }
+      }
+      const action = status === "in_progress" ? "начать" : "завершить"
+      if (
+        !(await confirm({
+          title: waiting.length
+            ? "Подтвердить неявку и начать рейс?"
+            : `${status === "in_progress" ? "Начать" : "Завершить"} рейс?`,
+          description: waiting.length
+            ? `Не отмечены: ${waiting.map((item) => item.name).join(", ")}. Подтвердите, что они не пришли. Если подойдут позже, измените отметку в списке пассажиров.`
+            : `Подтвердите: ${action} рейс ${selectedVehicle?.activeTrip?.origin} → ${selectedVehicle?.activeTrip?.destination}.`,
+          label: waiting.length
+            ? "Не пришли · начать рейс"
+            : status === "in_progress"
+              ? "Начать рейс"
+              : "Завершить рейс",
+          tone: "archive",
+        }))
+      )
+        return
+      for (const person of waiting) {
+        const response = await sessionFetch("/api/driver-passengers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tripId: tripID,
+            bookingId: person.bookingId,
+            passengerIndex: person.passengerIndex,
+            boarding: "absent",
+            expectedBoarding: "waiting",
+          }),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => null)
+          throw new Error(
+            data?.error ??
+              "Не удалось сохранить неявку. Проверьте список пассажиров."
+          )
+        }
+      }
       if (status === "completed" && !(await gps.prepareCompletion())) {
         throw new Error(
           "Сначала отправьте сохранённые GPS-точки. Восстановите связь и повторите завершение рейса."
@@ -415,7 +486,8 @@ export function DriverLocationTracker() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   {selectedVehicle.name} · {selectedVehicle.registrationNumber}{" "}
                   ·{" "}
-                  {selectedVehicle.activeTrip.status === "in_progress"
+                  {(selectedVehicle.activeTrip.statusPhase ??
+                    selectedVehicle.activeTrip.status) === "in_progress"
                     ? "Рейс выполняется"
                     : "Рейс назначен"}
                 </p>
@@ -433,7 +505,8 @@ export function DriverLocationTracker() {
                 ) : null}
               </div>
               <div className="lg:flex lg:items-center">
-                {selectedVehicle.activeTrip.status === "assigned" ? (
+                {(selectedVehicle.activeTrip.statusPhase ??
+                  selectedVehicle.activeTrip.status) === "assigned" ? (
                   <Button
                     className="mt-4 w-full lg:mt-0 lg:w-auto lg:min-w-48"
                     disabled={updatingTripStatus}

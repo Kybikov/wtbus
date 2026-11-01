@@ -105,6 +105,7 @@ type tripOption struct {
 }
 
 type routeDirection struct {
+	StartsAt    time.Time
 	ID          string
 	Origin      string
 	Destination string
@@ -1507,7 +1508,11 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 		app.send(chatID, "Этот рейс уже недоступен. Обновите список рейсов.")
 		return
 	}
+	if state.PendingTripID == tripID && (state.Step == "contact" || strings.HasPrefix(state.Step, "passenger_") || state.Step == "seats" || state.Step == "booking_field") {
+		return
+	}
 	state.Origin, state.Destination = direction.Origin, direction.Destination
+	state.Date = direction.StartsAt.In(app.timezone).Format("2006-01-02")
 	customerID, err := app.findCustomerByTelegram(context.Background(), callback.From.ID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		app.log.Error("find telegram customer", "error", err)
@@ -1862,7 +1867,7 @@ func (app *app) confirmBooking(chatID int64, customerID, tripID string, state bo
 		return
 	}
 	app.clearState(chatID)
-	message := fmt.Sprintf("Бронь создана и удерживается 30 минут.\n\nПассажир: %s\nТелефон: %s\nДата рождения: %s\n%s → %s\n%s\nПассажиров: %d\nСтоимость: %s\nСвободно мест: %d", state.PassengerName, state.PassengerPhone, formatBirthDate(state.PassengerBirthDate), created.Trip.Origin, created.Trip.Destination, created.Trip.StartsAt.In(app.timezone).Format("02.01.2006 в 15:04"), state.PendingSeats, formatMoney(created.Trip.PriceMinor, created.Trip.Currency), created.Available)
+	message := fmt.Sprintf("Бронь № %s создана и удерживается 30 минут.\n\nПассажир: %s\nТелефон: %s\nДата рождения: %s\n%s → %s\n%s\nПассажиров: %d\nСтоимость: %s\nСвободно мест: %d", created.Number, state.PassengerName, state.PassengerPhone, formatBirthDate(state.PassengerBirthDate), created.Trip.Origin, created.Trip.Destination, created.Trip.StartsAt.In(app.timezone).Format("02.01.2006 в 15:04"), state.PendingSeats, formatMoney(created.Trip.PriceMinor, created.Trip.Currency), created.Available)
 	if created.Trip.Currency != "UAH" {
 		app.sendWithMarkup(chatID, message+"\n\nДля этого рейса доступна оплата наличными в валюте рейса.", paymentCashMarkup(created.PaymentID))
 		return
@@ -1882,6 +1887,7 @@ var (
 )
 
 type createdBooking struct {
+	Number    string
 	ID        string
 	PaymentID string
 	Trip      tripOption
@@ -1988,6 +1994,10 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 	`, app.tenantID, bookingID, bookingPrice, trip.Currency, "internal:"+bookingID, payload).Scan(&paymentID); err != nil {
 		return createdBooking{}, err
 	}
+	var number string
+	if err := tx.QueryRow(ctx, "SELECT number FROM record_numbers WHERE tenant_id=$1 AND entity='bookings' AND record_id=$2", app.tenantID, bookingID).Scan(&number); err != nil {
+		return createdBooking{}, err
+	}
 	if err := app.writeBookingActivity(ctx, tx, bookingID, "telegram.booking_created"); err != nil {
 		return createdBooking{}, err
 	}
@@ -1995,7 +2005,7 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 		return createdBooking{}, err
 	}
 	trip.PriceMinor = bookingPrice
-	return createdBooking{ID: bookingID, PaymentID: paymentID, Trip: trip, Available: capacity - occupied - int(state.PendingSeats)}, nil
+	return createdBooking{Number: number, ID: bookingID, PaymentID: paymentID, Trip: trip, Available: capacity - occupied - int(state.PendingSeats)}, nil
 }
 
 type telegramPayment struct {
@@ -2442,11 +2452,11 @@ SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price
 func (app *app) findTripDirection(ctx context.Context, tripID string) (routeDirection, error) {
 	var direction routeDirection
 	err := app.db.QueryRow(ctx, `
-		SELECT t.id::text, t.origin_name, t.destination_name
+		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at
 		FROM trips t
 		WHERE t.id = $1 AND t.tenant_id = $2 AND `+bookingrules.SalePredicate+`
 			AND t.capacity > `+bookingrules.OccupiedSQL+`
-	`, tripID, app.tenantID).Scan(&direction.ID, &direction.Origin, &direction.Destination)
+	`, tripID, app.tenantID).Scan(&direction.ID, &direction.Origin, &direction.Destination, &direction.StartsAt)
 	return direction, err
 }
 

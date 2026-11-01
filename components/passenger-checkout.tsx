@@ -342,7 +342,12 @@ export function PassengerCheckout({
         {trip.origin} → {trip.destination}
       </h2>
       <p className="mt-3 text-sm text-muted-foreground">
-        {travelDate(trip.startsAt, catalog.timezone)}
+        {new Intl.DateTimeFormat("uk-UA", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: catalog.timezone,
+        }).format(new Date(trip.startsAt))}
         {travelDate(trip.startsAt, catalog.timezone) !==
         travelDate(trip.endsAt, catalog.timezone)
           ? ` — ${travelDate(trip.endsAt, catalog.timezone)}`
@@ -774,7 +779,32 @@ export function PassengerCheckout({
           </label>
         </div>
       ) : confirmation ? (
-        <div>
+        <div data-booking-receipt>
+          <div
+            className="mb-6 flex min-w-0 items-center gap-4 border-b-2 border-primary pb-5"
+            data-receipt-brand
+          >
+            {catalog.logoUrl || slug === "vivat-bus" ? (
+              <Image
+                src={catalog.logoUrl || "/brand/vivat-bus.png"}
+                width={56}
+                height={56}
+                unoptimized
+                alt=""
+                className="size-14 shrink-0 rounded-xl object-contain"
+              />
+            ) : (
+              <Ticket className="size-10 shrink-0 text-primary" />
+            )}
+            <div className="min-w-0">
+              <p className="text-xl font-bold [overflow-wrap:anywhere]">
+                {catalog.name}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Підтвердження бронювання
+              </p>
+            </div>
+          </div>
           <div role="status">
             {paymentUnavailable ? (
               <CircleAlert className="mb-4 size-10 text-destructive" />
@@ -799,7 +829,7 @@ export function PassengerCheckout({
                 ? "Час оплати минув або бронювання скасоване. Не переказуйте гроші за цими реквізитами — оберіть рейс знову."
                 : canPay
                   ? "Місця утримуються 30 хвилин. Сплатіть точну суму з указаним призначенням — підтвердження з’явиться автоматично."
-                  : "Збережіть ID бронювання та покажіть його під час посадки."}
+                  : "Збережіть номер бронювання та покажіть його під час посадки."}
             </p>
           </div>
           {paymentCheckError ? (
@@ -945,13 +975,13 @@ export function PassengerCheckout({
               </div>
             </section>
           ) : null}
-          <div className="mt-6 rounded-xl border border-border bg-background p-4">
-            <p className="text-sm font-medium">ID бронювання</p>
+          <div className="mt-6 border-y border-border py-4">
+            <p className="text-sm font-medium">Номер бронювання</p>
             <p
               data-booking-reference
-              className="mt-2 font-mono text-base font-semibold break-all text-primary select-all"
+              className="mt-2 text-2xl font-bold tracking-wide break-words text-primary select-all"
             >
-              {confirmation.reference}
+              {confirmation.recordNumber || confirmation.reference}
             </p>
             <Button
               type="button"
@@ -959,17 +989,19 @@ export function PassengerCheckout({
               className="mt-2 h-11 px-2"
               onClick={() =>
                 void navigator.clipboard
-                  .writeText(confirmation.reference)
+                  .writeText(
+                    confirmation.recordNumber || confirmation.reference
+                  )
                   .then(() => setCopied(true))
                   .catch(() =>
                     setError(
-                      "Не вдалося скопіювати. Виділіть ID і скопіюйте вручну."
+                      "Не вдалося скопіювати. Виділіть номер і скопіюйте вручну."
                     )
                   )
               }
             >
               <Copy />
-              {copied ? "Скопійовано" : "Копіювати ID"}
+              {copied ? "Скопійовано" : "Копіювати номер"}
             </Button>
           </div>
           {passengers.some(

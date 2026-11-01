@@ -3,7 +3,7 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { RoutePlacePicker } from "@/components/route-place-picker"
-import { MapPointTarget } from "@/components/map-point-target"
+import { RouteDistanceField } from "@/components/route-distance-field"
 import { Button } from "@/components/ui/button"
 import type {
   RoadPoint,
@@ -32,7 +32,6 @@ export function RouteNavigationDraft({
   disabled?: boolean
   disabledReason?: string
 }) {
-  const [target, setTarget] = React.useState<"start" | "end">("start")
   const [error, setError] = React.useState<string | null>(null)
   const [retry, setRetry] = React.useState(0)
   const latest = React.useRef({ value, onChange, onBusyChange })
@@ -120,24 +119,18 @@ export function RouteNavigationDraft({
             point={value[key]}
             disabled={disabled}
             disabledReason={disabledReason}
-            onOpen={() => setTarget(key)}
             onChoose={(point, label) => choose(key, point, label)}
           />
         ))}
       </div>
-      <MapPointTarget
-        value={target}
-        onValueChange={setTarget}
-        disabled={disabled}
-        disabledReason={disabledReason}
+      <RouteDistanceField
+        meters={value.distanceMeters}
+        pending={
+          !!value.start && !!value.end && !value.coordinates?.length && !error
+        }
       />
       <div className="isolate overflow-hidden rounded-xl border">
-        <RoadMap
-          navigation={value}
-          onChoose={(point) => {
-            if (!disabled) choose(target, point, "Точка на карте")
-          }}
-        />
+        <RoadMap navigation={value} />
       </div>
       {error ? (
         <div

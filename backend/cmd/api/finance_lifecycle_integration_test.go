@@ -127,6 +127,9 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	call(driver, "POST", company+"/driver/checkin", check, 409)
 	call(other, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "boarded"}, 404)
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "boarded"}, 200)
+	if got := row(`SELECT status FROM trips WHERE id=$1`, trip); got != "boarding" {
+		t.Fatalf("first arrival must start boarding: %s", got)
+	}
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: absentBooking, PassengerIndex: &zeroIndex, Boarding: "absent"}, 200)
 	for i := 0; i < 2; i++ {
 		call(driver, "POST", company+"/driver/checkin", check, 200)
@@ -163,7 +166,13 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 
 	call(driver, "POST", company+"/driver/cash-received", confirmDriverCashReceivedRequest{TripID: trip}, 409)
 	call(other, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 404)
+	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 409)
+	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "absent", ExpectedBoarding: "waiting"}, 409)
+	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &secondIndex, Boarding: "absent", ExpectedBoarding: "waiting"}, 200)
 	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 200)
+	// A late passenger can still be checked in after the driver has departed.
+	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &secondIndex, Boarding: "boarded"}, 200)
+	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &secondIndex, Boarding: "waiting"}, 200)
 	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "completed"}, 409)
 	call(other, "POST", company+"/driver/cash-received", confirmDriverCashReceivedRequest{TripID: trip}, 409)
 	var bookingList struct{ Items []bookingListItem }
@@ -195,6 +204,9 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 		}
 	}
 	detailMoney := call(dev, "GET", company+"/entity-details/bookings/"+passengerBooking, nil, 200)
+	if got := row(`SELECT status FROM bookings WHERE id=$1`, passengerBooking); got != "confirmed" {
+		t.Fatalf("fully received cash must confirm booking, not complete it: %s", got)
+	}
 	if !bytes.Contains(detailMoney, []byte(`"cash_received_minor":200000`)) || !bytes.Contains(detailMoney, []byte(`"boarding":{`)) || !bytes.Contains(detailMoney, []byte(`"payment_status":"paid"`)) || !bytes.Contains(detailMoney, []byte(`"payment_method":"cash"`)) {
 		t.Fatalf("dispatcher detail lost driver data: %s", detailMoney)
 	}

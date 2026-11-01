@@ -9,18 +9,12 @@ import type {
 
 export function RouteNavigationMap({
   navigation,
-  onChoose,
 }: {
   navigation: RouteNavigation
-  onChoose: (point: RoadPoint) => void
 }) {
   const container = React.useRef<HTMLDivElement>(null)
   const map = React.useRef<L.Map | null>(null)
   const road = React.useRef<L.LayerGroup | null>(null)
-  const choose = React.useRef(onChoose)
-  React.useLayoutEffect(() => {
-    choose.current = onChoose
-  }, [onChoose])
   React.useEffect(() => {
     if (!container.current) return
     const instance = L.map(container.current, {
@@ -33,9 +27,6 @@ export function RouteNavigationMap({
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.openstreetmap.org/fixthemap" title="Сообщить об ошибке карты" aria-label="Сообщить об ошибке карты">ⓘ</a>',
     }).addTo(instance)
     const layer = L.layerGroup().addTo(instance)
-    instance.on("click", (event: L.LeafletMouseEvent) =>
-      choose.current([event.latlng.lng, event.latlng.lat])
-    )
     map.current = instance
     road.current = layer
     const resize = new ResizeObserver(() => instance.invalidateSize())
@@ -83,7 +74,7 @@ export function RouteNavigationMap({
     <div
       ref={container}
       role="region"
-      aria-label="Выбор точек маршрута на карте"
+      aria-label="Карта дороги маршрута"
       className="h-64 w-full bg-muted sm:h-80"
     />
   )

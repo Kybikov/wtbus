@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import dynamic from "next/dynamic"
-import { MapPointTarget } from "@/components/map-point-target"
+import { RouteDistanceField } from "@/components/route-distance-field"
 import { Button } from "@/components/ui/button"
 import { RoutePlacePicker } from "@/components/route-place-picker"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -46,7 +46,6 @@ export function RouteNavigationEditor({
 function Editor({ routeID, entity = "routes" }: EditorProps) {
   const [navigation, setNavigation] = React.useState<RouteNavigation>(blank)
   const draft = React.useRef<RouteNavigation>(blank)
-  const [target, setTarget] = React.useState<"start" | "end">("start")
   const [loading, setLoading] = React.useState(true)
   const [ready, setReady] = React.useState(false)
   const [pending, setPending] = React.useState(0)
@@ -155,36 +154,17 @@ function Editor({ routeID, entity = "routes" }: EditorProps) {
                 ? "Загружаем места маршрута."
                 : "Не удалось загрузить места. Повторите загрузку."
             }
-            onOpen={() => setTarget(key)}
             onChoose={(point, label) => choose(key, point, label)}
           />
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <MapPointTarget
-          value={target}
-          onValueChange={setTarget}
-          disabled={!ready}
-          disabledReason={
-            loading
-              ? "Загружаем места маршрута."
-              : "Не удалось загрузить места. Повторите загрузку."
-          }
-        />
-        <span className="text-xs text-muted-foreground" aria-live="polite">
-          {pending
-            ? "Строим дорогу…"
-            : navigation.distanceMeters
-              ? `${(navigation.distanceMeters / 1000).toFixed(1)} км`
-              : null}
-        </span>
-      </div>
+      <RouteDistanceField
+        meters={navigation.distanceMeters}
+        pending={pending > 0}
+      />
       {ready ? (
         <div className="isolate overflow-hidden rounded-xl border">
-          <RoadMap
-            navigation={navigation}
-            onChoose={(point) => choose(target, point, "Точка на карте")}
-          />
+          <RoadMap navigation={navigation} />
         </div>
       ) : null}
       {error ? (

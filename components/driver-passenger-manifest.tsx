@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { Check, X, Clock3 } from "lucide-react"
+import SwipeRow from "@/components/react-bits/micro/SwipeRow/SwipeRow"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +20,7 @@ import { sessionFetch } from "@/lib/session-navigation"
 import { realtimeEvent } from "@/lib/realtime"
 import type { CheckoutPassenger } from "@/lib/booking-checkout"
 
-type ManifestBooking = {
+export type ManifestBooking = {
   id: string
   recordNumber: string
   name: string
@@ -64,6 +66,7 @@ function BoardingSelect({
 }) {
   const initial = booking.boarding?.[String(index)] ?? "waiting"
   const [value, setValue] = React.useState(initial)
+  const [editing, setEditing] = React.useState(false)
   const [failure, setFailure] = React.useState("")
   const draft = React.useRef(initial)
   const dirty = React.useRef(false)
@@ -101,34 +104,71 @@ function BoardingSelect({
     setValue(next)
     void autosave.commit({ boarding: next })
   }
+  const options = [
+    { value: "waiting", label: "Ожидаем", icon: Clock3 },
+    { value: "boarded", label: "Пришёл", icon: Check },
+    { value: "absent", label: "Не пришёл", icon: X },
+  ]
+  const current = options.find((option) => option.value === value) ?? options[0]
   return (
-    <div className="min-w-0 space-y-2">
-      <span className="min-w-0 text-sm font-medium break-words">{name}</span>
-      <div
-        role="group"
-        aria-label={`Посадка: ${name}`}
-        className="flex gap-1.5"
+    <div className="min-w-0">
+      <SwipeRow
+        label={"Посадка: " + name}
+        actions={[
+          {
+            id: "absent",
+            label: "Не пришёл",
+            icon: <X className="size-5" />,
+            color: "var(--destructive)",
+            onSelect: () => commit("absent"),
+          },
+        ]}
+        oppositeActions={[
+          {
+            id: "boarded",
+            label: "Пришёл",
+            icon: <Check className="size-5" />,
+            color: "var(--primary)",
+            onSelect: () => commit("boarded"),
+          },
+        ]}
+        height="auto"
+        radius={26}
+        fullSwipe={false}
+        rowColor="var(--card)"
+        textColor="var(--foreground)"
+        surfaceClassName="!block !h-auto !p-0"
+        onSurfaceTap={() => setEditing(true)}
       >
-        {[
-          { value: "waiting", label: "Ожидаем" },
-          { value: "boarded", label: "Пришёл" },
-          { value: "absent", label: "Не пришёл" },
-        ].map((option) => (
-          <Button
-            key={option.value}
-            size="sm"
-            className="h-10 min-w-0 flex-1 px-2 text-xs"
-            variant={value === option.value ? "default" : "outline"}
-            aria-pressed={value === option.value}
-            aria-label={`${option.label}: ${name}`}
-            onClick={() => commit(option.value)}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </div>
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex min-h-16 w-full min-w-0 items-center justify-between gap-3 rounded-[26px] border px-4 py-3 text-left"
+          onClick={() => setEditing(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault()
+              setEditing(true)
+            }
+          }}
+          aria-label={"Посадка: " + name + " · " + current.label}
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-medium [overflow-wrap:anywhere]">
+              {name}
+            </span>
+            <span className="mt-1 block truncate text-xs text-muted-foreground">
+              {booking.recordNumber} · {booking.phone}
+            </span>
+          </span>
+          <Badge variant="secondary" className="shrink-0 gap-1.5">
+            <current.icon className="size-3.5" />
+            {current.label}
+          </Badge>
+        </div>
+      </SwipeRow>
       {failure ? (
-        <div className="col-span-2 text-xs text-destructive" role="alert">
+        <p role="alert" className="mt-2 text-xs text-destructive">
           {failure}
           <Button
             variant="ghost"
@@ -137,8 +177,35 @@ function BoardingSelect({
           >
             Повторить
           </Button>
-        </div>
+        </p>
       ) : null}
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Посадка пассажира</DialogTitle>
+            <DialogDescription>{name}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {options.map((option) => (
+              <Button
+                key={option.value}
+                variant={value === option.value ? "default" : "outline"}
+                aria-pressed={value === option.value}
+                onClick={() => {
+                  commit(option.value)
+                  setEditing(false)
+                }}
+              >
+                <option.icon className="size-4" />
+                {option.label}
+              </Button>
+            ))}
+            <Button nativeButton={false} render={<a href={`tel:${booking.phone}`} />} variant="ghost">
+              Позвонить · {booking.phone}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -277,17 +344,8 @@ export function DriverPassengerManifest({
             return (
               <li
                 key={booking.id}
-                className="min-w-0 py-4 first:pt-0 lg:grid lg:grid-cols-[minmax(0,.8fr)_minmax(18rem,1.4fr)_minmax(12rem,1fr)] lg:items-center lg:gap-6"
+                className="min-w-0 py-3 first:pt-0 lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(12rem,1fr)] lg:items-center lg:gap-6"
               >
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground lg:mb-0 lg:flex-col lg:items-start">
-                  <span>{booking.recordNumber || `${booking.seats} мест`}</span>
-                  <a
-                    href={`tel:${booking.phone}`}
-                    className="py-1 underline underline-offset-4"
-                  >
-                    {booking.phone}
-                  </a>
-                </div>
                 <div className="space-y-2">
                   {Array.from({ length: booking.seats }, (_, index) => {
                     const person = booking.passengers[index]
@@ -308,8 +366,8 @@ export function DriverPassengerManifest({
                     )
                   })}
                 </div>
-                <div>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm lg:mt-0">
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 lg:mt-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
                     <Badge variant="secondary">
                       {booking.paymentMethod === "bank_transfer"
                         ? booking.paymentStatus === "paid"
@@ -330,8 +388,8 @@ export function DriverPassengerManifest({
                   </div>
                   {canReceive ? (
                     <Button
-                      className="mt-3 w-full"
-                      variant="default"
+                      size="sm"
+                      variant="outline"
                       disabled={!hasBoarded}
                       disabledReason="Сначала отметьте пришедшего пассажира."
                       onClick={() => {

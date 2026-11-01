@@ -593,19 +593,6 @@ export function RouteCatalog() {
               onChange={setNavigation}
               onBusyChange={setRoadBusy}
             />
-            <div className="grid gap-2 text-sm font-semibold">
-              <span>Расстояние по дороге</span>
-              <output
-                className="text-sm font-normal text-muted-foreground"
-                aria-live="polite"
-              >
-                {roadBusy
-                  ? "Рассчитываем…"
-                  : navigation.distanceMeters
-                    ? `${(navigation.distanceMeters / 1000).toFixed(2)} км`
-                    : "Выберите отправление и прибытие"}
-              </output>
-            </div>
             {form.tariffMode === "per_km" ? (
               <>
                 <div className="grid gap-3 sm:grid-cols-3 md:col-span-2">

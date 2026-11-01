@@ -113,6 +113,7 @@ export const valueLabels: Record<string, string> = {
   temporarily_unavailable: "Временно недоступный",
   archived: "Архив",
   in_progress: "В пути / в работе",
+  in_progress_delayed: "В пути · задержка",
   awaiting_trip: "Подбор рейса",
   booking_created: "Бронь создана",
   completed: "Завершён",

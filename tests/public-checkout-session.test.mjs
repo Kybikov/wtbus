@@ -10,6 +10,16 @@ function receipt() {
     confirmation: { reference: "87654321-1234-1234-1234-123456789abc", status: "awaiting_payment", seats: 2, priceMinor: 250000, currency: "UAH", payment: { status: "pending", checkoutToken: "a".repeat(43), expiresAt: "2026-10-21T10:30:00Z", merchantName: "QA", iban: "UA599999990000000000000000001", edrpou: "0000000000", bankName: "QA", purpose: "VIVAT-TEST", paymentUrl: "https://qr.bank.gov.ua/test" } },
   }
 }
+
+test("receipt restores the company booking number without changing the internal reference", () => {
+  const value = receipt()
+  value.confirmation.recordNumber = "BK-00042"
+  const saved = restorePublicCheckout(JSON.stringify(value), now)
+  assert.equal(saved.confirmation.recordNumber, "BK-00042")
+  assert.equal(saved.confirmation.reference, value.confirmation.reference)
+  value.confirmation.recordNumber = "bad\nnumber"
+  assert.equal(restorePublicCheckout(JSON.stringify(value), now).confirmation.recordNumber, undefined)
+})
 test("a mobile bank return restores only its scoped receipt, without passenger personal data", () => {
   const value = receipt()
   value.confirmation.passengers = [{ firstName: "Private", birthDate: "1990-01-01" }]
