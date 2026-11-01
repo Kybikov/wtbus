@@ -1,6 +1,7 @@
 "use client"
 import * as React from "react"
 import { mobileViewportQuery } from "@/lib/mobile-viewport"
+import { useAppViewport } from "@/hooks/use-app-viewport"
 import { toast } from "sonner"
 import { usePathname } from "next/navigation"
 import { MobileDock, type MobileDockProps } from "@/components/mobile-dock"
@@ -100,6 +101,7 @@ export function MobileNavigationProvider({
     mobileNavigation(page.role).some((item) =>
       isMobileDestinationActive(pathname, item.href)
     )
+  const viewport = useAppViewport(Boolean(visible))
   return (
     <NavigationContext.Provider value={controls}>
       <MobileToolsContext.Provider value={toolsHost}>
@@ -108,6 +110,7 @@ export function MobileNavigationProvider({
       {visible && page ? (
         <>
           <MobileDock
+            viewport={viewport}
             key={page.role}
             role={page.role}
             menuOpen={menuOpen}

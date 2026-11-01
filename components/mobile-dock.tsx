@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { mobileViewportQuery } from "@/lib/mobile-viewport"
+import { mobileViewportQuery, type MobileViewport } from "@/lib/mobile-viewport"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { motion, useReducedMotion } from "motion/react"
@@ -112,7 +112,9 @@ export function MobileDock({
   dockHrefs,
   onCreate,
   createDisabled,
+  viewport,
 }: MobileDockProps & {
+  viewport: MobileViewport
   menuOpen: boolean
   onOpenMenu: (trigger: HTMLElement) => void
 }) {
@@ -129,7 +131,6 @@ export function MobileDock({
     ["owner", "admin", "developer", "dispatcher"].includes(role)
   )
   const [results, setResults] = React.useState<SearchState>(emptyResults)
-  const [viewport, setViewport] = React.useState({ bottom: 0, height: 600 })
   const dockElement = React.useRef<HTMLElement>(null)
   React.useEffect(() => {
     const element = dockElement.current
@@ -163,45 +164,6 @@ export function MobileDock({
     return () => mobile.removeEventListener("change", close)
   }, [])
 
-  React.useEffect(() => {
-    const view = window.visualViewport
-    const update = () => {
-      // Pinch zoom must remain under the browser's control.
-      if (view && view.scale !== 1) return
-      const bottom = Math.max(
-        0,
-        window.innerHeight -
-          (view?.height ?? window.innerHeight) -
-          (view?.offsetTop ?? 0)
-      )
-      const height = view?.height ?? window.innerHeight
-      setViewport({ bottom, height })
-      const root = document.documentElement
-      root.style.setProperty(
-        "--mobile-layout-height",
-        window.innerHeight + "px"
-      )
-      root.style.setProperty("--mobile-viewport-height", height + "px")
-      root.style.setProperty(
-        "--mobile-viewport-top",
-        (view?.offsetTop ?? 0) + "px"
-      )
-      root.dataset.mobileKeyboard = String(bottom > 120)
-    }
-    update()
-    view?.addEventListener("resize", update)
-    view?.addEventListener("scroll", update)
-    window.addEventListener("resize", update)
-    return () => {
-      view?.removeEventListener("resize", update)
-      view?.removeEventListener("scroll", update)
-      window.removeEventListener("resize", update)
-      document.documentElement.style.removeProperty("--mobile-viewport-height")
-      document.documentElement.style.removeProperty("--mobile-layout-height")
-      document.documentElement.style.removeProperty("--mobile-viewport-top")
-      delete document.documentElement.dataset.mobileKeyboard
-    }
-  }, [])
   React.useEffect(() => {
     const value = query.trim()
     if (!open || value.length < 2 || role === "driver" || role === "accountant")
@@ -268,7 +230,7 @@ export function MobileDock({
     changeOpen(false)
     router.push(href)
   }
-  const keyboardOpen = viewport.bottom > 120
+  const keyboardOpen = viewport.keyboard
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
@@ -364,7 +326,7 @@ export function MobileDock({
         finalFocus={searchTrigger}
         className="mobile-dock-search top-auto! right-4! left-4! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0 rounded-none! bg-transparent! p-0! shadow-none! ring-0! md:hidden"
         style={{
-          bottom: `calc(${viewport.bottom}px + max(16px, env(safe-area-inset-bottom)))`,
+          bottom: `calc(${viewport.bottom}px + max(12px, var(--mobile-safe-bottom, env(safe-area-inset-bottom))))`,
           maxHeight: Math.max(140, viewport.height - 32),
         }}
       >

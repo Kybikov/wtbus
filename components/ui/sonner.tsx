@@ -15,7 +15,7 @@ export function Toaster(props: ToasterProps) {
       offset={
         mobile
           ? {
-              top: "calc(env(safe-area-inset-top) + 4.5rem)",
+              top: "calc(var(--mobile-safe-top) + 4.5rem)",
               left: "0.75rem",
               right: "0.75rem",
             }
@@ -25,7 +25,7 @@ export function Toaster(props: ToasterProps) {
       toastOptions={{ closeButtonAriaLabel: "Закрыть уведомление" }}
       visibleToasts={mobile ? 1 : 3}
       mobileOffset={{
-        top: "calc(env(safe-area-inset-top) + 4.5rem)",
+        top: "calc(var(--mobile-safe-top) + 4.5rem)",
         left: "0.75rem",
         right: "0.75rem",
       }}

@@ -1294,7 +1294,7 @@ func (app *application) createTeamMember(w http.ResponseWriter, r *http.Request)
 		}
 		if driverErr != nil {
 			if errors.Is(driverErr, pgx.ErrNoRows) {
-				writeJSON(w, http.StatusConflict, map[string]string{"error": "Профиль водителя уже связан с другим сотрудником или недоступен."})
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "Этот водитель уже связан с другим сотрудником или недоступен."})
 				return
 			}
 			var pgError *pgconn.PgError
@@ -2498,7 +2498,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 		var err error
 		driverID, err = app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "driver profile is not connected to this account"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 			return
 		}
 		if err != nil {
@@ -3382,7 +3382,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		var err error
 		driverID, err = app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "driver profile is not connected to this account"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 			return
 		}
 		if err != nil {
@@ -5797,7 +5797,7 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 		var err error
 		driverID, err = app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "driver profile is not connected to this account"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 			return
 		}
 		if err != nil {
@@ -6459,7 +6459,7 @@ func (app *application) driverCashSummary(w http.ResponseWriter, r *http.Request
 	}
 	driverID, err := app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "driver profile is not connected to this account"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 		return
 	}
 	if err != nil {
@@ -6523,7 +6523,7 @@ func (app *application) confirmDriverCashReceived(w http.ResponseWriter, r *http
 	}
 	driverID, err := app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "driver profile is not connected to this account"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 		return
 	}
 	if err != nil {

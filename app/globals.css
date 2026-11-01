@@ -309,9 +309,13 @@ body:has([data-public-booking]) {
   min-height: 0;
 }
 :root {
-  --mobile-dock-bottom-gap: max(
-    8px,
-    calc(env(safe-area-inset-bottom, 0px) - 16px)
+  --mobile-root-height: 100dvh;
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-dock-bottom-gap: 8px;
+  --mobile-dock-control-bottom: max(
+    0.375rem,
+    calc(var(--mobile-safe-bottom) - var(--mobile-dock-bottom-gap))
   );
 }
 .mobile-dock {
@@ -325,6 +329,22 @@ body:has([data-public-booking]) {
   min-width: 0;
   flex: 1;
   padding: 0;
+}
+.mobile-dock > nav {
+  padding-bottom: var(--mobile-dock-control-bottom);
+}
+
+/* Installed WebKit can report dvh/innerHeight one status-bar inset too short.
+   Large viewport units are appropriate only without browser toolbars. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone), (display-mode: fullscreen) {
+    :root {
+      --mobile-root-height: 100lvh;
+    }
+  }
+}
+:root[data-ios-standalone="true"] {
+  --mobile-root-height: 100lvh;
 }
 .mobile-dock-search [data-slot="input-group"] {
   height: 44px !important;
@@ -346,15 +366,15 @@ body:has([data-public-booking]) {
     right: max(16px, env(safe-area-inset-right)) !important;
   }
   [data-sidebar="sidebar"][data-mobile="true"] {
-    padding-top: env(safe-area-inset-top);
+    padding-top: var(--mobile-safe-top);
     padding-left: env(safe-area-inset-left);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: var(--mobile-safe-bottom);
   }
   [data-sidebar="sidebar"][data-mobile="true"] [data-slot="sidebar-header"] {
     padding-right: 64px;
   }
   [data-sidebar="sidebar"][data-mobile="true"] > button {
-    top: calc(1rem + env(safe-area-inset-top));
+    top: calc(1rem + var(--mobile-safe-top));
     right: 12px;
   }
   .mobile-account-trigger {
@@ -369,28 +389,33 @@ body:has([data-public-booking]) {
     top: var(--mobile-viewport-top, 0px) !important;
   }
   .mobile-view-changes {
-    bottom: calc(6.5rem + env(safe-area-inset-bottom));
+    bottom: calc(6.5rem + var(--mobile-safe-bottom));
   }
   html[data-mobile-keyboard="true"] .mobile-collection-footer {
     display: none;
   }
+  html:has(.app-shell-frame),
   body:has(.app-shell-frame) {
+    height: var(--mobile-layout-height, var(--mobile-root-height)) !important;
+    min-height: 0;
+    background: var(--background);
     overflow: hidden;
-    position: fixed;
-    inset: 0;
+    overscroll-behavior: none;
+  }
+  body:has(.app-shell-frame) {
+    position: relative;
     width: 100%;
-    height: 100%;
   }
   .app-shell-frame {
-    height: var(--mobile-layout-height, 100dvh);
+    height: var(--mobile-layout-height, var(--mobile-root-height));
     gap: 0;
-    padding: calc(0.5rem + env(safe-area-inset-top)) 0 0;
+    padding: calc(0.5rem + var(--mobile-safe-top)) 0 0;
   }
   .app-shell-frame::before {
     content: "";
     position: fixed;
     inset: 0 0 auto;
-    height: env(safe-area-inset-top);
+    height: var(--mobile-safe-top);
     z-index: 45;
     pointer-events: none;
     background: color-mix(in srgb, var(--background) 65%, transparent);
@@ -411,7 +436,7 @@ body:has([data-public-booking]) {
   .workspace-content,
   :root[data-density="compact"] .workspace-content {
     padding: 16px max(16px, env(safe-area-inset-right))
-      calc(104px + env(safe-area-inset-bottom))
+      calc(104px + var(--mobile-safe-bottom))
       max(16px, env(safe-area-inset-left));
   }
   .app-workspace:has(.mobile-collection-footer) .workspace-content {
@@ -419,7 +444,7 @@ body:has([data-public-booking]) {
   }
   .mobile-collection-footer {
     padding: 4px max(16px, env(safe-area-inset-right))
-      calc(92px + env(safe-area-inset-bottom))
+      calc(92px + var(--mobile-safe-bottom))
       max(16px, env(safe-area-inset-left));
   }
   button,
@@ -483,16 +508,15 @@ body:has([data-public-booking]) {
     top: calc(
       var(--mobile-viewport-top, 0px) +
         (
-          max(12px, env(safe-area-inset-top)) +
+          max(12px, var(--mobile-safe-top)) +
             var(--mobile-viewport-height, 100dvh) -
-            max(12px, env(safe-area-inset-bottom))
+            max(12px, var(--mobile-safe-bottom))
         ) /
         2
     );
     max-height: calc(
       var(--mobile-viewport-height, 100dvh) -
-        max(12px, env(safe-area-inset-top)) -
-        max(12px, env(safe-area-inset-bottom))
+        max(12px, var(--mobile-safe-top)) - max(12px, var(--mobile-safe-bottom))
     );
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -781,7 +805,9 @@ body:has([data-disabled-action-hint][data-open])
   }
   .mobile-create-menu {
     left: calc(max(8px, env(safe-area-inset-left)) + 0.375rem + 1px);
-    bottom: calc(var(--mobile-dock-bottom-gap) + 0.375rem + 1px);
+    bottom: calc(
+      var(--mobile-dock-bottom-gap) + var(--mobile-dock-control-bottom) + 1px
+    );
   }
   .mobile-create-actions {
     scrollbar-width: none;
@@ -828,5 +854,22 @@ body:has([data-disabled-action-hint][data-open])
   }
   .app-workspace:has(.mobile-collection-footer) .workspace-content {
     padding-bottom: 16px;
+  }
+  /* Portal layers must use the same full-height document as the shell, rather
+     than WebKit's shortened fixed-position containing block in installed PWAs. */
+  :root[data-ios-standalone="true"] .mobile-dock,
+  :root[data-ios-standalone="true"] .mobile-create-menu,
+  :root[data-ios-standalone="true"] .app-shell-frame::before,
+  :root[data-ios-standalone="true"] [data-slot="dialog-overlay"],
+  :root[data-ios-standalone="true"] [data-slot="sheet-overlay"],
+  :root[data-ios-standalone="true"] [data-slot="dialog-content"],
+  :root[data-ios-standalone="true"] [data-slot="sheet-content"] {
+    position: absolute;
+  }
+  [data-slot="sheet-content"][data-side="left"],
+  [data-slot="sheet-content"][data-side="right"] {
+    top: var(--mobile-viewport-top, 0px);
+    bottom: auto;
+    height: var(--mobile-viewport-height, var(--mobile-root-height));
   }
 }

@@ -479,12 +479,12 @@ export function AccountingWorkspace({
           <UserRound className="size-9 text-muted-foreground" />
           <div className="max-w-sm space-y-2">
             <h2 className="text-xl font-semibold">
-              Подключите профиль водителя
+              Доступ к рейсам водителя
             </h2>
             <p className="text-sm text-muted-foreground">
               {manageDriverAccess
-                ? "Свяжите водителя с аккаунтом в команде. Здесь появятся его наличные и зарплата."
-                : "Попросите диспетчера связать ваш аккаунт с профилем водителя."}
+                ? "Добавьте сотрудника с ролью «Водитель» в команде. Здесь будут его наличные и зарплата."
+                : "Попросите администратора настроить доступ к вашим рейсам."}
             </p>
           </div>
           {manageDriverAccess ? (

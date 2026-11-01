@@ -46,7 +46,7 @@ func companyCleanupSets() []deletionSet {
 		{"vehicles", "fleet", "Автомобили"},
 		{"routes", "routes", "Маршруты"},
 		{"customers", "customers", "Клиенты и пассажиры"},
-		{"drivers", "drivers", "Профили водителей"},
+		{"drivers", "drivers", "Данные водителей"},
 		{"telegram_notification_outbox", "", "Очередь сообщений по старым записям"},
 		{"push_jobs", "", "Очередь push-уведомлений"},
 		{"app_notifications", "", "Уведомления по старым записям"},

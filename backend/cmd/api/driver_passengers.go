@@ -37,7 +37,7 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 	}
 	driverID, err := app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, 403, map[string]string{"error": "driver profile is not connected"})
+		writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 		return
 	}
 	if err != nil {

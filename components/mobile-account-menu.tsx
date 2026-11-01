@@ -105,7 +105,7 @@ export function MobileAccountMenu({
         finalFocus={trigger}
         className="mobile-account-menu w-[min(92vw,23rem)]! max-w-none! gap-0 overflow-hidden rounded-l-3xl border-border bg-card motion-reduce:transition-none"
       >
-        <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 bg-card/80 px-3 pt-[calc(.75rem+env(safe-area-inset-top))] pb-3 backdrop-blur-xl">
+        <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 bg-card/80 px-3 pt-[calc(.75rem+var(--mobile-safe-top))] pb-3 backdrop-blur-xl">
           <SheetTitle className="sr-only">Профиль и разделы</SheetTitle>
           <div className="flex min-w-0 items-center gap-2 pr-28">
             <span
@@ -128,7 +128,7 @@ export function MobileAccountMenu({
               </SheetDescription>
             </div>
           </div>
-          <span className="absolute top-[calc(.5rem+env(safe-area-inset-top))] right-14 flex h-9 items-center rounded-md px-1.5 text-[10px] text-muted-foreground">
+          <span className="absolute top-[calc(.5rem+var(--mobile-safe-top))] right-14 flex h-9 items-center rounded-md px-1.5 text-[10px] text-muted-foreground">
             {roleNames[role]}
           </span>
           <SheetClose
@@ -136,7 +136,7 @@ export function MobileAccountMenu({
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-[calc(.5rem+env(safe-area-inset-top))] right-2 size-9 rounded-full"
+                className="absolute top-[calc(.5rem+var(--mobile-safe-top))] right-2 size-9 rounded-full"
                 aria-label="Закрыть правое меню"
               />
             }
@@ -289,7 +289,7 @@ export function MobileAccountMenu({
             )}
           </nav>
         </div>
-        <div className="shrink-0 border-t border-border/70 bg-card px-3 pt-2 pb-[max(.75rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 border-t border-border/70 bg-card px-3 pt-2 pb-[max(.75rem,var(--mobile-safe-bottom))]">
           <MobileDockSettings
             role={role}
             hrefs={dockHrefs}

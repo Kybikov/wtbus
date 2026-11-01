@@ -128,7 +128,7 @@ func (app *application) accountingSnapshot(w http.ResponseWriter, r *http.Reques
 		var err error
 		driverID, err = app.ownFinanceDriver(r, tenant.ID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, 404, map[string]string{"code": "driver_not_linked", "error": "Профиль водителя не подключён к вашему аккаунту."})
+			writeJSON(w, 404, map[string]string{"code": "driver_not_linked", "error": "Доступ к рейсам водителя ещё не настроен. Обратитесь к администратору."})
 			return
 		}
 		if err != nil {
@@ -247,7 +247,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 	if own {
 		id, err := app.ownFinanceDriver(r, tenant.ID)
 		if err != nil {
-			writeJSON(w, 403, map[string]string{"error": "Профиль водителя не подключён."})
+			writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
 			return
 		}
 		input.DriverID = id
