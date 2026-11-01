@@ -7,7 +7,6 @@ import {
   Activity,
   ArrowUpRight,
   CalendarDays,
-  CircleDollarSign,
   LayoutDashboard,
   RefreshCw,
   Route,
@@ -280,18 +279,6 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
               </Link>
             ))}
           </nav>
-          {financial && (
-            <div className="mt-3 border-t pt-2">
-              <Link
-                href="/finance"
-                className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm text-muted-foreground hover:bg-accent"
-              >
-                <CircleDollarSign className="size-4" />
-                Управление финансами
-                <ArrowUpRight className="ml-auto size-3.5" />
-              </Link>
-            </div>
-          )}
         </aside>
         <div className="min-w-0 space-y-4">
           <div className="workspace-panel hidden rounded-2xl border bg-card p-3 md:block xl:hidden">

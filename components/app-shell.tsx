@@ -391,24 +391,20 @@ function VivatSidebar({
           </SidebarGroup>
         </ScrollArea>
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Страница бронирования"
-              render={
-                <Link
-                  href={`/book/${encodeURIComponent(brand.tenantSlug)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              }
-            >
-              <HugeiconsIcon icon={Ticket01Icon} strokeWidth={1.8} />
-              <span>Страница бронирования</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarFooter className="px-4 pb-4">
+        <Link
+          href={`/book/${encodeURIComponent(brand.tenantSlug)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Страница бронирования"
+          aria-label="Страница бронирования"
+          className="w-fit text-xs text-muted-foreground underline-offset-4 group-data-[collapsible=icon]:text-center hover:text-foreground hover:underline"
+        >
+          <span className="group-data-[collapsible=icon]:hidden">
+            Страница бронирования{" "}
+          </span>
+          ↗
+        </Link>
       </SidebarFooter>
     </Sidebar>
   )

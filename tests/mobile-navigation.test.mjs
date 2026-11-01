@@ -30,7 +30,7 @@ test("saved dock shortcuts retain order and reject duplicates, invalid entries a
       "/bookings",
       "/trips",
     ]).map((item) => item.href),
-    ["/customers", "/routes", "/bookings"]
+    ["/customers", "/routes", "/bookings", "/trips"]
   )
   assert.deepEqual(
     resolveMobileDock("driver", ["/finance", "/customers"]).map(
@@ -43,6 +43,11 @@ test("saved dock shortcuts retain order and reject duplicates, invalid entries a
       (item) => item.href
     ),
     ["/team", "/driver"]
+  )
+  const allPages = mobileNavigation("developer").map((item) => item.href)
+  assert.deepEqual(
+    resolveMobileDock("developer", allPages).map((item) => item.href),
+    allPages
   )
   for (const malformed of [null, {}, "not-an-array", []]) {
     assert.deepEqual(

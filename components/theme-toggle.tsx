@@ -8,7 +8,13 @@ import { DeliverySwitch } from "@/components/ui/delivery-switch"
 
 const subscribe = () => () => {}
 
-export function ThemeToggle({ menu = false }: { menu?: boolean }) {
+export function ThemeToggle({
+  menu = false,
+  compact = false,
+}: {
+  menu?: boolean
+  compact?: boolean
+}) {
   const { resolvedTheme, setTheme } = useTheme()
   const mounted = useSyncExternalStore(
     subscribe,
@@ -16,6 +22,14 @@ export function ThemeToggle({ menu = false }: { menu?: boolean }) {
     () => false
   )
   const dark = mounted && resolvedTheme === "dark"
+  if (compact)
+    return (
+      <DeliverySwitch
+        label="Тёмная тема"
+        checked={dark}
+        onChange={(checked) => setTheme(checked ? "dark" : "light")}
+      />
+    )
   const content = (
     <>
       {dark ? <Moon className="size-4" /> : <Sun className="size-4" />}

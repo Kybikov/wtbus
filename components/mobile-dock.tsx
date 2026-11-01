@@ -121,6 +121,22 @@ export function MobileDock({
   const [query, setQuery] = React.useState("")
   const [results, setResults] = React.useState<SearchState>(emptyResults)
   const [viewport, setViewport] = React.useState({ bottom: 0, height: 600 })
+  const dockElement = React.useRef<HTMLElement>(null)
+  React.useEffect(() => {
+    const element = dockElement.current
+    if (!element) return
+    const observer = new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        "--mobile-dock-height",
+        element.offsetHeight + "px"
+      )
+    })
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+      document.documentElement.style.removeProperty("--mobile-dock-height")
+    }
+  }, [])
   const searchTrigger = React.useRef<HTMLButtonElement>(null)
   const destinations = mobileNavigation(role)
   const matches = destinations.filter((item) =>
@@ -250,9 +266,10 @@ export function MobileDock({
       >
         <motion.nav
           aria-label="Основная навигация"
+          ref={dockElement}
           layout={!reduceMotion}
           layoutId={`${layoutId}-dock-frame`}
-          className="pointer-events-auto flex h-16 w-full max-w-lg min-w-0 items-center gap-1 rounded-2xl border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
+          className="pointer-events-auto flex min-h-16 w-full min-w-0 items-center gap-1 rounded-2xl border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
         >
           <MobileCreateMenu
             role={role}
@@ -265,46 +282,49 @@ export function MobileDock({
             orientation="vertical"
             className="mx-1 h-7 data-vertical:self-center"
           />
-          {resolveMobileDock(role, dockHrefs).map((item) => {
-            const active = isMobileDestinationActive(pathname, item.href)
-            const Icon = icons[item.icon]
-            return (
-              <Button
-                key={item.href}
-                nativeButton={false}
-                render={<Link href={item.href} />}
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                variant="ghost"
-                className={cn(
-                  "relative h-full min-w-0 flex-1 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none",
-                  active &&
-                    "text-primary-foreground hover:text-primary-foreground"
-                )}
-              >
-                {active && (
-                  <motion.span
-                    aria-hidden
-                    layoutId={layoutId + "-active"}
-                    transition={
-                      reduceMotion
-                        ? { duration: 0 }
-                        : { type: "spring", bounce: 0.15, duration: 0.45 }
-                    }
-                    className="absolute inset-0 rounded-xl bg-primary"
-                  />
-                )}
-                <Icon className="relative size-5" />
-                <span className="relative">
-                  {item.href === "/bookings"
-                    ? "Брони"
-                    : item.href === "/notifications"
-                      ? "События"
-                      : item.label}
-                </span>
-              </Button>
-            )
-          })}
+          <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(3rem,1fr))] gap-1">
+            {resolveMobileDock(role, dockHrefs).map((item) => {
+              const active =
+                !createOpen && isMobileDestinationActive(pathname, item.href)
+              const Icon = icons[item.icon]
+              return (
+                <Button
+                  key={item.href}
+                  nativeButton={false}
+                  render={<Link href={item.href} />}
+                  aria-label={item.label}
+                  aria-current={active ? "page" : undefined}
+                  variant="ghost"
+                  className={cn(
+                    "relative h-12 w-full min-w-0 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none",
+                    active &&
+                      "text-primary-foreground hover:text-primary-foreground"
+                  )}
+                >
+                  {active && (
+                    <motion.span
+                      aria-hidden
+                      layoutId={layoutId + "-active"}
+                      transition={
+                        reduceMotion
+                          ? { duration: 0 }
+                          : { type: "spring", bounce: 0.15, duration: 0.45 }
+                      }
+                      className="absolute inset-0 rounded-xl bg-primary"
+                    />
+                  )}
+                  <Icon className="relative size-5" />
+                  <span className="relative block max-w-full truncate">
+                    {item.href === "/bookings"
+                      ? "Брони"
+                      : item.href === "/notifications"
+                        ? "События"
+                        : item.label}
+                  </span>
+                </Button>
+              )
+            })}
+          </div>
           <Separator
             orientation="vertical"
             className="mx-1 h-7 data-vertical:self-center"
@@ -316,7 +336,7 @@ export function MobileDock({
                   ref={searchTrigger}
                   aria-label="Глобальный поиск"
                   variant="ghost"
-                  className="size-12 shrink-0 rounded-full"
+                  className="size-12 shrink-0 self-end rounded-full"
                 />
               }
             >

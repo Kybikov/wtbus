@@ -74,13 +74,11 @@ export function resolveMobileDock(role: StaffRole, value: unknown) {
   const allowed = mobileNavigation(role)
   if (!Array.isArray(value)) return mobileDockNavigation(role)
   const seen = new Set<string>()
-  const selected = value
-    .flatMap((href) => {
-      if (typeof href !== "string" || seen.has(href)) return []
-      seen.add(href)
-      const page = allowed.find((item) => item.href === href)
-      return page ? [page] : []
-    })
-    .slice(0, 3)
+  const selected = value.flatMap((href) => {
+    if (typeof href !== "string" || seen.has(href)) return []
+    seen.add(href)
+    const page = allowed.find((item) => item.href === href)
+    return page ? [page] : []
+  })
   return selected.length ? selected : mobileDockNavigation(role)
 }

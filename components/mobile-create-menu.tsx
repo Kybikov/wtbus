@@ -1,20 +1,36 @@
 "use client"
-
 import { motion, useReducedMotion } from "motion/react"
-import { Plus } from "lucide-react"
+import {
+  Plus,
+  UserRound,
+  Ticket,
+  CalendarDays,
+  Route,
+  Car,
+  Users,
+} from "lucide-react"
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
-  DialogContent,
   DialogTitle,
   DialogDescription,
   DialogTrigger,
+  DialogPortal,
+  DialogOverlay,
+  DialogClose,
 } from "@/components/ui/dialog"
 import { createTargets, type StaffRole } from "@/lib/admin-actions"
-
-// React Bits Pro Mobile 2 Sorbet: spring action stack and rotating add button.
-// Shared Dialog provides focus trapping, Escape, outside dismissal and blur.
+const icons = {
+  "/customers": UserRound,
+  "/bookings": Ticket,
+  "/trips": CalendarDays,
+  "/routes": Route,
+  "/fleet": Car,
+  "/team": Users,
+}
+// Mobile 2 Sorbet: independent pills above the add button, without a menu card.
 export function MobileCreateMenu({
   role,
   onCreate,
@@ -31,6 +47,9 @@ export function MobileCreateMenu({
   const router = useRouter(),
     pathname = usePathname()
   const reduce = useReducedMotion()
+  const spring = reduce
+    ? { duration: 0 }
+    : { type: "spring" as const, bounce: 0, duration: 0.35 }
   const targets = createTargets.filter((target) => target.roles.includes(role))
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,76 +57,83 @@ export function MobileCreateMenu({
         render={
           <Button
             size="icon"
-            variant="default"
+            variant="ghost"
             aria-label="Создать"
             disabled={!targets.length}
             disabledReason="Ваша роль не позволяет создавать записи."
-            className="size-12 shrink-0 rounded-full"
+            className="size-12 shrink-0 self-end rounded-full border-0 bg-transparent shadow-none"
           />
         }
       >
-        <motion.span
-          animate={{ rotate: open ? 45 : 0 }}
-          transition={
-            reduce
-              ? { duration: 0 }
-              : { type: "spring", bounce: 0, duration: 0.35 }
-          }
-        >
-          <Plus className="size-6" />
-        </motion.span>
+        <Plus className="size-6" />
       </DialogTrigger>
-      <DialogContent
-        showCloseButton={false}
-        className="mobile-create-menu gap-3 rounded-3xl! p-4!"
-      >
-        <DialogTitle className="text-base font-semibold">Создать</DialogTitle>
-        <DialogDescription className="sr-only">
-          Выберите запись для создания.
-        </DialogDescription>
-        <motion.ul
-          initial="closed"
-          animate="open"
-          variants={{
-            closed: {},
-            open: { transition: { staggerChildren: reduce ? 0 : 0.045 } },
-          }}
-          className="space-y-2"
-        >
-          {targets.map((target) => (
-            <motion.li
-              key={target.href}
-              variants={{
-                closed: { opacity: 0, y: reduce ? 0 : 12 },
-                open: { opacity: 1, y: 0 },
-              }}
-              transition={
-                reduce
-                  ? { duration: 0 }
-                  : { type: "spring", bounce: 0, duration: 0.35 }
-              }
-            >
+      <DialogPortal>
+        <DialogOverlay
+          forceRender
+          className="bg-black/65 supports-backdrop-filter:backdrop-blur-sm"
+        />
+        <DialogPrimitive.Popup className="mobile-create-menu fixed z-50 flex w-fit max-w-[calc(100vw-2rem)] flex-col items-start gap-3 outline-none">
+          <DialogTitle className="sr-only">Создать</DialogTitle>
+          <DialogDescription className="sr-only">
+            Выберите запись для создания.
+          </DialogDescription>
+          <motion.ul
+            initial="closed"
+            animate="open"
+            variants={{
+              closed: {},
+              open: { transition: { staggerChildren: reduce ? 0 : 0.045 } },
+            }}
+            className="flex max-h-[calc(var(--mobile-viewport-height,100dvh)-7rem)] flex-col items-start gap-2 overflow-y-auto py-1"
+          >
+            {targets.map((target) => {
+              const Icon = icons[target.href as keyof typeof icons]
+              return (
+                <motion.li
+                  key={target.href}
+                  variants={{
+                    closed: { opacity: 0, y: reduce ? 0 : 12 },
+                    open: { opacity: 1, y: 0 },
+                  }}
+                  transition={spring}
+                >
+                  <Button
+                    variant="secondary"
+                    className="h-12 w-fit justify-between gap-5 rounded-full border-0 px-5 font-semibold shadow-md"
+                    disabled={target.href === pathname && createDisabled}
+                    disabledReason="Дождитесь загрузки данных для создания записи."
+                    onClick={() => {
+                      onOpenChange(false)
+                      if (target.href === pathname && onCreate) onCreate()
+                      else router.push(target.href + "?create=1")
+                    }}
+                  >
+                    {target.label}
+                    <Icon className="size-5" />
+                  </Button>
+                </motion.li>
+              )
+            })}
+          </motion.ul>
+          <DialogClose
+            render={
               <Button
-                variant="secondary"
-                className="h-12 w-full justify-between rounded-2xl"
-                disabled={target.href === pathname && createDisabled}
-                disabledReason="Дождитесь загрузки данных для создания записи."
-                onClick={() => {
-                  onOpenChange(false)
-                  if (target.href === pathname && onCreate) onCreate()
-                  else router.push(target.href + "?create=1")
-                }}
-              >
-                {target.label}
-                <Plus className="size-4" />
-              </Button>
-            </motion.li>
-          ))}
-        </motion.ul>
-        <Button variant="ghost" onClick={() => onOpenChange(false)}>
-          Закрыть
-        </Button>
-      </DialogContent>
+                aria-label="Закрыть создание"
+                size="icon"
+                className="size-12 shrink-0 rounded-full border-0 shadow-none ring-0"
+              />
+            }
+          >
+            <motion.span
+              initial={{ rotate: 0 }}
+              animate={{ rotate: 45 }}
+              transition={spring}
+            >
+              <Plus className="size-6" />
+            </motion.span>
+          </DialogClose>
+        </DialogPrimitive.Popup>
+      </DialogPortal>
     </Dialog>
   )
 }

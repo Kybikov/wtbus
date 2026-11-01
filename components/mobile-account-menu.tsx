@@ -9,11 +9,10 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Bell,
   ChevronRight,
-  ExternalLink,
   LogOut,
   Settings,
-  Ticket,
   User,
+  Smartphone,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -89,15 +88,6 @@ export function MobileAccountMenu({
       setLeaving(false)
     }
   }
-  const personal = [
-    { href: "/profile", label: "Личный профиль", icon: User },
-    {
-      href: "/profile/notifications",
-      label: "Настройки уведомлений",
-      icon: Bell,
-    },
-    { href: "/profile/app", label: "Приложение", icon: Settings },
-  ]
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -107,35 +97,110 @@ export function MobileAccountMenu({
         finalFocus={trigger}
         className="mobile-account-menu w-[min(92vw,23rem)]! max-w-none! gap-0 overflow-hidden rounded-l-3xl border-border bg-card motion-reduce:transition-none"
       >
-        <SheetHeader className="mobile-account-header relative shrink-0 border-b border-border/70 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pr-16 pb-5">
+        <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 px-3 pt-[max(.75rem,env(safe-area-inset-top))] pb-3">
           <SheetTitle className="sr-only">Профиль и разделы</SheetTitle>
-          <div
-            className="mb-3 grid size-12 place-items-center rounded-2xl bg-primary text-lg font-semibold text-primary-foreground"
-            aria-hidden
-          >
-            {account?.initials ?? ""}
+          <div className="flex min-w-0 items-center gap-2 pr-10">
+            <span
+              aria-hidden
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
+            >
+              {account?.initials ?? ""}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <p
+                  title={account?.name}
+                  className="min-w-0 truncate text-sm font-semibold"
+                >
+                  {account?.name || "Ваш профиль"}
+                </p>
+                <span className="shrink-0 rounded-md bg-control px-1.5 py-1 text-[10px] text-muted-foreground">
+                  {roleNames[role]}
+                </span>
+              </div>
+              <SheetDescription className="mt-0.5 truncate text-xs">
+                {account?.company}
+              </SheetDescription>
+            </div>
           </div>
-          <p className="text-lg leading-snug font-semibold break-words">
-            {account?.name || "Ваш профиль"}
-          </p>
-          <SheetDescription className="mt-1 text-sm break-words">
-            {account?.company}
-          </SheetDescription>
-          <span className="mt-2 w-fit rounded-md bg-control px-2 py-1 text-xs text-muted-foreground">
-            {roleNames[role]}
-          </span>
           <SheetClose
             render={
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-[max(1rem,env(safe-area-inset-top))] right-3 size-11 rounded-full"
+                className="absolute top-2 right-2 size-9 rounded-full"
                 aria-label="Закрыть правое меню"
               />
             }
           >
-            <X />
+            <X className="size-4" />
           </SheetClose>
+          <nav
+            aria-label="Действия профиля"
+            className="mt-3 flex items-center justify-between gap-1"
+          >
+            <Button
+              nativeButton={false}
+              render={<Link href="/profile" onClick={close} />}
+              variant="ghost"
+              size="icon"
+              aria-label="Личный профиль"
+              title="Личный профиль"
+            >
+              <User className="size-5" />
+            </Button>
+            <Button
+              nativeButton={false}
+              render={<Link href="/notifications" onClick={close} />}
+              variant="ghost"
+              size="icon"
+              aria-label={`Уведомления${unread ? `: ${unread} непрочитанных` : ""}`}
+              title="Уведомления"
+              className="relative"
+            >
+              <Bell className="size-5" />
+              {unread > 0 && (
+                <span className="absolute top-0 right-0 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+            </Button>
+            {["developer", "owner", "admin", "accountant"].includes(role) && (
+              <Button
+                nativeButton={false}
+                render={<Link href="/settings" onClick={close} />}
+                variant="ghost"
+                size="icon"
+                aria-label="Настройки компании"
+                title="Настройки компании"
+              >
+                <Settings className="size-5" />
+              </Button>
+            )}
+            <Button
+              nativeButton={false}
+              render={<Link href="/profile/app" onClick={close} />}
+              variant="ghost"
+              size="icon"
+              aria-label="Приложение"
+              title="Приложение"
+            >
+              <Smartphone className="size-5" />
+            </Button>
+            <ThemeToggle compact />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Выйти"
+              title="Выйти"
+              disabled={leaving}
+              disabledReason="Выход из аккаунта уже выполняется."
+              onClick={() => void signOut()}
+              className="text-destructive"
+            >
+              <LogOut className="size-5" />
+            </Button>
+          </nav>
         </SheetHeader>
         <div
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
@@ -191,75 +256,20 @@ export function MobileAccountMenu({
                   ))}
               </section>
             )}
-            <div className="border-t border-border/70 pt-3">
-              <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">
-                Личные настройки
-              </p>
-              {personal.map((page) => (
-                <Link
-                  key={page.href}
-                  href={page.href}
-                  onClick={close}
-                  aria-current={pathname === page.href ? "page" : undefined}
-                  className={cn(
-                    "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-control focus-visible:outline-2 focus-visible:outline-ring",
-                    pathname === page.href &&
-                      "bg-control font-semibold text-primary"
-                  )}
-                >
-                  <page.icon className="size-5 shrink-0" />
-                  <span className="min-w-0 flex-1">{page.label}</span>
-                  <ChevronRight className="size-4 text-muted-foreground" />
-                </Link>
-              ))}
-              <Link
-                href="/notifications"
-                onClick={close}
-                className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-control"
-              >
-                <Bell className="size-5" />
-                Уведомления{" "}
-                {unread > 0 && (
-                  <span className="ml-auto rounded-full bg-primary px-2 text-xs text-primary-foreground">
-                    {unread > 99 ? "99+" : unread}
-                  </span>
-                )}
-              </Link>
-            </div>
-            {(role === "developer" ||
-              role === "owner" ||
-              role === "admin" ||
-              role === "accountant") && (
-              <Link
-                href="/settings"
-                onClick={close}
-                className="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm hover:bg-control"
-              >
-                <Settings className="size-5" />
-                Настройки компании
-                <ChevronRight className="ml-auto size-4" />
-              </Link>
-            )}
             <section
               aria-label="Нижняя навигация"
               className="rounded-2xl border border-border p-3"
             >
               <h3 className="text-sm font-semibold">Нижняя навигация</h3>
               <p className="mt-1 mb-2 text-xs text-muted-foreground">
-                {dockHrefs.length >= 3
-                  ? "Выбрано три раздела. Уберите один, чтобы добавить другой."
-                  : dockHrefs.length === 1
-                    ? "Оставьте хотя бы один раздел. Можно выбрать до трёх."
-                    : "Выберите до трёх разделов."}
+                Выберите разделы для нижней панели.
               </p>
               {pages.map((page) => {
                 const checked = dockHrefs.includes(page.href)
                 const reason =
                   checked && dockHrefs.length === 1
                     ? "Оставьте хотя бы один раздел."
-                    : !checked && dockHrefs.length >= 3
-                      ? "Уберите один из выбранных разделов, чтобы добавить другой."
-                      : undefined
+                    : undefined
                 return (
                   <div
                     key={page.href}
@@ -285,33 +295,7 @@ export function MobileAccountMenu({
                 )
               })}
             </section>
-            {account?.tenantSlug && (
-              <Link
-                href={`/book/${encodeURIComponent(account.tenantSlug)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={close}
-                className="flex min-h-11 items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-sm hover:bg-control"
-              >
-                <Ticket className="size-5" />
-                <span className="flex-1">Страница бронирования</span>
-                <ExternalLink className="size-4 text-muted-foreground" />
-              </Link>
-            )}
           </nav>
-        </div>
-        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-border/70 bg-card px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <ThemeToggle />
-          <Button
-            variant="ghost"
-            className="h-11 text-destructive hover:text-destructive"
-            disabled={leaving}
-            disabledReason="Выход из аккаунта уже выполняется."
-            onClick={() => void signOut()}
-          >
-            <LogOut />
-            {leaving ? "Выходим…" : "Выйти"}
-          </Button>
         </div>
       </SheetContent>
     </Sheet>

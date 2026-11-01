@@ -473,30 +473,6 @@ body:has([data-public-booking]) {
   }
 }
 
-@media (max-height: 500px) and (pointer: coarse) {
-  .mobile-account-header {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
-    gap: 2px 12px;
-    padding-top: max(12px, env(safe-area-inset-top));
-    padding-bottom: 12px;
-  }
-  .mobile-account-header > [aria-hidden] {
-    grid-row: 1 / span 2;
-    width: 40px;
-    height: 40px;
-    margin: 0;
-  }
-  .mobile-account-header > p {
-    grid-column: 2;
-    margin: 0;
-    font-size: 14px;
-  }
-  .mobile-account-header > span {
-    display: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .menu-surface,
   [data-slot="button"],
@@ -769,15 +745,8 @@ body:has([data-disabled-action-hint][data-open])
     overscroll-behavior-y: contain;
   }
   .mobile-create-menu {
-    top: auto !important;
-    bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
-    left: max(12px, env(safe-area-inset-left)) !important;
-    right: max(12px, env(safe-area-inset-right)) !important;
-    width: auto !important;
-    max-width: 26rem !important;
-    transform: none !important;
-    max-height: calc(var(--mobile-viewport-height, 100dvh) - 9rem) !important;
-    overflow-y: auto;
+    left: max(15px, calc(env(safe-area-inset-left) + 7px));
+    bottom: max(22px, calc(env(safe-area-inset-bottom) + 6px));
   }
   .statistics-period-popup {
     width: calc(100vw - 24px) !important;
@@ -795,5 +764,26 @@ body:has([data-disabled-action-hint][data-open])
   }
   .mobile-page-tools [aria-label="Виды и настройки отображения"] {
     border-radius: 26px;
+  }
+}
+@media (max-width: 767px),
+  (max-width: 1023px) and (max-height: 500px) and (pointer: coarse) {
+  .mobile-dock {
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+  .workspace-content,
+  :root[data-density="compact"] .workspace-content {
+    padding-bottom: calc(
+      var(--mobile-dock-height, 64px) + 40px + env(safe-area-inset-bottom)
+    );
+  }
+  .mobile-collection-footer {
+    padding-bottom: calc(
+      var(--mobile-dock-height, 64px) + 28px + env(safe-area-inset-bottom)
+    );
+  }
+  .app-workspace:has(.mobile-collection-footer) .workspace-content {
+    padding-bottom: 16px;
   }
 }
