@@ -172,6 +172,7 @@ type Props<T> = {
   modes?: EntityViewMode[]
   defaultMode?: EntityViewMode
   renderCard?: (item: T) => React.ReactNode
+  renderList?: (item: T) => React.ReactNode
   groupBy?: (item: T) => string
   kanbanGroups?: ReactBitsKanbanColumn[]
   canMoveInKanban?: (item: T) => boolean
@@ -365,6 +366,7 @@ export function EntityDataView<T>({
   modes = ["table"],
   defaultMode = "table",
   renderCard,
+  renderList,
   groupBy,
   kanbanGroups,
   canMoveInKanban,
@@ -867,6 +869,7 @@ export function EntityDataView<T>({
     </div>
   )
   const listCard = (item: T) => {
+    if (renderList && !cardLayout) return renderList(item)
     const fields = cardLayout
       ? activeCard.rows.flatMap((row) => row.fields)
       : visibleColumns

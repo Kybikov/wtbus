@@ -23,6 +23,7 @@ type FieldSelectProps = {
   options: FieldSelectOption[]
   placeholder?: string
   disabled?: boolean
+  disabledReason?: string
   className?: string
   triggerClassName?: string
   "aria-label"?: string
@@ -34,6 +35,7 @@ function FieldSelect({
   options,
   placeholder = "Выберите значение",
   disabled,
+  disabledReason,
   className,
   triggerClassName,
   "aria-label": ariaLabel,
@@ -46,6 +48,8 @@ function FieldSelect({
     >
       <SelectTrigger
         aria-label={ariaLabel}
+        data-disabled-reason={disabled ? disabledReason : undefined}
+        aria-description={disabled ? disabledReason : undefined}
         className={cn(
           "h-10 w-full min-w-0 px-3 text-left font-normal",
           triggerClassName

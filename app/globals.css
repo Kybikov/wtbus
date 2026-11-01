@@ -309,7 +309,10 @@ body:has([data-public-booking]) {
   min-height: 0;
 }
 :root {
-  --mobile-dock-bottom-gap: max(8px, calc(env(safe-area-inset-bottom, 0px) - 16px));
+  --mobile-dock-bottom-gap: max(
+    8px,
+    calc(env(safe-area-inset-bottom, 0px) - 16px)
+  );
 }
 .mobile-dock {
   padding-top: 0.375rem;
@@ -373,8 +376,13 @@ body:has([data-public-booking]) {
   }
   body:has(.app-shell-frame) {
     overflow: hidden;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
   .app-shell-frame {
+    height: var(--mobile-layout-height, 100dvh);
     gap: 0;
     padding: calc(0.5rem + env(safe-area-inset-top)) 0 0;
   }
@@ -434,7 +442,7 @@ body:has([data-public-booking]) {
   input,
   textarea,
   select {
-    font-size: 1rem;
+    font-size: max(16px, 1rem);
   }
   [data-slot="input"],
   [data-slot="select-trigger"] {
@@ -473,12 +481,18 @@ body:has([data-public-booking]) {
       100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)
     ) !important;
     top: calc(
-      var(--mobile-viewport-top, 0px) + var(--mobile-viewport-height, 100dvh) /
+      var(--mobile-viewport-top, 0px) +
+        (
+          max(12px, env(safe-area-inset-top)) +
+            var(--mobile-viewport-height, 100dvh) -
+            max(12px, env(safe-area-inset-bottom))
+        ) /
         2
     );
     max-height: calc(
-      var(--mobile-viewport-height, 100dvh) - 32px - env(safe-area-inset-top) -
-        env(safe-area-inset-bottom)
+      var(--mobile-viewport-height, 100dvh) -
+        max(12px, env(safe-area-inset-top)) -
+        max(12px, env(safe-area-inset-bottom))
     );
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -804,12 +818,12 @@ body:has([data-disabled-action-hint][data-open])
   .workspace-content,
   :root[data-density="compact"] .workspace-content {
     padding-bottom: calc(
-      var(--mobile-dock-height, 64px) + 40px + env(safe-area-inset-bottom)
+      var(--mobile-dock-height, 64px) + var(--mobile-dock-bottom-gap) + 16px
     );
   }
   .mobile-collection-footer {
     padding-bottom: calc(
-      var(--mobile-dock-height, 64px) + 28px + env(safe-area-inset-bottom)
+      var(--mobile-dock-height, 64px) + var(--mobile-dock-bottom-gap) + 12px
     );
   }
   .app-workspace:has(.mobile-collection-footer) .workspace-content {

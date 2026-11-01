@@ -2,6 +2,8 @@
 import { HoldActionButton } from "@/components/ui/hold-action-button"
 
 import * as React from "react"
+import { Settings2 } from "lucide-react"
+import { TemporaryPasswordField } from "@/components/temporary-password-field"
 import { AdminNotice } from "@/components/admin-notice"
 
 import { AppShell } from "@/components/app-shell"
@@ -76,7 +78,7 @@ const roleDescriptions: Record<Role, string> = {
   owner: "Полный доступ, команда и настройки",
   admin: "Операции и настройки компании",
   dispatcher: "Рейсы, бронирования и клиенты",
-  driver: "Статусы рейса и GPS с телефона",
+  driver: "Рейс, пассажиры и оплата",
 }
 
 function isCollection(value: unknown): value is { items: TeamMember[] } {
@@ -128,6 +130,16 @@ function manageableRoles(role: Role): Role[] {
     : ["dispatcher", "driver"]
 }
 
+function accessRestriction(member: TeamMember, me: Me | null) {
+  if (!me) return "Дождитесь загрузки прав доступа."
+  if (member.isSystem) return "Служебная учётная запись не изменяется вручную."
+  if (member.role === "developer")
+    return "Доступ разработчика меняет только разработчик."
+  if (me.role === "admin")
+    return "Администратор управляет доступом диспетчеров и водителей."
+  return "Управление доступом доступно владельцу и разработчику."
+}
+
 const emptyForm = {
   displayName: "",
   email: "",
@@ -143,6 +155,10 @@ export function TeamManager() {
     { id: string; name: string; phone: string }[]
   >([])
   const [members, setMembers] = React.useState<TeamMember[]>([])
+  const [accessTarget, setAccessTarget] = React.useState<TeamMember | null>(
+    null
+  )
+  const [resetPassword, setResetPassword] = React.useState("")
   const [me, setMe] = React.useState<Me | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [showForm, setShowForm] = React.useState(false)
@@ -256,7 +272,12 @@ export function TeamManager() {
 
   async function updateMember(
     member: TeamMember,
-    change: { role?: Role; isActive?: boolean; driverStatus?: string },
+    change: {
+      role?: Role
+      isActive?: boolean
+      driverStatus?: string
+      password?: string
+    },
     quiet = false
   ) {
     setChangingId(member.membershipId)
@@ -326,9 +347,10 @@ export function TeamManager() {
   }
 
   const filteredMembers = React.useMemo(() => {
+    const staff = members.filter((member) => !member.isSystem)
     const normalized = query.trim().toLocaleLowerCase("ru-RU")
-    if (!normalized) return members
-    return members.filter((member) =>
+    if (!normalized) return staff
+    return staff.filter((member) =>
       [
         member.displayName,
         member.email,
@@ -350,10 +372,6 @@ export function TeamManager() {
           <div className="min-w-48">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold">{member.displayName}</span>
-              {member.membershipId === me?.membershipId ? (
-                <Badge variant="secondary">Вы</Badge>
-              ) : null}
-              {member.isSystem ? <Badge variant="ghost">Система</Badge> : null}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {member.isSystem ? "Внутренняя автоматизация" : member.email}
@@ -529,11 +547,20 @@ export function TeamManager() {
         defaultVisible: false,
       },
     ],
-    [canManage, changingId, driverStatuses, load, me?.membershipId, roles]
+    [canManage, changingId, driverStatuses, load, roles]
   )
 
   const actions = React.useMemo<EntityAction<TeamMember>[]>(
     () => [
+      {
+        label: "Роль и пароль",
+        disabled: (member) => !canManage(member),
+        disabledReason: (member) => accessRestriction(member, me),
+        onSelect: (member) => {
+          setAccessTarget(member)
+          setResetPassword("")
+        },
+      },
       {
         label: "Включить / отключить",
         disabled: (member) =>
@@ -552,7 +579,7 @@ export function TeamManager() {
         onSelect: setDeleteTarget,
       },
     ],
-    [canDelete, canManage, load, me?.membershipId]
+    [canDelete, canManage, load, me]
   )
 
   return (
@@ -709,6 +736,45 @@ export function TeamManager() {
               </p>
             </div>
           )}
+          renderList={(member) => (
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,.85fr)_2.75rem] items-center gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold break-words">
+                  {member.displayName}
+                </p>
+                <p className="text-xs break-all text-muted-foreground">
+                  {member.email}
+                </p>
+              </div>
+              <div className="min-w-0 space-y-1 text-right">
+                <Badge variant={member.isActive ? "default" : "secondary"}>
+                  {member.isActive ? "Активен" : "Отключён"}
+                </Badge>
+                <p className="text-[11px] leading-4 text-muted-foreground">
+                  {member.lastSeenAt
+                    ? new Intl.DateTimeFormat("ru-RU", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      }).format(new Date(member.lastSeenAt))
+                    : "Ещё не входил"}
+                </p>
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={`Роль и пароль: ${member.displayName}`}
+                title={roleLabels[member.role]}
+                disabled={!canManage(member)}
+                disabledReason={accessRestriction(member, me)}
+                onClick={() => {
+                  setAccessTarget(member)
+                  setResetPassword("")
+                }}
+              >
+                <Settings2 />
+              </Button>
+            </div>
+          )}
           selected={selected}
         />
       </div>
@@ -717,9 +783,6 @@ export function TeamManager() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Новый сотрудник</DialogTitle>
-            <DialogDescription>
-              Создайте доступ и назначьте рабочую роль.
-            </DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4 sm:grid-cols-2"
@@ -758,27 +821,14 @@ export function TeamManager() {
                 value={form.email}
               />
             </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              Временный пароль
-              <Input
-                autoComplete="new-password"
-                disabled={saving}
-                minLength={12}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    password: event.target.value,
-                  }))
-                }
-                required
-                type="password"
-                value={form.password}
-              />
-              <span className="text-xs font-normal text-muted-foreground">
-                Не менее 12 символов.
-              </span>
-            </label>
-            <label className="grid gap-2 text-sm font-semibold">
+            <TemporaryPasswordField
+              value={form.password}
+              busy={saving}
+              onChange={(password) =>
+                setForm((current) => ({ ...current, password }))
+              }
+            />
+            <label className="grid content-start gap-2 text-sm font-semibold">
               Роль
               <FieldSelect
                 disabled={saving}
@@ -800,32 +850,34 @@ export function TeamManager() {
             </label>
             {form.role === "driver" ? (
               <>
-                <label className="grid gap-2 text-sm sm:col-span-2">
-                  Профиль водителя
-                  <FieldSelect
-                    value={form.driverId || "new"}
-                    onValueChange={(id) => {
-                      const profile = unlinked.find((d) => d.id === id)
-                      setForm((v) => ({
-                        ...v,
-                        driverId: id === "new" ? "" : id,
-                        ...(profile
-                          ? {
-                              displayName: profile.name,
-                              driverPhone: profile.phone,
-                            }
-                          : {}),
-                      }))
-                    }}
-                    options={[
-                      { value: "new", label: "Новый водитель" },
-                      ...unlinked.map((d) => ({
-                        value: d.id,
-                        label: d.name + " · " + d.phone,
-                      })),
-                    ]}
-                  />
-                </label>
+                {unlinked.length > 0 ? (
+                  <label className="grid gap-2 text-sm sm:col-span-2">
+                    Водитель
+                    <FieldSelect
+                      value={form.driverId || "new"}
+                      onValueChange={(id) => {
+                        const profile = unlinked.find((d) => d.id === id)
+                        setForm((v) => ({
+                          ...v,
+                          driverId: id === "new" ? "" : id,
+                          ...(profile
+                            ? {
+                                displayName: profile.name,
+                                driverPhone: profile.phone,
+                              }
+                            : {}),
+                        }))
+                      }}
+                      options={[
+                        { value: "new", label: "Новый водитель" },
+                        ...unlinked.map((d) => ({
+                          value: d.id,
+                          label: d.name + " · " + d.phone,
+                        })),
+                      ]}
+                    />
+                  </label>
+                ) : null}
                 <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
                   Телефон водителя
                   <Input
@@ -843,6 +895,14 @@ export function TeamManager() {
                   />
                 </label>
               </>
+            ) : null}
+            {error ? (
+              <p
+                role="alert"
+                className="text-sm text-destructive sm:col-span-2"
+              >
+                {error}
+              </p>
             ) : null}
           </form>
           <DialogFooter>
@@ -864,6 +924,96 @@ export function TeamManager() {
               {saving ? "Добавляем…" : "Выдать доступ"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!accessTarget}
+        onOpenChange={(open) => {
+          if (!open && !changingId) {
+            setAccessTarget(null)
+            setResetPassword("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Доступ сотрудника</DialogTitle>
+            <DialogDescription>{accessTarget?.displayName}</DialogDescription>
+          </DialogHeader>
+          {accessTarget ? (
+            <>
+              <label className="grid gap-2 text-sm font-semibold">
+                Роль
+                <FieldSelect
+                  value={accessTarget.role}
+                  disabled={!!changingId}
+                  disabledReason="Дождитесь изменения доступа."
+                  options={roles.map((role) => ({
+                    value: role,
+                    label: roleLabels[role],
+                  }))}
+                  onValueChange={(role) => {
+                    void updateMember(accessTarget, {
+                      role: role as Role,
+                    }).then((ok) => {
+                      if (ok) {
+                        setAccessTarget({ ...accessTarget, role: role as Role })
+                        void load()
+                      }
+                    })
+                  }}
+                />
+              </label>
+              <div className="space-y-3 border-t border-border pt-4">
+                <TemporaryPasswordField
+                  value={resetPassword}
+                  onChange={setResetPassword}
+                  busy={!!changingId}
+                />
+                <p className="text-xs text-muted-foreground">
+                  После сброса сотрудник войдёт с новым паролем. Старые сеансы
+                  завершатся.
+                </p>
+                <Button
+                  disabled={
+                    !!changingId ||
+                    accessTarget.membershipId === me?.membershipId ||
+                    resetPassword.length < 12 ||
+                    new TextEncoder().encode(resetPassword).length > 72
+                  }
+                  disabledReason={
+                    changingId
+                      ? "Пароль меняется. Дождитесь завершения."
+                      : accessTarget.membershipId === me?.membershipId
+                        ? "Свой пароль меняйте в личном профиле."
+                        : resetPassword.length < 12
+                          ? "Введите или создайте пароль от 12 символов."
+                          : "Пароль должен занимать не более 72 байт."
+                  }
+                  onClick={() => {
+                    void updateMember(accessTarget, {
+                      password: resetPassword,
+                    }).then((ok) => {
+                      if (ok)
+                        setNotice("Пароль изменён. Передайте его сотруднику.")
+                    })
+                  }}
+                >
+                  Сбросить пароль
+                </Button>
+              </div>
+              {error ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              ) : null}
+              {notice ? (
+                <p role="status" className="text-sm">
+                  {notice}
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
 

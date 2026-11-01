@@ -177,6 +177,10 @@ export function MobileDock({
       const height = view?.height ?? window.innerHeight
       setViewport({ bottom, height })
       const root = document.documentElement
+      root.style.setProperty(
+        "--mobile-layout-height",
+        window.innerHeight + "px"
+      )
       root.style.setProperty("--mobile-viewport-height", height + "px")
       root.style.setProperty(
         "--mobile-viewport-top",
@@ -193,6 +197,7 @@ export function MobileDock({
       view?.removeEventListener("scroll", update)
       window.removeEventListener("resize", update)
       document.documentElement.style.removeProperty("--mobile-viewport-height")
+      document.documentElement.style.removeProperty("--mobile-layout-height")
       document.documentElement.style.removeProperty("--mobile-viewport-top")
       delete document.documentElement.dataset.mobileKeyboard
     }

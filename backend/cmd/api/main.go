@@ -1241,8 +1241,8 @@ func (app *application) createTeamMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if isNewUser {
-		if len([]rune(input.Password)) < 12 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must contain at least 12 characters for a new account"})
+		if len([]rune(input.Password)) < 12 || len(input.Password) > 72 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Пароль: от 12 символов, не более 72 байт."})
 			return
 		}
 		passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -1336,8 +1336,8 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	if input.Password != nil && (len([]rune(*input.Password)) < 12 || len([]rune(*input.Password)) > 128) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must contain from 12 to 128 characters"})
+	if input.Password != nil && (len([]rune(*input.Password)) < 12 || len(*input.Password) > 72) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Пароль: от 12 символов, не более 72 байт."})
 		return
 	}
 	if input.DriverStatus != nil {
@@ -1403,8 +1403,8 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot make this access change"})
 		return
 	}
-	if input.Password != nil && actor.Role != "owner" && actor.Role != "developer" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only an owner can set a team member password"})
+	if input.Password != nil && actor.Role != "owner" && actor.Role != "developer" && actor.Role != "admin" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Недостаточно прав для сброса пароля."})
 		return
 	}
 	if nextRole == "driver" && current.DriverID == nil {
@@ -1453,7 +1453,7 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if !nextActive || input.Password != nil {
-		if _, err := tx.Exec(r.Context(), `UPDATE user_sessions SET revoked_at = now() WHERE membership_id = $1 AND revoked_at IS NULL`, membershipID); err != nil {
+		if _, err := tx.Exec(r.Context(), `UPDATE user_sessions SET revoked_at = now() WHERE revoked_at IS NULL AND (membership_id = $1 OR ($2 AND user_id = $3))`, membershipID, input.Password != nil, current.UserID); err != nil {
 			app.log.Error("revoke member sessions", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update team member"})
 			return

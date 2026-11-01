@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,6 +292,30 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	nextTrip := row(`INSERT INTO trips(tenant_id,vehicle_id,driver_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,currency) VALUES($1,$2,$3,'individual','assigned','Next A','Next B',now()+interval '3 hours',now()+interval '4 hours',8,'UAH') RETURNING id::text`, tenant, vehicle, orphan)
 	call(driver, "PATCH", company+"/trips/"+nextTrip, changeTripStatusRequest{Status: "in_progress"}, 409)
 	call(driver, "PATCH", company+"/trips/"+lateTrip, changeTripStatusRequest{Status: "completed"}, 200)
+	// Administrators can reset managed drivers, but cannot touch privileged or
+	// foreign memberships. Password replacement revokes every session of the user.
+	call(dev, "POST", company+"/team", createTeamMemberRequest{DisplayName: "Администратор QA", Email: "admin-lifecycle@test.invalid", Password: "disposable-admin-password", Role: "admin"}, 201)
+	admin := login("admin-lifecycle@test.invalid", "disposable-admin-password", "admin")
+	newPassword := "replacement-driver-123"
+	call(admin, "PATCH", company+"/team/"+member, updateTeamMemberRequest{Password: &newPassword}, 403)
+	call(other, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{Password: &newPassword}, 403)
+	tooLong := strings.Repeat("я", 40)
+	call(admin, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{Password: &tooLong}, 400)
+	call(admin, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{Password: &newPassword}, 200)
+	call(driver, "GET", company+"/driver/wallet", nil, 401)
+	call("", "POST", "auth/login", loginRequest{Email: "driver-lifecycle@test.invalid", Password: "disposable-driver-password"}, 401)
+	driver = login("driver-lifecycle@test.invalid", newPassword, "driver")
+	otherTenant := row(`INSERT INTO tenants(slug,name,subscription_status) VALUES('password-other','Password Other','active') RETURNING id::text`)
+	otherMembership := row(`INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'driver') RETURNING id::text`, otherTenant, driverAccount.UserID)
+	foreignSession, err := app.createSession(ctx, identity{UserID: driverAccount.UserID, MembershipID: otherMembership, TenantID: otherTenant, TenantSlug: "password-other", Role: "driver"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call(admin, "PATCH", company+"/team/"+otherMembership, updateTeamMemberRequest{Password: &newPassword}, 404)
+	newPassword = "second-driver-password-123"
+	call(admin, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{Password: &newPassword}, 200)
+	call(driver, "GET", "auth/me", nil, 401)
+	call(foreignSession.SessionToken, "GET", "auth/me", nil, 401)
 	call(dev, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{IsActive: func() *bool { v := false; return &v }()}, 200)
 	call(driver, "GET", company+"/driver/wallet", nil, 401)
 }
