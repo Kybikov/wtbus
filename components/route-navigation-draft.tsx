@@ -3,7 +3,7 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { RoutePlacePicker } from "@/components/route-place-picker"
-import { FieldSelect } from "@/components/ui/field-select"
+import { MapPointTarget } from "@/components/map-point-target"
 import { Button } from "@/components/ui/button"
 import type {
   RoadPoint,
@@ -115,7 +115,7 @@ export function RouteNavigationDraft({
         {(["start", "end"] as const).map((key) => (
           <RoutePlacePicker
             key={key}
-            title={key === "start" ? "Отправление" : "Прибытие"}
+            title={key === "start" ? "Место посадки" : "Место высадки"}
             label={key === "start" ? value.startLabel : value.endLabel}
             point={value[key]}
             disabled={disabled}
@@ -125,16 +125,11 @@ export function RouteNavigationDraft({
           />
         ))}
       </div>
-      <FieldSelect
+      <MapPointTarget
+        value={target}
+        onValueChange={setTarget}
         disabled={disabled}
         disabledReason={disabledReason}
-        aria-label="Точка на карте"
-        value={target}
-        onValueChange={(v) => setTarget(v as "start" | "end")}
-        options={[
-          { value: "start", label: "Поставить отправление" },
-          { value: "end", label: "Поставить прибытие" },
-        ]}
       />
       <div className="isolate overflow-hidden rounded-xl border">
         <RoadMap

@@ -1,4 +1,5 @@
 "use client"
+import { TripLinkPicker } from "@/components/trip-link-picker"
 import { CreateRouteFromTrip } from "@/components/create-route-from-trip"
 import { RouteNavigationEditor } from "@/components/route-navigation-editor"
 import { useRecordDeletion } from "@/components/use-record-deletion"
@@ -1193,82 +1194,15 @@ export function EntityDetailPage({
             <EntityRelatedRecords
               ownerEntity={entity}
               records={relations}
-              managedEntities={
-                entity === "trips" ? ["routes", "fleet", "team"] : []
-              }
-              controls={
+              linkAction={
                 entity === "trips" ? (
-                  <div className="divide-y divide-border/70">
-                    {(
-                      [
-                        ["route_id", "routes"],
-                        ["vehicle_id", "fleet"],
-                        ["driver_id", "team"],
-                      ] as const
-                    ).map(([key, collection]) => {
-                      const ref = relations.find(
-                        (record) => record.entity === collection
-                      )
-                      const meta = ref?.meta
-                      return (
-                        <div key={key} className="grid min-w-0 gap-2 py-3">
-                          <div className="flex min-w-0 items-center justify-between gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {entityFieldLabels[key]}
-                            </span>
-                            {ref && (
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                nativeButton={false}
-                                aria-label={`Открыть: ${ref.label}`}
-                                render={
-                                  <Link
-                                    href={entityDetailHref(ref.entity, ref.id)}
-                                  />
-                                }
-                              >
-                                <ArrowUpRight className="size-4" />
-                              </Button>
-                            )}
-                          </div>
-                          {fieldEditor(key, detail.item[key])}
-                          {meta && (
-                            <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              {meta.status ? (
-                                <Badge
-                                  variant="secondary"
-                                  className={statusToneClass(
-                                    String(
-                                      meta.status_tone ?? "neutral"
-                                    ) as Parameters<typeof statusToneClass>[0]
-                                  )}
-                                >
-                                  {String(
-                                    meta.status_label ??
-                                      valueLabels[String(meta.status)] ??
-                                      "Другой статус"
-                                  )}
-                                </Badge>
-                              ) : null}
-                              {meta.registration_number ? (
-                                <span>{String(meta.registration_number)}</span>
-                              ) : null}
-                              {meta.capacity ? (
-                                <span>Мест: {String(meta.capacity)}</span>
-                              ) : null}
-                              {meta.origin_name && meta.destination_name ? (
-                                <span className="[overflow-wrap:anywhere]">
-                                  {String(meta.origin_name)} →{" "}
-                                  {String(meta.destination_name)}
-                                </span>
-                              ) : null}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <TripLinkPicker
+                    item={detail.item}
+                    resources={resources}
+                    onChoose={changeField}
+                    disabledReason={detail.editRestriction}
+                    resourceError={resourceError}
+                  />
                 ) : undefined
               }
               createHref={

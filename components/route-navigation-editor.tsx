@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import dynamic from "next/dynamic"
-import { FieldSelect } from "@/components/ui/field-select"
+import { MapPointTarget } from "@/components/map-point-target"
 import { Button } from "@/components/ui/button"
 import { RoutePlacePicker } from "@/components/route-place-picker"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -144,7 +144,7 @@ function Editor({ routeID, entity = "routes" }: EditorProps) {
         {(["start", "end"] as const).map((key) => (
           <RoutePlacePicker
             key={key}
-            title={key === "start" ? "Отправление" : "Прибытие"}
+            title={key === "start" ? "Место посадки" : "Место высадки"}
             label={
               key === "start" ? navigation.startLabel : navigation.endLabel
             }
@@ -161,14 +161,15 @@ function Editor({ routeID, entity = "routes" }: EditorProps) {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <FieldSelect
-          aria-label="Точка на карте"
+        <MapPointTarget
           value={target}
-          onValueChange={(value) => setTarget(value as "start" | "end")}
-          options={[
-            { value: "start", label: "Поставить отправление" },
-            { value: "end", label: "Поставить прибытие" },
-          ]}
+          onValueChange={setTarget}
+          disabled={!ready}
+          disabledReason={
+            loading
+              ? "Загружаем места маршрута."
+              : "Не удалось загрузить места. Повторите загрузку."
+          }
         />
         <span className="text-xs text-muted-foreground" aria-live="polite">
           {pending

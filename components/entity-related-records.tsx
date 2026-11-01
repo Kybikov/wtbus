@@ -4,6 +4,11 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowUpRight,
+  Bus,
+  Route,
+  UserRound,
+  Ticket,
+  CalendarClock,
   CalendarDays,
   Link2,
   Plus,
@@ -96,8 +101,7 @@ function recordCountLabel(count: number) {
 
 export function EntityRelatedRecords({
   ownerEntity,
-  controls,
-  managedEntities = [],
+  linkAction,
   records,
   timezone,
   createHref,
@@ -105,8 +109,7 @@ export function EntityRelatedRecords({
   createAvailable = true,
   createBusy = false,
 }: {
-  controls?: React.ReactNode
-  managedEntities?: EntityCollection[]
+  linkAction?: React.ReactNode
   ownerEntity: EntityCollection
   records: EntityRelatedRecord[]
   timezone: string
@@ -143,7 +146,9 @@ export function EntityRelatedRecords({
     } catch {
       // Ignore malformed browser preferences and use the available fields.
     }
-    return available
+    return available.filter((key) =>
+      ["status", "starts_at", "created_at"].includes(key)
+    )
   }, [available, storedSelection])
 
   const [statusCatalog, setStatusCatalog] = React.useState<
@@ -280,6 +285,7 @@ export function EntityRelatedRecords({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+          {linkAction}
           {createHref && (
             <Button
               aria-label="Добавить рейс по этому маршруту"
@@ -311,25 +317,38 @@ export function EntityRelatedRecords({
             Связанных записей пока нет.
           </p>
         )}
-        {controls}
         <div className="divide-y divide-border/70">
-          {records
-            .filter((record) => !managedEntities.includes(record.entity))
-            .map((record, index) => {
-              const meta = record.meta ?? {}
-              const workflowType =
-                ({ fleet: "vehicles" } as Record<string, string>)[
-                  record.entity
-                ] ?? record.entity
-              const status = (value: unknown) =>
-                statusCatalog[workflowType]?.find((item) => item.key === value)
-              return (
-                <Link
-                  key={`${record.entity}:${record.id}:${index}`}
-                  href={entityDetailHref(record.entity, record.id)}
-                  className="group grid min-w-0 grid-cols-[minmax(0,1fr)_1rem] items-center gap-x-3 gap-y-2 rounded-lg px-2 py-3.5 transition-colors hover:bg-accent/45 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none @min-[32rem]/related:grid-cols-[minmax(7rem,1fr)_auto_1rem]"
-                >
-                  <div className="col-start-1 row-start-1 min-w-0">
+          {records.map((record, index) => {
+            const RecordIcon =
+              (
+                {
+                  routes: Route,
+                  fleet: Bus,
+                  team: UserRound,
+                  customers: UserRound,
+                  bookings: Ticket,
+                  trips: CalendarClock,
+                } as Partial<Record<EntityCollection, typeof Route>>
+              )[record.entity] ?? Link2
+            const meta = record.meta ?? {}
+            const workflowType =
+              ({ fleet: "vehicles" } as Record<string, string>)[
+                record.entity
+              ] ?? record.entity
+            const status = (value: unknown) =>
+              statusCatalog[workflowType]?.find((item) => item.key === value)
+            return (
+              <Link
+                key={`${record.entity}:${record.id}:${index}`}
+                href={entityDetailHref(record.entity, record.id)}
+                className="group grid min-w-0 grid-cols-[minmax(0,1fr)_1rem] items-center gap-x-3 gap-y-2 rounded-lg px-2 py-3.5 transition-colors hover:bg-accent/45 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none @min-[32rem]/related:grid-cols-[minmax(7rem,1fr)_auto_1rem]"
+              >
+                <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
+                  <RecordIcon
+                    className="size-5 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <div className="min-w-0">
                     <span className="mb-1 block text-xs text-muted-foreground">
                       {entityNames[record.entity]}
                     </span>
@@ -337,90 +356,87 @@ export function EntityRelatedRecords({
                       {record.label}
                     </span>
                   </div>
-                  {shown.some((key) => meta[key] !== undefined) ? (
-                    <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground @min-[32rem]/related:col-start-2 @min-[32rem]/related:row-start-1 @min-[32rem]/related:justify-end">
-                      {shown.map((key) => {
-                        const value = meta[key]
-                        if (
-                          value === null ||
-                          value === undefined ||
-                          value === ""
-                        )
-                          return null
-                        if (key === "status" || key === "payment_status")
-                          return (
-                            <Badge
-                              key={key}
-                              variant="secondary"
-                              className={statusToneClass(
-                                status(value)?.tone ?? tone(value)
-                              )}
-                            >
-                              {status(value)?.label ??
-                                valueLabels[String(value)] ??
-                                "Другой статус"}
-                            </Badge>
-                          )
-                        if (key === "occupied_seats")
-                          return (
-                            <span
-                              key={key}
-                              className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                            >
-                              <Users className="size-3.5" />
-                              Занято {String(value)}
-                              {shown.includes("capacity") &&
-                              meta.capacity !== undefined
-                                ? ` / ${String(meta.capacity)}`
-                                : ""}
-                            </span>
-                          )
-                        if (
-                          key === "capacity" &&
-                          shown.includes("occupied_seats")
-                        )
-                          return null
-                        if (key === "seats" || key === "capacity")
-                          return (
-                            <span
-                              key={key}
-                              className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                            >
-                              <Users className="size-3.5" />
-                              {metricLabels[key]}: {String(value)}
-                            </span>
-                          )
-                        if (key.endsWith("_at"))
-                          return (
-                            <span
-                              key={key}
-                              className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                              title={formatEntityDate(String(value), timezone)}
-                            >
-                              <CalendarDays className="size-3.5" />
-                              {new Intl.DateTimeFormat("ru-RU", {
-                                timeZone: timezone,
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              }).format(new Date(String(value)))}
-                            </span>
-                          )
+                </div>
+                {shown.some((key) => meta[key] !== undefined) ? (
+                  <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 pl-8 text-xs text-muted-foreground @min-[32rem]/related:col-start-2 @min-[32rem]/related:row-start-1 @min-[32rem]/related:justify-end @min-[32rem]/related:pl-0">
+                    {shown.map((key) => {
+                      const value = meta[key]
+                      if (value === null || value === undefined || value === "")
+                        return null
+                      if (key === "status" || key === "payment_status")
                         return (
-                          <span key={key}>
-                            {metricLabels[key] ?? key.replaceAll("_", " ")}:{" "}
-                            {valueLabels[String(value)] ?? String(value)}
+                          <Badge
+                            key={key}
+                            variant="secondary"
+                            className={statusToneClass(
+                              status(value)?.tone ?? tone(value)
+                            )}
+                          >
+                            {status(value)?.label ??
+                              valueLabels[String(value)] ??
+                              "Другой статус"}
+                          </Badge>
+                        )
+                      if (key === "occupied_seats")
+                        return (
+                          <span
+                            key={key}
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                          >
+                            <Users className="size-3.5" />
+                            Занято {String(value)}
+                            {shown.includes("capacity") &&
+                            meta.capacity !== undefined
+                              ? ` / ${String(meta.capacity)}`
+                              : ""}
                           </span>
                         )
-                      })}
-                    </div>
-                  ) : null}
-                  <ArrowUpRight
-                    aria-hidden
-                    className="col-start-2 row-span-2 row-start-1 size-3.5 self-center text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 @min-[32rem]/related:col-start-3 @min-[32rem]/related:row-span-1"
-                  />
-                </Link>
-              )
-            })}
+                      if (
+                        key === "capacity" &&
+                        shown.includes("occupied_seats")
+                      )
+                        return null
+                      if (key === "seats" || key === "capacity")
+                        return (
+                          <span
+                            key={key}
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                          >
+                            <Users className="size-3.5" />
+                            {metricLabels[key]}: {String(value)}
+                          </span>
+                        )
+                      if (key.endsWith("_at"))
+                        return (
+                          <span
+                            key={key}
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                            title={formatEntityDate(String(value), timezone)}
+                          >
+                            <CalendarDays className="size-3.5" />
+                            {new Intl.DateTimeFormat("ru-RU", {
+                              timeZone: timezone,
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            }).format(new Date(String(value)))}
+                          </span>
+                        )
+                      return (
+                        <span key={key}>
+                          {metricLabels[key] ?? key.replaceAll("_", " ")}:{" "}
+                          {valueLabels[String(value)] ?? String(value)}
+                        </span>
+                      )
+                    })}
+                  </div>
+                ) : null}
+                <ArrowUpRight
+                  aria-hidden
+                  className="col-start-2 row-span-2 row-start-1 size-3.5 self-center text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 @min-[32rem]/related:col-start-3 @min-[32rem]/related:row-span-1"
+                />
+              </Link>
+            )
+          })}
         </div>
       </CardContent>
     </>
