@@ -391,91 +391,100 @@ export function DriverLocationTracker() {
         setWalletRefresh((value) => value + 1)
       }}
     >
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5">
+      <div className="mx-auto w-full max-w-6xl min-w-0 space-y-5 lg:rounded-3xl lg:border lg:border-border lg:bg-card lg:p-7">
         {selectedVehicle?.activeTrip ? (
           <>
-            <div className="border-b border-border pb-5">
-              <p className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
-                <HugeiconsIcon icon={Route01Icon} size={15} />
-                Активный рейс
-              </p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight">
-                {selectedVehicle.activeTrip.origin} →{" "}
-                {selectedVehicle.activeTrip.destination}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Отправление:{" "}
-                {new Intl.DateTimeFormat("ru-RU", {
-                  dateStyle: "short",
-                  timeStyle: "short",
-                  timeZone: timezone,
-                }).format(new Date(selectedVehicle.activeTrip.startsAt))}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {selectedVehicle.name} · {selectedVehicle.registrationNumber} ·{" "}
-                {selectedVehicle.activeTrip.status === "in_progress"
-                  ? "Рейс выполняется"
-                  : "Рейс назначен"}
-              </p>
-              {selectedVehicle.activeTrip.actualStartedAt ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Фактический выезд:{" "}
-                  {new Intl.DateTimeFormat("ru-RU", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    timeZone: timezone,
-                  }).format(
-                    new Date(selectedVehicle.activeTrip.actualStartedAt)
-                  )}
+            <div className="border-b border-border pb-5 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-x-8">
+              <div>
+                <p className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
+                  <HugeiconsIcon icon={Route01Icon} size={15} />
+                  Активный рейс
                 </p>
-              ) : null}
-              {selectedVehicle.activeTrip.status === "assigned" ? (
-                <Button
-                  className="mt-4 w-full"
-                  disabled={updatingTripStatus}
-                  disabledReason={
-                    "Статус рейса меняется. Дождитесь завершения."
-                  }
-                  onClick={() => void changeTripStatus("in_progress")}
-                  size="lg"
-                >
-                  {updatingTripStatus ? "Начинаем рейс…" : "Начать рейс"}
-                </Button>
-              ) : (
-                <Button
-                  className="mt-4 w-full"
-                  disabled={
-                    updatingTripStatus ||
-                    cashLoading ||
-                    (cashSummary?.tripId === selectedVehicle.activeTrip.id &&
-                      cashSummary.collectedMinor !== cashSummary.amountMinor)
-                  }
-                  disabledReason={
-                    updatingTripStatus
-                      ? "Статус рейса меняется. Дождитесь завершения."
+                <p className="mt-2 text-2xl font-semibold tracking-tight">
+                  {selectedVehicle.activeTrip.origin} →{" "}
+                  {selectedVehicle.activeTrip.destination}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Отправление:{" "}
+                  {new Intl.DateTimeFormat("ru-RU", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                    timeZone: timezone,
+                  }).format(new Date(selectedVehicle.activeTrip.startsAt))}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedVehicle.name} · {selectedVehicle.registrationNumber}{" "}
+                  ·{" "}
+                  {selectedVehicle.activeTrip.status === "in_progress"
+                    ? "Рейс выполняется"
+                    : "Рейс назначен"}
+                </p>
+                {selectedVehicle.activeTrip.actualStartedAt ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Фактический выезд:{" "}
+                    {new Intl.DateTimeFormat("ru-RU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      timeZone: timezone,
+                    }).format(
+                      new Date(selectedVehicle.activeTrip.actualStartedAt)
+                    )}
+                  </p>
+                ) : null}
+              </div>
+              <div className="lg:flex lg:items-center">
+                {selectedVehicle.activeTrip.status === "assigned" ? (
+                  <Button
+                    className="mt-4 w-full lg:mt-0 lg:w-auto lg:min-w-48"
+                    disabled={updatingTripStatus}
+                    disabledReason={
+                      "Статус рейса меняется. Дождитесь завершения."
+                    }
+                    onClick={() => void changeTripStatus("in_progress")}
+                    size="lg"
+                  >
+                    {updatingTripStatus ? "Начинаем рейс…" : "Начать рейс"}
+                  </Button>
+                ) : (
+                  <Button
+                    className="mt-4 w-full lg:mt-0 lg:w-auto lg:min-w-48"
+                    disabled={
+                      updatingTripStatus ||
+                      cashLoading ||
+                      (cashSummary?.tripId === selectedVehicle.activeTrip.id &&
+                        cashSummary.collectedMinor !== cashSummary.amountMinor)
+                    }
+                    disabledReason={
+                      updatingTripStatus
+                        ? "Статус рейса меняется. Дождитесь завершения."
+                        : cashLoading
+                          ? "Проверяем оплату пассажиров. Дождитесь результата."
+                          : "Сначала подтвердите получение всех наличных оплат этого рейса."
+                    }
+                    onClick={() => void changeTripStatus("completed")}
+                    size="lg"
+                  >
+                    {updatingTripStatus
+                      ? "Завершаем рейс…"
                       : cashLoading
-                        ? "Проверяем оплату пассажиров. Дождитесь результата."
-                        : "Сначала подтвердите получение всех наличных оплат этого рейса."
-                  }
-                  onClick={() => void changeTripStatus("completed")}
-                  size="lg"
-                >
-                  {updatingTripStatus
-                    ? "Завершаем рейс…"
-                    : cashLoading
-                      ? "Проверяем наличные…"
-                      : "Завершить рейс"}
-                </Button>
-              )}
+                        ? "Проверяем наличные…"
+                        : "Завершить рейс"}
+                  </Button>
+                )}
+              </div>
             </div>
           </>
         ) : (
-          <div className="border-b border-border pb-5 text-sm text-muted-foreground">
-            <p>
-              {loading ? "Загружаем назначения…" : "Нет назначенного рейса."}
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
+            <div>
+              <h1 className="text-xl font-semibold">Мой рейс</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {loading
+                  ? "Загружаем назначения…"
+                  : "Назначенного рейса пока нет."}
+              </p>
+            </div>
             <Button
-              className="mt-4"
               disabled={loading}
               disabledReason={"Данные ещё загружаются. Дождитесь завершения."}
               onClick={() => void loadFleet()}
@@ -491,10 +500,19 @@ export function DriverLocationTracker() {
           value={section}
           onValueChange={(value) => setSection(String(value))}
         >
-          <TabsList className="!h-11 w-full" aria-label="Разделы водителя">
-            <TabsTrigger value="passengers">Пассажиры</TabsTrigger>
-            <TabsTrigger value="money">Касса</TabsTrigger>
-            <TabsTrigger value="gps">GPS</TabsTrigger>
+          <TabsList
+            className="!h-11 w-full lg:w-fit"
+            aria-label="Разделы водителя"
+          >
+            <TabsTrigger className="lg:px-6" value="passengers">
+              Пассажиры
+            </TabsTrigger>
+            <TabsTrigger className="lg:px-6" value="money">
+              Касса
+            </TabsTrigger>
+            <TabsTrigger className="lg:px-6" value="gps">
+              GPS
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="passengers" className="pt-3">
             {selectedVehicle?.activeTrip ? (
@@ -534,7 +552,11 @@ export function DriverLocationTracker() {
           </TabsContent>
           <TabsContent value="money" className="pt-3">
             {identity ? (
-              <AccountingWorkspace driver refreshKey={walletRefresh} />
+              <AccountingWorkspace
+                driver
+                manageDriverAccess={identity.role === "developer"}
+                refreshKey={walletRefresh}
+              />
             ) : null}
           </TabsContent>
           <TabsContent value="gps" className="pt-3">

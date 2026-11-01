@@ -275,8 +275,11 @@ export function DriverPassengerManifest({
               "boarded"
             )
             return (
-              <li key={booking.id} className="min-w-0 py-4 first:pt-0">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <li
+                key={booking.id}
+                className="min-w-0 py-4 first:pt-0 lg:grid lg:grid-cols-[minmax(0,.8fr)_minmax(18rem,1.4fr)_minmax(12rem,1fr)] lg:items-center lg:gap-6"
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground lg:mb-0 lg:flex-col lg:items-start">
                   <span>{booking.recordNumber || `${booking.seats} мест`}</span>
                   <a
                     href={`tel:${booking.phone}`}
@@ -305,40 +308,42 @@ export function DriverPassengerManifest({
                     )
                   })}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <Badge variant="secondary">
-                    {booking.paymentMethod === "bank_transfer"
-                      ? booking.paymentStatus === "paid"
-                        ? "Оплачено переводом"
-                        : "Ожидаем перевод"
-                      : received >= booking.amountMinor
-                        ? "Оплачено наличными"
-                        : received > 0
-                          ? "Частичная оплата"
-                          : "Наличные"}
-                  </Badge>
-                  <span className="font-semibold tabular-nums">
-                    {received > 0 && received < booking.amountMinor
-                      ? `${money(received, booking.currency)} / `
-                      : ""}
-                    {money(booking.amountMinor, booking.currency)}
-                  </span>
+                <div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm lg:mt-0">
+                    <Badge variant="secondary">
+                      {booking.paymentMethod === "bank_transfer"
+                        ? booking.paymentStatus === "paid"
+                          ? "Оплачено переводом"
+                          : "Ожидаем перевод"
+                        : received >= booking.amountMinor
+                          ? "Оплачено наличными"
+                          : received > 0
+                            ? "Частичная оплата"
+                            : "Наличные"}
+                    </Badge>
+                    <span className="font-semibold tabular-nums">
+                      {received > 0 && received < booking.amountMinor
+                        ? `${money(received, booking.currency)} / `
+                        : ""}
+                      {money(booking.amountMinor, booking.currency)}
+                    </span>
+                  </div>
+                  {canReceive ? (
+                    <Button
+                      className="mt-3 w-full"
+                      variant="default"
+                      disabled={!hasBoarded}
+                      disabledReason="Сначала отметьте пришедшего пассажира."
+                      onClick={() => {
+                        setPayment(booking)
+                        setAmount(String(booking.amountMinor / 100))
+                        setPaymentError("")
+                      }}
+                    >
+                      Принять наличные
+                    </Button>
+                  ) : null}
                 </div>
-                {canReceive ? (
-                  <Button
-                    className="mt-3 w-full"
-                    variant="default"
-                    disabled={!hasBoarded}
-                    disabledReason="Сначала отметьте пришедшего пассажира."
-                    onClick={() => {
-                      setPayment(booking)
-                      setAmount(String(booking.amountMinor / 100))
-                      setPaymentError("")
-                    }}
-                  >
-                    Принять наличные
-                  </Button>
-                ) : null}
               </li>
             )
           })}

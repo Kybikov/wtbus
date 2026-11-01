@@ -127,8 +127,12 @@ func (app *application) accountingSnapshot(w http.ResponseWriter, r *http.Reques
 	if strings.HasSuffix(r.URL.Path, "/driver/wallet") {
 		var err error
 		driverID, err = app.ownFinanceDriver(r, tenant.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, 404, map[string]string{"code": "driver_not_linked", "error": "Профиль водителя не подключён к вашему аккаунту."})
+			return
+		}
 		if err != nil {
-			writeJSON(w, 404, map[string]string{"error": "Профиль водителя не подключён к вашему аккаунту."})
+			app.financeFailure(w, err)
 			return
 		}
 	}

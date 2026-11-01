@@ -74,6 +74,10 @@ func TestFinanceAccountingPostgres(t *testing.T) {
 		return w
 	}
 	requestID := func() string { return row(`SELECT gen_random_uuid()::text`) }
+	unlinked := call("GET", "/driver/wallet", nil, actor, app.accountingSnapshot, 404)
+	if !strings.Contains(unlinked.Body.String(), `"code":"driver_not_linked"`) {
+		t.Fatal("unlinked driver wallet must expose its specific empty state")
+	}
 	op := func(input accountingOperation, want int) string {
 		t.Helper()
 		if input.RequestID == "" {

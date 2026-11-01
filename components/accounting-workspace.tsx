@@ -9,6 +9,7 @@ import {
   Clock3,
   Plus,
   Wallet,
+  UserRound,
 } from "lucide-react"
 import { toast } from "sonner"
 import { sessionFetch } from "@/lib/session-navigation"
@@ -36,6 +37,14 @@ const date = (value: string) =>
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value))
+class AccountingRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string
+  ) {
+    super(message)
+  }
+}
 export async function accountingRequest<T>(
   view: string,
   body?: object,
@@ -53,7 +62,10 @@ export async function accountingRequest<T>(
   )
   const payload = await response.json()
   if (!response.ok)
-    throw new Error(payload.error ?? "Не удалось выполнить операцию.")
+    throw new AccountingRequestError(
+      payload.error ?? "Не удалось выполнить операцию.",
+      payload.code
+    )
   return payload as T
 }
 type Balance = {
@@ -189,14 +201,17 @@ export function AccountingWorkspace({
   to,
   refreshKey = 0,
   onChanged,
+  manageDriverAccess = false,
 }: {
   driver?: boolean
   from?: string
   to?: string
   refreshKey?: number
   onChanged?: () => void
+  manageDriverAccess?: boolean
 }) {
   const [snapshot, setSnapshot] = React.useState<Snapshot | null>(null)
+  const [unlinked, setUnlinked] = React.useState(false)
   const [entries, setEntries] = React.useState<LedgerEntry[]>([])
   const [cursor, setCursor] = React.useState("")
   const [search, setSearch] = React.useState("")
@@ -231,9 +246,22 @@ export function AccountingWorkspace({
         driver ? "wallet" : "snapshot"
       )
       setSnapshot(value)
+      setUnlinked(false)
       setError("")
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось загрузить остатки.")
+      const missing =
+        driver &&
+        e instanceof AccountingRequestError &&
+        e.code === "driver_not_linked"
+      setUnlinked(missing)
+      setSnapshot(null)
+      setError(
+        missing
+          ? ""
+          : e instanceof Error
+            ? e.message
+            : "Не удалось загрузить остатки."
+      )
     }
   }, [driver])
   React.useEffect(() => {
@@ -446,7 +474,30 @@ export function AccountingWorkspace({
           {error}
         </p>
       ) : null}
-      {!snapshot && !error ? (
+      {unlinked ? (
+        <div className="flex min-h-64 flex-col items-center justify-center gap-4 py-10 text-center">
+          <UserRound className="size-9 text-muted-foreground" />
+          <div className="max-w-sm space-y-2">
+            <h2 className="text-xl font-semibold">
+              Подключите профиль водителя
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {manageDriverAccess
+                ? "Свяжите водителя с аккаунтом в команде. Здесь появятся его наличные и зарплата."
+                : "Попросите диспетчера связать ваш аккаунт с профилем водителя."}
+            </p>
+          </div>
+          {manageDriverAccess ? (
+            <Link
+              href="/team"
+              className="text-sm font-medium text-primary underline underline-offset-4"
+            >
+              Открыть команду
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+      {!snapshot && !error && !unlinked ? (
         <p className="text-sm text-muted-foreground">Загружаем остатки…</p>
       ) : null}
       {!driver && snapshot ? (
@@ -533,7 +584,7 @@ export function AccountingWorkspace({
                 </p>
               </div>
               <Button
-                className="h-12 w-full"
+                className="h-12 w-full lg:max-w-xs"
                 disabled={balance.cashMinor <= balance.pendingMinor || busy}
                 disabledReason={
                   busy
