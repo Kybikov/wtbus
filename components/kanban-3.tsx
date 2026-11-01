@@ -21,6 +21,8 @@ import {
   ContextMenuLabel,
 } from "@/components/ui/context-menu"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { statusToneClass } from "@/lib/entity-columns"
@@ -126,6 +128,8 @@ export default function ReactBitsKanban<T>({
   footerElement,
   emptyText = "Нет записей",
 }: Props<T>) {
+  const isMobile = useIsMobile()
+  const [mobileColumn, setMobileColumn] = React.useState("")
   const uid = React.useId(),
     reduce = useReducedMotion()
   const instructions = React.useId()
@@ -640,11 +644,68 @@ export default function ReactBitsKanban<T>({
         клавиатуры нажмите Alt и пробел, затем стрелки и Enter. Escape отменяет
         перемещение. На телефоне удерживайте карточку перед перетаскиванием.
       </p>
+      {isMobile && (
+        <Tabs
+          value={mobileColumn || visibleColumns[0]?.id}
+          onValueChange={(value) => {
+            const id = String(value),
+              rail = viewport.current,
+              element = colRefs.current.get(id)
+            if (rail && element)
+              rail.scrollTo({
+                left: element.offsetLeft,
+                behavior: reduce ? "instant" : "smooth",
+              })
+            setMobileColumn(id)
+          }}
+          className="mb-3"
+        >
+          <TabsList
+            aria-label="Статусы"
+            className="h-11! w-full [scrollbar-width:none] justify-start overflow-x-auto [&::-webkit-scrollbar]:hidden"
+          >
+            {visibleColumns.map((column) => (
+              <TabsTrigger
+                key={column.id}
+                value={column.id}
+                className="flex-none px-3"
+              >
+                {column.label}
+                <span className="text-xs text-muted-foreground">
+                  {groups.get(column.id)?.length ?? 0}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
       <div
         ref={viewport}
+        onScroll={() => {
+          const rail = viewport.current
+          if (!isMobile || !rail) return
+          const nearest = visibleColumns.reduce(
+            (best, column) =>
+              Math.abs(
+                (colRefs.current.get(column.id)?.offsetLeft ?? 0) -
+                  rail.scrollLeft
+              ) <
+              Math.abs(
+                (colRefs.current.get(best.id)?.offsetLeft ?? 0) -
+                  rail.scrollLeft
+              )
+                ? column
+                : best,
+            visibleColumns[0]
+          )
+          if (nearest) setMobileColumn(nearest.id)
+        }}
         className={cn(
           "flex h-[clamp(22rem,calc(100dvh-16rem),64rem)] w-full items-start gap-3 overflow-x-auto overflow-y-hidden pb-2",
-          !dragId && !touchScrolling && "snap-x snap-proximity"
+          !dragId &&
+            !touchScrolling &&
+            "snap-x snap-mandatory md:snap-proximity",
+          isMobile && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         )}
         data-kanban-viewport
         style={
@@ -680,7 +741,7 @@ export default function ReactBitsKanban<T>({
                   else colRefs.current.delete(column.id)
                 }}
                 className={cn(
-                  "flex h-fit max-h-full w-[min(20rem,calc(100vw-3rem))] shrink-0 snap-start flex-col overflow-hidden rounded-[var(--rb-r-xl)] border transition-[border-color,box-shadow] data-[drop=allowed]:ring-2 data-[drop=allowed]:ring-primary/40 data-[drop=blocked]:ring-2 data-[drop=blocked]:ring-destructive/40 motion-reduce:transition-none",
+                  "flex h-fit max-h-full w-full shrink-0 snap-start flex-col overflow-hidden rounded-[var(--rb-r-xl)] border transition-[border-color,box-shadow] data-[drop=allowed]:ring-2 data-[drop=allowed]:ring-primary/40 data-[drop=blocked]:ring-2 data-[drop=blocked]:ring-destructive/40 motion-reduce:transition-none md:w-[min(20rem,calc(100vw-3rem))]",
                   columnTones[tone]
                 )}
               >
@@ -773,7 +834,7 @@ export default function ReactBitsKanban<T>({
                         aria-describedby={instructions}
                         aria-keyshortcuts="Enter Space Alt+Space"
                         aria-label={getLabel(item)}
-                        style={{ touchAction: "none" }}
+                        style={{ touchAction: isMobile ? "auto" : "none" }}
                         onPointerDown={(event) => begin(event, id)}
                         onKeyDown={(event) => {
                           if (event.target !== event.currentTarget) return

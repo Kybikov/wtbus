@@ -9,10 +9,13 @@ import { sessionFetch } from "@/lib/session-navigation"
 import { cn } from "@/lib/utils"
 import { defaultInterfacePreferences } from "@/lib/layout-preferences"
 import { Button } from "@/components/ui/button"
+import { Slider } from "@/components/ui/slider"
+import { useFieldAutosave } from "@/components/use-field-autosave"
 import { RotateCcw } from "lucide-react"
 type ThemePreset = "company" | "gold" | "ocean" | "emerald" | "violet"
 type Radius = "sm" | "md" | "lg"
-type Scale = "sm" | "md" | "lg"
+type Scale = "xs" | "sm" | "md" | "lg" | "xl"
+const scaleLevels: Scale[] = ["xs", "sm", "md", "lg", "xl"]
 type SidebarVariant = "default" | "inset" | "floating"
 type SidebarMode = "default" | "icon" | "full"
 
@@ -69,7 +72,8 @@ function isUIPreferences(value: unknown): value is UIPreferences {
     "radius" in value &&
     (value.radius === "sm" || value.radius === "md" || value.radius === "lg") &&
     "scale" in value &&
-    (value.scale === "sm" || value.scale === "md" || value.scale === "lg") &&
+    typeof value.scale === "string" &&
+    scaleLevels.includes(value.scale as Scale) &&
     "sidebarVariant" in value &&
     (value.sidebarVariant === "default" ||
       value.sidebarVariant === "inset" ||
@@ -157,7 +161,11 @@ function SegmentedControl<T extends string>({
 const InterfaceContext = React.createContext<{
   ready: boolean
   controls: React.ReactNode
+  scaleControl: React.ReactNode
 } | null>(null)
+export function InterfaceScaleControl() {
+  return React.useContext(InterfaceContext)?.scaleControl ?? null
+}
 export function InterfacePreferencesProvider({
   children,
 }: {
@@ -204,6 +212,7 @@ function InterfacePreferencesState({
     initialLayout.density === "compact"
   )
   const [scale, setScale] = React.useState<Scale>(initialLayout.scale)
+  const [scalePreview, setScalePreview] = React.useState<Scale | null>(null)
   const [sidebarVariant, setSidebarVariant] = React.useState<SidebarVariant>(
     initialLayout.sidebarVariant
   )
@@ -212,6 +221,20 @@ function InterfacePreferencesState({
   )
   const [preferencesReady, setPreferencesReady] = React.useState(false)
   const hasPersonalThemePreference = React.useRef(false)
+  const preferenceSave = useFieldAutosave<UIPreferences>(async (next) => {
+    const response = await sessionFetch("/api/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+      signal: AbortSignal.timeout(15000),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !isUIPreferences(payload))
+      throw Error(
+        payload?.error ?? "Не удалось сохранить настройки интерфейса."
+      )
+    return payload
+  })
 
   function resetPreferences() {
     const defaults = defaultInterfacePreferences
@@ -250,18 +273,22 @@ function InterfacePreferencesState({
         })
         const payload: unknown = await response.json().catch(() => null)
         if (response.ok && isUIPreferences(payload)) {
+          preferenceSave.initialize(payload)
           if (payload.configured) applyPreferences(payload)
           if (!controller.signal.aborted)
             React.startTransition(() => setPreferencesReady(true))
         }
       } catch {
-        if (!controller.signal.aborted && localPreferences)
+        if (!controller.signal.aborted && localPreferences) {
           applyPreferences(localPreferences)
+          preferenceSave.initialize(localPreferences)
+          setPreferencesReady(true)
+        }
       }
     })()
 
     return () => controller.abort()
-  }, [])
+  }, [preferenceSave])
 
   React.useEffect(() => {
     const controller = new AbortController()
@@ -367,25 +394,11 @@ function InterfacePreferencesState({
         theme: preferences.theme,
       })
     )
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      void sessionFetch("/api/preferences", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(preferences),
-        signal: AbortSignal.any([
-          controller.signal,
-          AbortSignal.timeout(8_000),
-        ]),
-      }).catch(() => undefined)
-    }, 350)
-    return () => {
-      controller.abort()
-      window.clearTimeout(timer)
-    }
+    void preferenceSave.commit(preferences)
   }, [
     compact,
     preferencesReady,
+    preferenceSave,
     preset,
     radius,
     resolvedTheme,
@@ -395,10 +408,57 @@ function InterfacePreferencesState({
     theme,
   ])
 
+  const scaleControl = (
+    <div className="min-w-0 space-y-4 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">Масштаб интерфейса</span>
+        <output className="text-sm tabular-nums">
+          {75 + scaleLevels.indexOf(scalePreview ?? scale) * 12.5}%
+        </output>
+      </div>
+      <Slider
+        aria-label="Масштаб интерфейса"
+        min={75}
+        max={125}
+        step={12.5}
+        value={[75 + scaleLevels.indexOf(scalePreview ?? scale) * 12.5]}
+        disabled={!preferencesReady}
+        data-disabled-reason="Дождитесь загрузки настроек интерфейса."
+        onValueChange={(value) =>
+          setScalePreview(
+            scaleLevels[
+              Math.round(
+                ((Array.isArray(value) ? value[0] : value) - 75) / 12.5
+              )
+            ]
+          )
+        }
+        onValueCommitted={(value) => {
+          setScale(
+            scaleLevels[
+              Math.round(
+                ((Array.isArray(value) ? value[0] : value) - 75) / 12.5
+              )
+            ]
+          )
+          setScalePreview(null)
+        }}
+      />
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>75%</span>
+        <span>100%</span>
+        <span>125%</span>
+      </div>
+      <p className="text-xs leading-5 text-muted-foreground">
+        Текст, кнопки и отступы меняются вместе на телефоне и компьютере.
+      </p>
+    </div>
+  )
   return (
     <InterfaceContext.Provider
       value={{
         ready: preferencesReady,
+        scaleControl,
         controls: (
           <div className="mt-5">
             <div className="grid gap-5 md:grid-cols-2">
@@ -458,20 +518,11 @@ function InterfacePreferencesState({
                   ]}
                 />
               </div>
+              {scaleControl}
               <div className="space-y-2">
-                <span className="block text-sm font-medium">Масштаб</span>
-                <SegmentedControl
-                  value={scale}
-                  onChange={setScale}
-                  options={[
-                    { value: "sm", label: "S" },
-                    { value: "md", label: "M" },
-                    { value: "lg", label: "L" },
-                  ]}
-                />
-              </div>
-              <div className="space-y-2">
-                <span className="block text-sm font-medium">Вид sidebar</span>
+                <span className="block text-sm font-medium">
+                  Вид бокового меню
+                </span>
                 <SegmentedControl
                   value={sidebarVariant}
                   onChange={setSidebarVariant}
@@ -483,7 +534,9 @@ function InterfacePreferencesState({
                 />
               </div>
               <div className="space-y-2">
-                <span className="block text-sm font-medium">Режим sidebar</span>
+                <span className="block text-sm font-medium">
+                  Режим бокового меню
+                </span>
                 <SegmentedControl
                   value={sidebarMode}
                   onChange={setSidebarMode}

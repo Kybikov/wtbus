@@ -47,6 +47,10 @@ import {
 import type { StaffRole } from "@/lib/admin-actions"
 import { sessionFetch } from "@/lib/session-navigation"
 import { entityDetailHref } from "@/lib/entity-details"
+import {
+  RecordNumberResults,
+  useRecordNumberSearch,
+} from "@/components/record-number-results"
 import { cn } from "@/lib/utils"
 
 const icons = {
@@ -119,6 +123,11 @@ export function MobileDock({
   const [createOpen, setCreateOpen] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
+  const numberResults = useRecordNumberSearch(
+    open,
+    query,
+    ["owner", "admin", "developer", "dispatcher"].includes(role)
+  )
   const [results, setResults] = React.useState<SearchState>(emptyResults)
   const [viewport, setViewport] = React.useState({ bottom: 0, height: 600 })
   const dockElement = React.useRef<HTMLElement>(null)
@@ -356,8 +365,7 @@ export function MobileDock({
       >
         <DialogTitle className="sr-only">Поиск и разделы CRM</DialogTitle>
         <DialogDescription className="sr-only">
-          Найдите раздел, пассажира или бронирование. Результаты расположены над
-          полем поиска.
+          Раздел, номер записи, пассажир или телефон.
         </DialogDescription>
         <Command
           shouldFilter={false}
@@ -380,7 +388,7 @@ export function MobileDock({
               placeholder={
                 role === "driver"
                   ? "Найти раздел…"
-                  : "Имя, телефон, бронь или раздел…"
+                  : "Номер записи, имя, телефон или раздел…"
               }
               className="text-base"
             />
@@ -455,6 +463,7 @@ export function MobileDock({
                 {results.error}
               </p>
             ) : null}
+            <RecordNumberResults {...numberResults} navigate={navigate} />
             {results.customers.length ? (
               <CommandGroup heading="КЛИЕНТЫ">
                 {results.customers.map((item) => (
@@ -504,6 +513,7 @@ export function MobileDock({
             {!results.loading &&
             !results.error &&
             !matches.length &&
+            !numberResults.items.length &&
             !results.customers.length &&
             !results.bookings.length ? (
               <p role="status" className="p-4 text-sm text-muted-foreground">

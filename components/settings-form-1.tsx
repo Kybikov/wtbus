@@ -47,7 +47,7 @@ export function SettingsRow({
   children: ReactNode
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-[var(--rb-r-lg)] bg-muted/35 p-3 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-4">
+    <div className="flex min-w-0 flex-col gap-2 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-4">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor={id} className="text-sm font-medium">

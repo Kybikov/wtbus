@@ -84,7 +84,7 @@ export function MobileCreateMenu({
               closed: {},
               open: { transition: { staggerChildren: reduce ? 0 : 0.045 } },
             }}
-            className="flex max-h-[calc(var(--mobile-viewport-height,100dvh)-7rem)] flex-col items-start gap-2 overflow-y-auto py-1"
+            className="mobile-create-actions flex max-h-[calc(var(--mobile-viewport-height,100dvh)-7rem)] [scrollbar-width:none] flex-col items-start gap-2 overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden"
           >
             {targets.map((target) => {
               const Icon = icons[target.href as keyof typeof icons]

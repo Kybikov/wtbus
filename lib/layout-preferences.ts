@@ -1,7 +1,7 @@
 export type LayoutPreferences = {
   sidebarMode: "default" | "icon" | "full"
   sidebarVariant: "default" | "inset" | "floating"
-  scale: "sm" | "md" | "lg"
+  scale: "xs" | "sm" | "md" | "lg" | "xl"
   radius: "sm" | "md" | "lg"
   density: "comfortable" | "compact"
 }
@@ -47,7 +47,7 @@ export function parseLayoutPreferences(
   if (
     !["default", "icon", "full"].includes(data.sidebarMode) ||
     !["default", "inset", "floating"].includes(data.sidebarVariant) ||
-    !["sm", "md", "lg"].includes(data.scale) ||
+    !["xs", "sm", "md", "lg", "xl"].includes(data.scale) ||
     !["sm", "md", "lg"].includes(data.radius) ||
     !["comfortable", "compact"].includes(data.density)
   )

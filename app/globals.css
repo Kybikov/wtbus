@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* Passenger pages inherit Vivat's brand without the staff member's UI scale. */
-html:has([data-public-booking]) {
+:root[data-scale]:has([data-public-booking]) {
   font-size: 16px;
   --app-radius: 1rem;
 }
@@ -150,6 +150,9 @@ body:has([data-public-booking]) {
   --radius: 0.75rem;
   --app-radius: 1rem;
 }
+:root[data-scale="xs"] {
+  font-size: 12px;
+}
 :root[data-scale="sm"] {
   font-size: 14px;
 }
@@ -158,6 +161,9 @@ body:has([data-public-booking]) {
 }
 :root[data-scale="lg"] {
   font-size: 18px;
+}
+:root[data-scale="xl"] {
+  font-size: 20px;
 }
 
 :root[data-density="compact"] .workspace-content {
@@ -303,7 +309,11 @@ body:has([data-public-booking]) {
   min-height: 0;
 }
 .mobile-dock {
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-top: 0.375rem;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--background) 65%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 .mobile-dock-search [data-slot="command-input-wrapper"] {
   min-width: 0;
@@ -338,7 +348,7 @@ body:has([data-public-booking]) {
     padding-right: 64px;
   }
   [data-sidebar="sidebar"][data-mobile="true"] > button {
-    top: max(16px, env(safe-area-inset-top));
+    top: calc(1rem + env(safe-area-inset-top));
     right: 12px;
   }
   .mobile-account-trigger {
@@ -358,19 +368,27 @@ body:has([data-public-booking]) {
   html[data-mobile-keyboard="true"] .mobile-collection-footer {
     display: none;
   }
-  html[data-scale] {
-    font-size: 16px;
-  }
   body:has(.app-shell-frame) {
     overflow: hidden;
   }
   .app-shell-frame {
     gap: 0;
-    padding: calc(8px + env(safe-area-inset-top)) 0 0;
+    padding: calc(0.5rem + env(safe-area-inset-top)) 0 0;
+  }
+  .app-shell-frame::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top);
+    z-index: 45;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--background) 65%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
   .app-shell-frame .app-topbar {
-    height: 56px;
-    min-height: 56px;
+    height: 3.5rem;
+    min-height: 3.5rem;
     margin-left: max(8px, env(safe-area-inset-left));
     margin-right: max(8px, env(safe-area-inset-right));
     border-radius: 28px;
@@ -402,8 +420,8 @@ body:has([data-public-booking]) {
   [data-slot="command-item"],
   [data-slot="tabs-trigger"],
   [data-slot="toggle"] {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
   }
   [data-slot="input"],
   [data-slot="textarea"],
@@ -413,14 +431,14 @@ body:has([data-public-booking]) {
   input,
   textarea,
   select {
-    font-size: 16px;
+    font-size: 1rem;
   }
   [data-slot="input"],
   [data-slot="select-trigger"] {
-    min-height: 44px;
+    min-height: 2.75rem;
   }
   [data-slot="input-group"] {
-    min-height: 44px;
+    min-height: 2.75rem;
   }
   .group\/calendar {
     --cell-size: min(44px, calc((100vw - 56px) / 7));
@@ -432,7 +450,7 @@ body:has([data-public-booking]) {
   input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not(
       [type="file"]
     ):not([type="color"]) {
-    min-height: 44px;
+    min-height: 2.75rem;
   }
   label:has([data-slot="checkbox"]),
   label:has([data-slot="switch"]) {
@@ -745,8 +763,16 @@ body:has([data-disabled-action-hint][data-open])
     overscroll-behavior-y: contain;
   }
   .mobile-create-menu {
-    left: max(15px, calc(env(safe-area-inset-left) + 7px));
-    bottom: max(22px, calc(env(safe-area-inset-bottom) + 6px));
+    left: calc(max(8px, env(safe-area-inset-left)) + 0.375rem + 1px);
+    bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + 0.375rem + 1px);
+  }
+  .mobile-create-actions {
+    scrollbar-width: none;
+  }
+  .mobile-create-actions::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
   }
   .statistics-period-popup {
     width: calc(100vw - 24px) !important;

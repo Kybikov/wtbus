@@ -20,8 +20,24 @@ test("reload preserves layout and manual sidebar state for every mode", () => {
         },
         override: { mode, open },
       }
-      assert.deepEqual(parseLayoutCookie(serializeLayoutCookie(snapshot)), snapshot)
+      assert.deepEqual(
+        parseLayoutCookie(serializeLayoutCookie(snapshot)),
+        snapshot
+      )
     }
+  }
+})
+
+test("every supported interface scale survives cookie persistence", () => {
+  for (const scale of ["xs", "sm", "md", "lg", "xl"]) {
+    const snapshot = {
+      preferences: { ...defaultLayoutPreferences, scale },
+      override: null,
+    }
+    assert.deepEqual(
+      parseLayoutCookie(serializeLayoutCookie(snapshot)),
+      snapshot
+    )
   }
 })
 
@@ -41,14 +57,25 @@ test("invalid cookies and unsupported layout values fall back safely", () => {
     assert.equal(parseLayoutCookie(value), null)
   }
   for (const [key, value] of [
-    ["sidebarMode", "hidden"], ["sidebarVariant", "custom"],
-    ["scale", "huge"], ["radius", 3], ["density", null],
+    ["sidebarMode", "hidden"],
+    ["sidebarVariant", "custom"],
+    ["scale", "huge"],
+    ["radius", 3],
+    ["density", null],
     ["sidebarMode", { toString: () => "icon" }],
   ]) {
-    assert.equal(parseLayoutPreferences({ ...defaultLayoutPreferences, [key]: value }), null)
+    assert.equal(
+      parseLayoutPreferences({ ...defaultLayoutPreferences, [key]: value }),
+      null
+    )
   }
-  assert.deepEqual(parseLayoutCookie(serializeLayoutCookie({
-    preferences: defaultLayoutPreferences,
-    override: { mode: "default", open: "false" },
-  })), { preferences: defaultLayoutPreferences, override: null })
+  assert.deepEqual(
+    parseLayoutCookie(
+      serializeLayoutCookie({
+        preferences: defaultLayoutPreferences,
+        override: { mode: "default", open: "false" },
+      })
+    ),
+    { preferences: defaultLayoutPreferences, override: null }
+  )
 })

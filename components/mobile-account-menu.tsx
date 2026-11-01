@@ -3,9 +3,18 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { DeliverySwitch } from "@/components/ui/delivery-switch"
+import { MobileDockSettings } from "@/components/mobile-dock-settings"
 import { settingsSections } from "@/components/settings-workspace"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { InterfaceScaleControl } from "@/components/interface-preferences"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import {
   Bell,
   ChevronRight,
@@ -14,6 +23,7 @@ import {
   User,
   Smartphone,
   X,
+  ZoomIn,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -25,7 +35,6 @@ import {
   SheetClose,
 } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
-import { mobileNavigation } from "@/lib/mobile-navigation"
 import type { StaffRole } from "@/lib/admin-actions"
 import { sessionFetch } from "@/lib/session-navigation"
 import { cn } from "@/lib/utils"
@@ -72,7 +81,6 @@ export function MobileAccountMenu({
   const pathname = usePathname()
   const [leaving, setLeaving] = React.useState(false)
   const close = () => onOpenChange(false)
-  const pages = mobileNavigation(role)
   async function signOut() {
     if (leaving) return
     setLeaving(true)
@@ -97,7 +105,7 @@ export function MobileAccountMenu({
         finalFocus={trigger}
         className="mobile-account-menu w-[min(92vw,23rem)]! max-w-none! gap-0 overflow-hidden rounded-l-3xl border-border bg-card motion-reduce:transition-none"
       >
-        <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 px-3 pt-[max(.75rem,env(safe-area-inset-top))] pb-3">
+        <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 bg-card/80 px-3 pt-[calc(.75rem+env(safe-area-inset-top))] pb-3 backdrop-blur-xl">
           <SheetTitle className="sr-only">Профиль и разделы</SheetTitle>
           <div className="flex min-w-0 items-center gap-2 pr-10">
             <span
@@ -128,7 +136,7 @@ export function MobileAccountMenu({
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-2 right-2 size-9 rounded-full"
+                className="absolute top-[calc(.5rem+env(safe-area-inset-top))] right-2 size-9 rounded-full"
                 aria-label="Закрыть правое меню"
               />
             }
@@ -137,7 +145,7 @@ export function MobileAccountMenu({
           </SheetClose>
           <nav
             aria-label="Действия профиля"
-            className="mt-3 flex items-center justify-between gap-1"
+            className="mt-3 grid grid-cols-7 items-center gap-0.5 [&_button]:w-full [&_button]:min-w-0! [&>span]:scale-90"
           >
             <Button
               nativeButton={false}
@@ -188,6 +196,29 @@ export function MobileAccountMenu({
               <Smartphone className="size-5" />
             </Button>
             <ThemeToggle compact />
+            <Dialog>
+              <DialogTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Масштаб интерфейса"
+                    title="Масштаб интерфейса"
+                  />
+                }
+              >
+                <ZoomIn className="size-5" />
+              </DialogTrigger>
+              <DialogContent className="rounded-3xl">
+                <DialogHeader>
+                  <DialogTitle>Масштаб интерфейса</DialogTitle>
+                  <DialogDescription>
+                    Подберите удобный размер элементов.
+                  </DialogDescription>
+                </DialogHeader>
+                <InterfaceScaleControl />
+              </DialogContent>
+            </Dialog>
             <Button
               variant="ghost"
               size="icon"
@@ -256,45 +287,11 @@ export function MobileAccountMenu({
                   ))}
               </section>
             )}
-            <section
-              aria-label="Нижняя навигация"
-              className="rounded-2xl border border-border p-3"
-            >
-              <h3 className="text-sm font-semibold">Нижняя навигация</h3>
-              <p className="mt-1 mb-2 text-xs text-muted-foreground">
-                Выберите разделы для нижней панели.
-              </p>
-              {pages.map((page) => {
-                const checked = dockHrefs.includes(page.href)
-                const reason =
-                  checked && dockHrefs.length === 1
-                    ? "Оставьте хотя бы один раздел."
-                    : undefined
-                return (
-                  <div
-                    key={page.href}
-                    className="border-b border-border/50 py-1 last:border-0"
-                  >
-                    <div className="flex min-h-12 items-center justify-between gap-3">
-                      <span className="min-w-0 text-sm">{page.label}</span>
-                      <DeliverySwitch
-                        label={page.label + " в нижней навигации"}
-                        checked={checked}
-                        disabled={!!reason}
-                        disabledReason={reason}
-                        onChange={(value) =>
-                          onDockChange(
-                            value
-                              ? [...dockHrefs, page.href]
-                              : dockHrefs.filter((href) => href !== page.href)
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </section>
+            <MobileDockSettings
+              role={role}
+              hrefs={dockHrefs}
+              onChange={onDockChange}
+            />
           </nav>
         </div>
       </SheetContent>

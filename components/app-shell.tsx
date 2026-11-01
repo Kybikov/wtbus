@@ -28,7 +28,8 @@ import {
   UserGroupIcon,
   Wallet01Icon,
 } from "@hugeicons/core-free-icons"
-import { MoreHorizontal } from "lucide-react"
+import { MoreHorizontal, ChevronDown, ChevronRight } from "lucide-react"
+import { settingsSections } from "@/components/settings-workspace"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Popover,
@@ -86,6 +87,10 @@ import {
   type EntityExport,
 } from "@/components/entity-export-context"
 import { EntityFooterContext } from "@/components/entity-footer-context"
+import {
+  RecordNumberResults,
+  useRecordNumberSearch,
+} from "@/components/record-number-results"
 import { adminControlClassName, adminSearchClassName } from "@/lib/admin-ui"
 
 type MembershipRole =
@@ -353,12 +358,157 @@ function VivatSidebar({
   items,
   pathname,
   variant,
+  userName,
 }: {
   brand: ShellBrand
   items: NavigationItem[]
   pathname: string
   variant: SidebarVariant
+  userName: string
 }) {
+  const { isMobile, setOpenMobile } = useSidebar()
+  const [expanded, setExpanded] = React.useState<string | null>(null)
+  const mobileItems = [
+    ...items,
+    {
+      href: "/notifications",
+      label: "Уведомления",
+      icon: InformationCircleIcon,
+      roles: [],
+    },
+    ...(["owner", "admin", "developer", "accountant"].includes(brand.role)
+      ? [
+          {
+            href: "/settings",
+            label: "Настройки компании",
+            icon: Wallet01Icon,
+            roles: [],
+          },
+        ]
+      : []),
+  ]
+  if (isMobile)
+    return (
+      <Sidebar collapsible="icon" className="app-sidebar">
+        <SidebarHeader className="min-h-16 justify-center px-5">
+          <span className="truncate text-lg font-bold">{brand.tenantName}</span>
+        </SidebarHeader>
+        <SidebarContent className="px-4 py-3">
+          <nav aria-label="Главная навигация" className="space-y-1">
+            {mobileItems.map((item) => {
+              const children =
+                item.href === "/"
+                  ? [
+                      { href: "/?section=summary", label: "Сводка" },
+                      ...([
+                        "owner",
+                        "admin",
+                        "developer",
+                        "accountant",
+                      ].includes(brand.role)
+                        ? [{ href: "/?section=revenue", label: "Выручка" }]
+                        : []),
+                      { href: "/?section=bookings", label: "Бронирования" },
+                      { href: "/?section=trips", label: "Рейсы" },
+                      { href: "/?section=calendar", label: "Календарь" },
+                      ...(brand.role !== "accountant"
+                        ? [{ href: "/?section=live", label: "На линии" }]
+                        : []),
+                    ]
+                  : item.href === "/settings"
+                    ? settingsSections.filter(
+                        (section) =>
+                          section.href.startsWith("/settings") &&
+                          (!section.roles || section.roles.includes(brand.role))
+                      )
+                    : []
+              const active =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href)
+              const opened = expanded === item.href
+              return (
+                <div key={item.href}>
+                  {children.length ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        aria-expanded={opened}
+                        className={cn(
+                          "h-14 w-full justify-between rounded-2xl px-3 text-xl font-bold",
+                          active && "text-primary"
+                        )}
+                        onClick={() => setExpanded(opened ? null : item.href)}
+                      >
+                        {item.label}
+                        {opened ? (
+                          <ChevronDown className="size-4" />
+                        ) : (
+                          <ChevronRight className="size-4" />
+                        )}
+                      </Button>
+                      {opened ? (
+                        <div className="space-y-1 pb-3 pl-5">
+                          {children.map((child) => (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              onClick={() => setOpenMobile(false)}
+                              className="flex min-h-12 items-center rounded-xl px-3 text-base text-muted-foreground hover:bg-control hover:text-foreground"
+                            >
+                              {child.label}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => setOpenMobile(false)}
+                      className={cn(
+                        "flex min-h-14 items-center rounded-2xl px-3 text-xl font-bold hover:bg-control",
+                        active && "text-primary"
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  )}
+                </div>
+              )
+            })}
+          </nav>
+        </SidebarContent>
+        <SidebarFooter className="gap-3 px-4 pb-5">
+          <Link
+            href={`/book/${encodeURIComponent(brand.tenantSlug)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-fit px-3 text-xs text-muted-foreground underline-offset-4 hover:underline"
+          >
+            Страница бронирования ↗
+          </Link>
+          <Link
+            href="/profile"
+            onClick={() => setOpenMobile(false)}
+            className="flex min-h-16 items-center gap-3 rounded-[24px] border border-border bg-control px-4 py-3"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+              {brand.userInitials}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">
+                {userName || "Личный профиль"}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {brand.tenantName}
+              </span>
+            </span>
+          </Link>
+        </SidebarFooter>
+      </Sidebar>
+    )
   return (
     <Sidebar
       collapsible="icon"
@@ -555,6 +705,12 @@ export function AppShell({
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =
     React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
+  const numberResults = useRecordNumberSearch(
+    searchOpen,
+    searchQuery,
+    identityReady &&
+      ["owner", "admin", "developer", "dispatcher"].includes(brand.role)
+  )
   const [searchLoading, setSearchLoading] = React.useState(false)
   const [searchError, setSearchError] = React.useState<string | null>(null)
   const [customers, setCustomers] = React.useState<SearchCustomer[]>([])
@@ -818,6 +974,7 @@ export function AppShell({
       >
         <VivatSidebar
           brand={brand}
+          userName={userName}
           items={visibleNavigation}
           pathname={pathname}
           variant={preferences.sidebarVariant}
@@ -1146,13 +1303,16 @@ export function AppShell({
             </PullToRefresh>
             {collectionFooter ? (
               <div className="mobile-collection-footer min-w-0 shrink-0 pt-1">
-                <div ref={setFooterHost} className="min-h-[50px]" />
+                <div
+                  ref={setFooterHost}
+                  className="flex min-h-[50px] min-w-0 flex-col gap-2"
+                />
               </div>
             ) : null}
           </EntityFooterContext.Provider>
         </SidebarInset>
         <CommandDialog
-          description="Найдите раздел, бронирование или клиента."
+          description="Раздел, номер записи, пассажир или телефон."
           onOpenChange={setSearchOpen}
           open={searchOpen}
           title="Поиск"
@@ -1168,7 +1328,7 @@ export function AppShell({
               onValueChange={updateSearchQuery}
               maxLength={120}
               aria-label="Глобальный поиск"
-              placeholder="Раздел, пассажир, телефон или ID брони…"
+              placeholder="Раздел, номер записи, пассажир или телефон…"
               className="h-10 px-2"
             />
             <CommandList
@@ -1218,7 +1378,10 @@ export function AppShell({
                 </p>
               ) : null}
               {canShowSearchResults &&
-              customers.length + bookings.length === 0 &&
+              customers.length +
+                bookings.length +
+                numberResults.items.length ===
+                0 &&
               !visibleNavigation.some((item) =>
                 item.label
                   .toLocaleLowerCase()
@@ -1231,6 +1394,7 @@ export function AppShell({
                   Ничего не найдено. Попробуйте имя, телефон или маршрут.
                 </div>
               ) : null}
+              <RecordNumberResults {...numberResults} navigate={navigate} />
               {customers.length > 0 ? (
                 <CommandGroup heading="КЛИЕНТЫ">
                   {customers.map((customer) => (

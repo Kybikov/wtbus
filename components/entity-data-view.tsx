@@ -30,6 +30,7 @@ import { useRouter } from "next/navigation"
 import { entityDetailHref } from "@/lib/entity-details"
 import { mergeVisibleCardOrder } from "@/lib/kanban"
 import { MobileSwipeActions } from "@/components/mobile-swipe-actions"
+import { MobileRecordRow } from "@/components/mobile-record-row"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useMobileToolsHost } from "@/components/mobile-navigation-provider"
 import { createPortal } from "react-dom"
@@ -54,7 +55,16 @@ import {
   Settings2,
   Trash2,
   X,
+  MoreHorizontal,
 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 
 import { EntityCalendar } from "@/components/entity-calendar"
 import ReactBitsKanban, {
@@ -63,9 +73,8 @@ import ReactBitsKanban, {
 import FadeContent from "@/components/react-bits/FadeContent/FadeContent"
 import { EntityCardSettings } from "@/components/entity-card-settings"
 import { toast } from "sonner"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -237,6 +246,56 @@ function EntityActionButtons<T>({
   label: string
   actions: EntityAction<T>[]
 }) {
+  const mobile = useIsMobile()
+  if (mobile)
+    return (
+      <div
+        className="flex shrink-0 items-center gap-1"
+        data-no-drag
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Действия: ${label}`}
+              />
+            }
+          >
+            <MoreHorizontal className="size-5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-w-[calc(100vw-2rem)]">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{label}</DropdownMenuLabel>
+              {actions.map((action) => (
+                <DropdownMenuItem
+                  key={action.label}
+                  disabled={action.disabled?.(item)}
+                  disabledReason={
+                    typeof action.disabledReason === "function"
+                      ? action.disabledReason(item)
+                      : (action.disabledReason ??
+                        "Действие недоступно в текущем состоянии записи.")
+                  }
+                  variant={action.destructive ? "destructive" : "default"}
+                  onClick={() => action.onSelect(item)}
+                >
+                  {React.createElement(
+                    action.icon ?? actionIcon(action.label),
+                    { className: "size-4" }
+                  )}
+                  {action.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {extra}
+      </div>
+    )
   return (
     <TooltipProvider>
       <div className="flex items-center justify-end gap-1">
@@ -830,6 +889,23 @@ export function EntityDataView<T>({
   const visibleBoardGroups = arrangeBoardGroups(boardGroups, board)
   const hiddenBoardGroups = new Set(board?.hidden ?? [])
   const isMobile = useIsMobile()
+  const [selecting, setSelecting] = React.useState(false)
+  const selectionOpen = selecting || selected.size > 0
+  const movingFromMobile = React.useRef(new Set<string>())
+  async function moveFromMobile(item: T, group: string) {
+    const id = getId(item)
+    if (movingFromMobile.current.has(id)) return
+    movingFromMobile.current.add(id)
+    try {
+      await onKanbanGroupChange?.(item, group)
+    } catch (reason) {
+      toast.error(
+        reason instanceof Error ? reason.message : "Не удалось изменить статус."
+      )
+    } finally {
+      movingFromMobile.current.delete(id)
+    }
+  }
   const toolsHost = useMobileToolsHost()
   const toolbar = (
     <EntityViewToolbar
@@ -923,133 +999,64 @@ export function EntityDataView<T>({
               </Button>
             )}
           </div>
+        ) : isMobile && (mode === "table" || mode === "list") ? (
+          <div role="list" aria-label="Записи" className="space-y-2">
+            {!selectionOpen && (
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelecting(true)}
+                >
+                  <CheckSquare2 className="size-4" />
+                  Выбрать
+                </Button>
+              </div>
+            )}
+            {shownItems.map((item) => (
+              <MobileRecordRow
+                key={getId(item)}
+                label={getLabel(item)}
+                selected={selected.has(getId(item))}
+                selecting={selectionOpen}
+                selectable={isSelectable(item)}
+                onSelect={() => {
+                  setSelecting(true)
+                  toggleOne(item, !selected.has(getId(item)))
+                }}
+                onOpen={
+                  detailEnabled
+                    ? () =>
+                        router.push(entityDetailHref(collection, getId(item)))
+                    : undefined
+                }
+                summary={visibleColumns
+                  .filter(
+                    (column) =>
+                      (column.text?.(item) ?? column.value(item)) !==
+                      getLabel(item)
+                  )
+                  .slice(0, 3)
+                  .map((column) => (
+                    <span key={column.id} className="max-w-full truncate">
+                      {column.value(item)}
+                    </span>
+                  ))}
+                actions={
+                  actions.length ? (
+                    <EntityActionButtons
+                      extra={renderRowActions?.(item)}
+                      actions={actions}
+                      item={item}
+                      label={getLabel(item)}
+                    />
+                  ) : undefined
+                }
+              />
+            ))}
+          </div>
         ) : mode === "table" ? (
           <>
-            <div
-              className="mobile-record-list space-y-2 md:hidden"
-              role="list"
-              aria-label="Записи"
-            >
-              <label className="flex items-center gap-3 px-3 text-sm">
-                <Checkbox
-                  aria-label="Выбрать все записи"
-                  checked={allSelected}
-                  disabled={selectableItems.length === 0}
-                  onCheckedChange={toggleAll}
-                />
-                Выбрать все
-              </label>
-              {shownItems.map((item) => (
-                <MobileSwipeActions
-                  key={getId(item)}
-                  label={getLabel(item)}
-                  onOpen={
-                    detailEnabled
-                      ? () =>
-                          router.push(entityDetailHref(collection, getId(item)))
-                      : undefined
-                  }
-                  actions={sourceActions
-                    ?.filter((action) => !action.disabled?.(item))
-                    .map((action) => ({
-                      ...action,
-                      onSelect: () => action.onSelect(item),
-                    }))}
-                >
-                  <Card
-                    key={getId(item)}
-                    role="listitem"
-                    className={cn(
-                      "workspace-panel gap-3 rounded-[26px] py-3 shadow-sm",
-                      selected.has(getId(item)) && "ring-1 ring-primary"
-                    )}
-                  >
-                    <CardHeader className="flex flex-row items-start gap-2 px-3">
-                      <label className="flex min-w-11 shrink-0 items-center justify-center">
-                        <Checkbox
-                          aria-label={`Выбрать ${getLabel(item)}`}
-                          checked={selected.has(getId(item))}
-                          disabled={!isSelectable(item)}
-                          onCheckedChange={(checked) =>
-                            toggleOne(item, checked)
-                          }
-                        />
-                      </label>
-                      <div className="flex min-h-11 min-w-0 flex-1 items-center">
-                        {detailEnabled ? (
-                          <Link
-                            href={entityDetailHref(collection, getId(item))}
-                            className="flex min-h-11 w-full items-center font-semibold break-words hover:text-primary"
-                          >
-                            {getLabel(item)}
-                          </Link>
-                        ) : (
-                          <span className="font-semibold break-words">
-                            {getLabel(item)}
-                          </span>
-                        )}
-                      </div>
-                      {actions?.length ? (
-                        <EntityActionButtons
-                          extra={renderRowActions?.(item)}
-                          actions={actions}
-                          item={item}
-                          label={getLabel(item)}
-                        />
-                      ) : null}
-                    </CardHeader>
-                    <CardContent className="px-3">
-                      <dl className="grid grid-cols-2 gap-3">
-                        {visibleColumns
-                          .filter((column, index) => {
-                            if (index !== 0) return true
-                            const value =
-                              column.text?.(item) ?? column.value(item)
-                            return (
-                              typeof value !== "string" ||
-                              value !== getLabel(item)
-                            )
-                          })
-                          .map((column) => (
-                            <div
-                              key={column.id}
-                              className={cn(
-                                "min-w-0",
-                                [
-                                  "name",
-                                  "passenger",
-                                  "passengers",
-                                  "allPassengers",
-                                  "route",
-                                  "notes",
-                                ].includes(column.id) && "col-span-2"
-                              )}
-                            >
-                              <dt className="mb-1 text-xs text-muted-foreground">
-                                {column.label}
-                              </dt>
-                              <dd className="min-w-0 text-sm break-words [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal [&>*]:max-w-full [&>*]:min-w-0">
-                                {column.value(item)}
-                              </dd>
-                            </div>
-                          ))}
-                      </dl>
-                      {detailEnabled ? (
-                        <Link
-                          className={buttonVariants({
-                            variant: "outline",
-                            className: "mt-3 w-full",
-                          })}
-                          href={entityDetailHref(collection, getId(item))}
-                        >
-                          Открыть детали
-                        </Link>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                </MobileSwipeActions>
-              ))}
-            </div>
             <div className="surface-card hidden overflow-hidden md:block">
               <DndContext
                 sensors={columnSensors}
@@ -1538,18 +1545,78 @@ export function EntityDataView<T>({
                     router.push(entityDetailHref(collection, getId(item)))
                 : undefined
             }
-            renderCard={(item) => (
-              <ContextMenu>
-                <ContextMenuTrigger render={<div />}>
-                  {card(item)}
-                </ContextMenuTrigger>
-                <EntityMenu
-                  actions={menuActions}
-                  item={item}
-                  label={getLabel(item)}
-                />
-              </ContextMenu>
-            )}
+            renderCard={(item) =>
+              isMobile ? (
+                <div data-no-drag>
+                  <MobileRecordRow
+                    label={getLabel(item)}
+                    selected={selected.has(getId(item))}
+                    selecting={selectionOpen}
+                    selectable={isSelectable(item)}
+                    onSelect={() => {
+                      setSelecting(true)
+                      toggleOne(item, !selected.has(getId(item)))
+                    }}
+                    onOpen={
+                      detailEnabled
+                        ? () =>
+                            router.push(
+                              entityDetailHref(collection, getId(item))
+                            )
+                        : undefined
+                    }
+                    summary={visibleColumns
+                      .slice(0, 3)
+                      .filter(
+                        (column) =>
+                          (column.text?.(item) ?? column.value(item)) !==
+                          getLabel(item)
+                      )
+                      .map((column) => (
+                        <span className="max-w-full truncate" key={column.id}>
+                          {column.value(item)}
+                        </span>
+                      ))}
+                    actions={
+                      <EntityActionButtons
+                        actions={[
+                          ...actions,
+                          ...(onKanbanGroupChange
+                            ? visibleBoardGroups
+                                .filter(
+                                  (group) =>
+                                    group.id !== groupOf(item) &&
+                                    (canMoveInKanban?.(item) ?? true) &&
+                                    (canMoveToKanbanGroup?.(item, group.id) ??
+                                      true)
+                                )
+                                .map((group) => ({
+                                  label: `Переместить: ${group.label}`,
+                                  onSelect: () => {
+                                    void moveFromMobile(item, group.id)
+                                  },
+                                }))
+                            : []),
+                        ]}
+                        item={item}
+                        label={getLabel(item)}
+                      />
+                    }
+                  />
+                </div>
+              ) : (
+                <ContextMenu>
+                  <ContextMenuTrigger render={<div />}>
+                    {card(item)}
+                  </ContextMenuTrigger>
+                  <EntityMenu
+                    actions={menuActions}
+                    item={item}
+                    label={getLabel(item)}
+                  />
+                </ContextMenu>
+              )
+            }
           />
         ) : mode === "calendar" && dateValue ? (
           <EntityCalendar
@@ -1624,18 +1691,52 @@ export function EntityDataView<T>({
       />
       {(() => {
         const bar = (
-          <EntityMetricsBar
-            items={items}
-            total={totalCount ?? sourceItems.length}
-            loadedCount={sourceItems.length}
-            selectedCount={
-              items.filter((item) => selected.has(getId(item))).length
-            }
-            fields={metricFields}
-            metrics={metrics}
-            onChange={setMetrics}
-            loading={loading}
-          />
+          <>
+            {isMobile && selectionOpen ? (
+              <section
+                aria-label="Выбранные записи"
+                className="-order-2 mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-primary/30 bg-popover p-2 shadow-lg"
+              >
+                <span className="px-1 text-xs font-medium">
+                  Выбрано: {selected.size}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="px-2 text-xs"
+                  disabled={!selectableItems.length}
+                  disabledReason="Нет доступных для выбора записей."
+                  onClick={() => toggleAll(!allSelected)}
+                >
+                  {allSelected ? "Снять выбор" : "Выбрать все"}
+                </Button>
+                {selected.size ? bulkActions : null}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Закончить выбор"
+                  onClick={() => {
+                    onSelectedChange(new Set())
+                    setSelecting(false)
+                  }}
+                >
+                  <X />
+                </Button>
+              </section>
+            ) : null}
+            <EntityMetricsBar
+              items={items}
+              total={totalCount ?? sourceItems.length}
+              loadedCount={sourceItems.length}
+              selectedCount={
+                items.filter((item) => selected.has(getId(item))).length
+              }
+              fields={metricFields}
+              metrics={metrics}
+              onChange={setMetrics}
+              loading={loading}
+            />
+          </>
         )
         return footerContext.enabled
           ? footerContext.target

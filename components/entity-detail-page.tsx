@@ -3,9 +3,12 @@ import { useRecordDeletion } from "@/components/use-record-deletion"
 import { useRouter } from "next/navigation"
 import { Trash2 } from "lucide-react"
 import { useFieldAutosave } from "@/components/use-field-autosave"
+import { DisabledActionScope } from "@/components/disabled-action-scope"
 import * as React from "react"
 import Link from "next/link"
-import { ArrowUpRight, Check, LoaderCircle } from "lucide-react"
+import { ArrowUpRight, Check, LoaderCircle, CircleAlert } from "lucide-react"
+import { Copy } from "lucide-react"
+import { toast } from "sonner"
 import { AppShell } from "@/components/app-shell"
 import EntityDetailContent from "@/components/app-dialog-6"
 import { realtimeEvent, type RealtimeMessage } from "@/lib/realtime"
@@ -46,6 +49,7 @@ import { formatEntityDate, statusToneClass } from "@/lib/entity-columns"
 import type { EntityCollection } from "@/lib/entity-views"
 
 type Detail = {
+  editRestriction?: string
   item: Record<string, unknown>
   timezone: string
   related: EntityRelatedRecord[]
@@ -53,7 +57,7 @@ type Detail = {
 }
 type EditableField = {
   key: string
-  type?: "text" | "number" | "money" | "boolean" | "select"
+  type?: "text" | "number" | "money" | "boolean" | "select" | "datetime"
   options?: { value: string; label: string }[]
 }
 const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
@@ -117,6 +121,29 @@ const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
   ],
   trips: [
     { key: "status", type: "select" },
+    { key: "origin_name" },
+    { key: "destination_name" },
+    { key: "starts_at", type: "datetime" },
+    { key: "ends_at", type: "datetime" },
+    {
+      key: "kind",
+      type: "select",
+      options: [
+        { value: "regular", label: "Регулярный" },
+        { value: "individual", label: "Индивидуальный" },
+      ],
+    },
+    {
+      key: "pricing_mode",
+      type: "select",
+      options: [
+        { value: "per_passenger", label: "За пассажира" },
+        { value: "per_booking", label: "За бронь" },
+      ],
+    },
+    { key: "vehicle_id", type: "select" },
+    { key: "driver_id", type: "select" },
+    { key: "route_id", type: "select" },
     { key: "price_minor", type: "money" },
     { key: "notes" },
   ],
@@ -151,6 +178,11 @@ function isDetail(value: unknown): value is Detail {
   )
 }
 function localDateTime(value: unknown, timeZone: string) {
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)
+  )
+    return value
   const date = new Date(String(value ?? ""))
   if (!Number.isFinite(date.getTime())) return ""
   const parts = Object.fromEntries(
@@ -261,6 +293,30 @@ export function EntityDetailPage({
   const requestController = React.useRef<AbortController | null>(null)
   const [detail, setDetail] = React.useState<Detail | null>(null)
   const [loading, setLoading] = React.useState(true)
+  const [resources, setResources] = React.useState<
+    Record<string, { id: string; name: string }[]>
+  >({})
+  const [resourceError, setResourceError] = React.useState("")
+  React.useEffect(() => {
+    if (entity !== "trips") return
+    const controller = new AbortController()
+    sessionFetch("/api/trip-resources", { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok)
+          throw Error(payload.error ?? "Не удалось загрузить варианты.")
+        setResources(payload)
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted)
+          setResourceError(
+            reason instanceof Error
+              ? reason.message
+              : "Не удалось загрузить варианты."
+          )
+      })
+    return () => controller.abort()
+  }, [entity])
   const [error, setError] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<
     "idle" | "saving" | "saved" | "error"
@@ -283,6 +339,7 @@ export function EntityDetailPage({
         const payload = await response.json().catch(() => null)
         if (!response.ok)
           throw Error(payload?.error ?? "Не удалось сохранить изменения.")
+        return payload
       }
       const previous = persistedItem.current
       const statusChanged =
@@ -296,13 +353,43 @@ export function EntityDetailPage({
           key !== "status" &&
           JSON.stringify(next[key]) !== JSON.stringify(previous?.[key])
       )
+      let acknowledged = next
       if (!statusChanged || otherChanges) {
         const request = updateRequest(entity, id, next, detail.timezone)
-        if (request) await send(request.url, request.method, request.body)
+        if (request) {
+          const payload = await send(request.url, request.method, request.body)
+          if (entity === "trips" && request.method === "PUT" && payload?.item) {
+            acknowledged = { ...next }
+            for (const [field, responseKey] of Object.entries({
+              origin_name: "origin",
+              destination_name: "destination",
+              starts_at: "startsAt",
+              ends_at: "endsAt",
+              capacity: "capacity",
+              currency: "currency",
+              vehicle_name: "vehicle",
+              driver_name: "driver",
+            })) {
+              if (payload.item[responseKey] !== undefined)
+                acknowledged[field] = payload.item[responseKey]
+            }
+            setDetail((current) => {
+              if (!current) return current
+              const merged = { ...current.item }
+              for (const [key, value] of Object.entries(acknowledged))
+                if (
+                  JSON.stringify(current.item[key]) ===
+                  JSON.stringify(next[key])
+                )
+                  merged[key] = value
+              return { ...current, item: merged }
+            })
+          }
+        }
       }
-      persistedItem.current = next
+      persistedItem.current = acknowledged
       setSaveState("saved")
-      return next
+      return acknowledged
     } catch (reason) {
       setSaveState("error")
       throw reason
@@ -390,8 +477,13 @@ export function EntityDetailPage({
   }, [entity, id])
   const changeField = (key: string, value: unknown, commit = true) => {
     if (!detail) return
-    setDetail({ ...detail, item: { ...detail.item, [key]: value } })
-    if (commit) autosave.commit({ [key]: value })
+    const patch: Record<string, unknown> = { [key]: value }
+    if (entity === "trips" && key === "kind" && value === "individual")
+      patch.route_id = null
+    setDetail((current) =>
+      current ? { ...current, item: { ...current.item, ...patch } } : current
+    )
+    if (commit) autosave.commit(patch)
   }
   const item = detail?.item
   const title = item
@@ -407,6 +499,39 @@ export function EntityDetailPage({
       )
     : entityNames[entity]
   function fieldEditor(key: string, value: unknown) {
+    const editor = rawFieldEditor(key, value)
+    if (!editor) return null
+    const reason =
+      (entity === "trips" && key === "status"
+        ? undefined
+        : detail?.editRestriction) ||
+      (entity === "trips" &&
+      ["origin_name", "destination_name"].includes(key) &&
+      item?.route_id
+        ? "Города заданы маршрутом. Выберите «Без маршрута», чтобы изменить их только в этом рейсе."
+        : undefined) ||
+      (entity === "trips" && key === "route_id" && item?.kind === "individual"
+        ? "Маршрут выбирается для регулярного рейса."
+        : undefined) ||
+      (entity === "trips" &&
+      ["vehicle_id", "driver_id", "route_id"].includes(key) &&
+      resourceError
+        ? resourceError
+        : undefined)
+    return (
+      <DisabledActionScope reason={reason}>
+        <fieldset
+          disabled={!!reason}
+          data-disabled-scope={reason}
+          className="min-w-0 flex-1"
+          title={reason}
+        >
+          {editor}
+        </fieldset>
+      </DisabledActionScope>
+    )
+  }
+  function rawFieldEditor(key: string, value: unknown) {
     const field = editableFields[entity]?.find(
       (candidate) => candidate.key === key
     )
@@ -449,7 +574,53 @@ export function EntityDetailPage({
         <FieldSelect
           aria-label={entityFieldLabels[key] ?? key}
           triggerClassName="w-full"
-          options={field.options ?? []}
+          options={
+            key === "currency"
+              ? [
+                  { value: "EUR", label: "EUR" },
+                  { value: "UAH", label: "UAH" },
+                ]
+              : ["vehicle_id", "driver_id", "route_id"].includes(key)
+                ? [
+                    ...(key === "route_id"
+                      ? [{ value: "", label: "Без маршрута" }]
+                      : []),
+                    ...(
+                      resources[
+                        (
+                          {
+                            vehicle_id: "vehicles",
+                            driver_id: "drivers",
+                            route_id: "routes",
+                          } as Record<string, string>
+                        )[key]
+                      ] ?? []
+                    ).map((entry) => ({ value: entry.id, label: entry.name })),
+                    ...(value &&
+                    !(
+                      resources[
+                        (
+                          {
+                            vehicle_id: "vehicles",
+                            driver_id: "drivers",
+                            route_id: "routes",
+                          } as Record<string, string>
+                        )[key]
+                      ] ?? []
+                    ).some((entry) => entry.id === value)
+                      ? [
+                          {
+                            value: String(value),
+                            label: String(
+                              item?.[key.replace("_id", "_name")] ??
+                                "Текущее значение"
+                            ),
+                          },
+                        ]
+                      : []),
+                  ]
+                : (field.options ?? [])
+          }
           value={String(value ?? "")}
           onValueChange={(next) => changeField(key, next)}
         />
@@ -473,7 +644,7 @@ export function EntityDetailPage({
     return (
       <Input
         aria-label={entityFieldLabels[key] ?? key}
-        className="w-full"
+        className="h-9 w-full border-transparent bg-transparent px-2 shadow-none hover:bg-control focus-visible:border-input focus-visible:bg-control"
         placeholder={key === "distance_km" ? "Не указана" : undefined}
         min={
           key === "distance_km"
@@ -488,7 +659,11 @@ export function EntityDetailPage({
             : undefined
         }
         type={
-          field.type === "number" || field.type === "money" ? "number" : "text"
+          field.type === "datetime"
+            ? "datetime-local"
+            : field.type === "number" || field.type === "money"
+              ? "number"
+              : "text"
         }
         step={
           field.type === "money" || key === "distance_km"
@@ -498,7 +673,11 @@ export function EntityDetailPage({
               : undefined
         }
         onBlur={() => autosave.commit({ [key]: value })}
-        value={String(displayValue)}
+        value={
+          field.type === "datetime"
+            ? localDateTime(value, detail?.timezone ?? "UTC")
+            : String(displayValue)
+        }
         onChange={(event) =>
           changeField(
             key,
@@ -568,7 +747,10 @@ export function EntityDetailPage({
           className="inline-flex items-center gap-1 text-primary hover:underline"
           href={entityDetailHref(relationFields[key], value)}
         >
-          {entityNames[relationFields[key]]}
+          {String(
+            item?.[key.replace("_id", "_name")] ??
+              entityNames[relationFields[key]]
+          )}
           <ArrowUpRight className="size-3" />
         </Link>
       )
@@ -694,6 +876,7 @@ export function EntityDetailPage({
       refreshing={loading}
     >
       {deletion.dialog}
+      <AdminNotice message={resourceError} variant="error" />
       <AdminNotice
         message={error}
         variant="error"
@@ -726,33 +909,39 @@ export function EntityDetailPage({
                   <Trash2 />
                 </Button>
               )}
-              {updateRequest(entity, id, detail.item, detail.timezone) &&
-              saveState !== "idle" ? (
+              {updateRequest(entity, id, detail.item, detail.timezone) ? (
                 <span
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                  className="inline-flex w-5 shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:w-28"
                   aria-live="polite"
                 >
                   {saveState === "saving" ? (
                     <LoaderCircle className="size-3.5 animate-spin" />
                   ) : saveState === "saved" ? (
                     <Check className="size-3.5 text-emerald-500" />
-                  ) : null}
-                  {saveState === "saving"
-                    ? "Сохраняем…"
-                    : saveState === "saved"
-                      ? "Сохранено"
-                      : saveState === "error"
-                        ? "Ошибка сохранения"
-                        : null}
+                  ) : saveState === "error" ? (
+                    <CircleAlert className="size-3.5 text-destructive" />
+                  ) : (
+                    <span className="size-3.5" />
+                  )}
+                  <span className="sr-only sm:not-sr-only">
+                    {saveState === "saving"
+                      ? "Сохраняем…"
+                      : saveState === "saved"
+                        ? "Сохранено"
+                        : saveState === "error"
+                          ? "Ошибка сохранения"
+                          : null}
+                  </span>
                 </span>
               ) : null}
             </div>
           }
           overview={
-            <dl className="min-w-0 divide-y divide-border/70">
+            <dl className="min-w-0 divide-y divide-border/50">
               {Object.entries(detail.item)
                 .sort(([left], [right]) => {
                   const order = [
+                    "record_number",
                     "id",
                     "name",
                     "full_name",
@@ -775,6 +964,17 @@ export function EntityDetailPage({
                 })
                 .filter(
                   ([key]) =>
+                    !(entity === "team" && key === "driver_id") &&
+                    ![
+                      "id",
+                      "user_id",
+                      "driver_membership_id",
+                      "vehicle_name",
+                      "driver_name",
+                      "route_name",
+                      "customer_name",
+                      "record_sequence",
+                    ].includes(key) &&
                     key !== "custom_data" &&
                     key !== "last_location" &&
                     !(
@@ -788,7 +988,7 @@ export function EntityDetailPage({
                 .map(([key, value]) => (
                   <div
                     key={key}
-                    className="grid min-w-0 gap-1.5 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(8rem,0.38fr)_minmax(0,1fr)] sm:gap-5"
+                    className="grid min-w-0 grid-cols-[minmax(5rem,.36fr)_minmax(0,1fr)] items-center gap-2 py-1 first:pt-0 last:pb-0 sm:gap-4"
                   >
                     <dt className="flex items-center text-xs leading-5 text-muted-foreground">
                       {entityFieldLabels[key] ??
@@ -796,10 +996,48 @@ export function EntityDetailPage({
                           ? entityNames[relationFields[key]]
                           : key.replaceAll("_", " "))}
                     </dt>
-                    <dd className="flex min-h-10 min-w-0 items-center text-sm leading-5 [overflow-wrap:anywhere] break-words [&>div]:w-full">
+                    <dd className="flex min-h-10 min-w-0 items-center gap-1 text-sm leading-5 [overflow-wrap:anywhere] break-words [&>div]:w-full">
                       {entity === "routes" && key === "default_price_minor"
                         ? routePriceEditor()
                         : (fieldEditor(key, value) ?? fieldValue(key, value))}
+                      {relationFields[key] &&
+                      typeof value === "string" &&
+                      value &&
+                      fieldEditor(key, value) ? (
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          nativeButton={false}
+                          aria-label={`Перейти: ${entityFieldLabels[key] ?? entityNames[relationFields[key]]}`}
+                          render={
+                            <Link
+                              href={entityDetailHref(
+                                relationFields[key],
+                                value
+                              )}
+                            />
+                          }
+                        >
+                          <ArrowUpRight className="size-4" />
+                        </Button>
+                      ) : null}
+                      {key === "record_number" && value ? (
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Скопировать номер"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(String(value))
+                              toast.success("Номер скопирован")
+                            } catch {
+                              toast.error("Не удалось скопировать номер")
+                            }
+                          }}
+                        >
+                          <Copy className="size-4" />
+                        </Button>
+                      ) : null}
                     </dd>
                   </div>
                 ))}

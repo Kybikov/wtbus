@@ -209,6 +209,13 @@ func TestExpandWeeklyTripSchedule(t *testing.T) {
 
 func TestValidUserPreferences(t *testing.T) {
 	valid := defaultUserPreferences()
+	for _, scale := range []string{"xs", "sm", "md", "lg", "xl"} {
+		preferences := valid
+		preferences.Scale = scale
+		if !validUserPreferences(preferences) {
+			t.Fatalf("valid scale rejected: %s", scale)
+		}
+	}
 	if !validUserPreferences(valid) {
 		t.Fatal("default preferences must be valid")
 	}
@@ -217,7 +224,7 @@ func TestValidUserPreferences(t *testing.T) {
 		func(preferences *userPreferencesResponse) { preferences.Accent = "custom" },
 		func(preferences *userPreferencesResponse) { preferences.Density = "wide" },
 		func(preferences *userPreferencesResponse) { preferences.Radius = "xl" },
-		func(preferences *userPreferencesResponse) { preferences.Scale = "xl" },
+		func(preferences *userPreferencesResponse) { preferences.Scale = "xxl" },
 		func(preferences *userPreferencesResponse) { preferences.SidebarVariant = "wide" },
 		func(preferences *userPreferencesResponse) { preferences.SidebarMode = "collapsed" },
 	} {

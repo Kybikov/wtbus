@@ -187,8 +187,11 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/me/notification-preferences", staff(app.notificationDeliverySettings))
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/record-number-settings", managers(app.recordNumberSettings))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/record-number-settings", managers(app.requireActiveSubscription(app.recordNumberSettings)))
 	owners := app.requireRoles("owner")
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/record-number-search", operations(app.searchRecordNumbers))
 	for _, method := range []string{"GET", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}/deletion", app.requireRoles("developer")(app.entityDeletion))
 	}
@@ -950,7 +953,7 @@ func validUserPreferences(preferences userPreferencesResponse) bool {
 	if preferences.Radius != "sm" && preferences.Radius != "md" && preferences.Radius != "lg" {
 		return false
 	}
-	if preferences.Scale != "sm" && preferences.Scale != "md" && preferences.Scale != "lg" {
+	if preferences.Scale != "xs" && preferences.Scale != "sm" && preferences.Scale != "md" && preferences.Scale != "lg" && preferences.Scale != "xl" {
 		return false
 	}
 	if preferences.SidebarVariant != "default" && preferences.SidebarVariant != "inset" && preferences.SidebarVariant != "floating" {
@@ -3290,12 +3293,12 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 			UPDATE trips SET route_id = NULLIF($1, '')::uuid, vehicle_id = $2, driver_id = $3, kind = $4::trip_kind,
 				origin_name = $5, destination_name = $6, starts_at = $7, ends_at = $8, capacity = $9, price_minor = $10, pricing_mode = $11,
 				currency = $12, notes = NULLIF($13, ''), custom_data = $14, driver_pay_minor=$15, updated_at = now()
-			WHERE id = $16 AND tenant_id = $17 AND status IN ('new', 'assigned')
+			WHERE id = $16 AND tenant_id = $17 AND (status IN ('new', 'assigned') OR $18)
 			RETURNING id, kind::text, status::text, origin_name, destination_name, starts_at, ends_at, capacity, price_minor, pricing_mode, currency, custom_data, vehicle_id, driver_id
 		)
 		SELECT u.id::text, u.kind, u.status, u.origin_name, u.destination_name, u.starts_at, u.ends_at, u.capacity, u.price_minor, u.pricing_mode, u.currency, u.custom_data, v.name, d.full_name
 		FROM updated u JOIN vehicles v ON v.id = u.vehicle_id JOIN drivers d ON d.id = u.driver_id
-	`, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, input.PricingMode, tripCurrency, input.Notes, encodedCustomData, tripDriverPayMinor, tripID, tenant.ID).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency, &responseCustomData, &trip.Vehicle, &trip.Driver)
+	`, input.RouteID, input.VehicleID, input.DriverID, input.Kind, input.Origin, input.Destination, startsAt, endsAt, capacity, input.PriceMinor, input.PricingMode, tripCurrency, input.Notes, encodedCustomData, tripDriverPayMinor, tripID, tenant.ID, func() bool { actor, ok := identityFromContext(r.Context()); return ok && actor.Role == "developer" }()).Scan(&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency, &responseCustomData, &trip.Vehicle, &trip.Driver)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "only new or assigned trips can be edited"})
 		return

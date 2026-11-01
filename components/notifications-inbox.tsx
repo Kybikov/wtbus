@@ -339,17 +339,11 @@ function InboxFilter({
 }) {
   return (
     <Tabs value={value} onValueChange={(next) => onChange(String(next))}>
-      <TabsList className="rounded-lg">
-        <TabsTrigger
-          value="all"
-          className="flex-none rounded-md px-2.5 text-xs"
-        >
+      <TabsList className="h-11!">
+        <TabsTrigger value="all" className="px-3 text-sm">
           Все
         </TabsTrigger>
-        <TabsTrigger
-          value="unread"
-          className="flex-none rounded-md px-2.5 text-xs"
-        >
+        <TabsTrigger value="unread" className="px-3 text-sm">
           Непрочитанные
         </TabsTrigger>
       </TabsList>
@@ -484,7 +478,7 @@ export function NotificationsInboxContent() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <InboxFilter value={filter} onChange={setFilter} />
         <Button
-          variant="outline"
+          size="sm"
           disabled={!inbox.unread || inbox.reading}
           disabledReason={
             inbox.reading

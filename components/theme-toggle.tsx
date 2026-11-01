@@ -5,6 +5,7 @@ import { useTheme } from "next-themes"
 import { Moon, Sun } from "lucide-react"
 import { DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu"
 import { DeliverySwitch } from "@/components/ui/delivery-switch"
+import { Button } from "@/components/ui/button"
 
 const subscribe = () => () => {}
 
@@ -24,11 +25,15 @@ export function ThemeToggle({
   const dark = mounted && resolvedTheme === "dark"
   if (compact)
     return (
-      <DeliverySwitch
-        label="Тёмная тема"
-        checked={dark}
-        onChange={(checked) => setTheme(checked ? "dark" : "light")}
-      />
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={dark ? "Включить светлую тему" : "Включить тёмную тему"}
+        title={dark ? "Тёмная тема" : "Светлая тема"}
+        onClick={() => setTheme(dark ? "light" : "dark")}
+      >
+        {dark ? <Moon className="size-5" /> : <Sun className="size-5" />}
+      </Button>
     )
   const content = (
     <>

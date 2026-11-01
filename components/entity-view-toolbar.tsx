@@ -9,6 +9,8 @@ import {
 } from "@/lib/entity-query"
 import { ReorderableList } from "@/components/list-4"
 import { createPortal } from "react-dom"
+import { EntityFooterContext } from "@/components/entity-footer-context"
+import { useIsMobile } from "@/hooks/use-mobile"
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -387,6 +389,8 @@ export function EntityViewToolbar<T>({
   onConfigureCard,
   groups = [],
 }: Props<T>) {
+  const footerContext = React.useContext(EntityFooterContext)
+  const isMobile = useIsMobile()
   const [views, setViews] = React.useState<SavedEntityView[]>([])
   const [active, setActive] = React.useState<string>("")
   const [scope, setScope] = React.useState("")
@@ -924,26 +928,35 @@ export function EntityViewToolbar<T>({
                 {React.createElement(modeIcons[config.mode], {
                   className: "size-4",
                 })}
-                {entityModeLabels[config.mode]}
+                {isMobile && config.mode === "table"
+                  ? "Список"
+                  : entityModeLabels[config.mode]}
                 <ChevronDown />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>Отображение</DropdownMenuLabel>
-                  {modes.map((mode) => (
-                    <DropdownMenuItem
-                      key={mode}
-                      onClick={() => onChange({ ...config, mode })}
-                    >
-                      {React.createElement(modeIcons[mode], {
-                        className: "size-4",
-                      })}
-                      {entityModeLabels[mode]}
-                      {mode === config.mode && (
-                        <Check className="ml-auto text-emerald-500!" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
+                  {modes
+                    .filter(
+                      (mode) =>
+                        !isMobile || mode !== "list" || !modes.includes("table")
+                    )
+                    .map((mode) => (
+                      <DropdownMenuItem
+                        key={mode}
+                        onClick={() => onChange({ ...config, mode })}
+                      >
+                        {React.createElement(modeIcons[mode], {
+                          className: "size-4",
+                        })}
+                        {isMobile && mode === "table"
+                          ? "Список"
+                          : entityModeLabels[mode]}
+                        {mode === config.mode && (
+                          <Check className="ml-auto text-emerald-500!" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1044,7 +1057,12 @@ export function EntityViewToolbar<T>({
         createPortal(
           <section
             aria-label="Несохранённые изменения вида"
-            className="mobile-view-changes fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom))] left-1/2 z-40 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-primary/30 bg-popover p-3 shadow-xl sm:gap-3 md:bottom-20"
+            className={cn(
+              "flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-primary/30 bg-popover p-2 shadow-lg sm:gap-3",
+              footerContext.target
+                ? "-order-1 mx-auto shrink-0"
+                : "mobile-view-changes fixed bottom-24 left-1/2 z-40 max-w-[calc(100vw-2rem)] -translate-x-1/2"
+            )}
           >
             <p role="status" className="px-1 text-xs font-medium sm:text-sm">
               Есть несохранённые изменения
@@ -1104,7 +1122,7 @@ export function EntityViewToolbar<T>({
               </Button>
             </div>
           </section>,
-          document.body
+          footerContext.target ?? document.body
         )}
       <Dialog
         open={dialog !== null}

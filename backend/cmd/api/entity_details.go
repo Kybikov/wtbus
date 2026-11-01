@@ -82,7 +82,8 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var item json.RawMessage
-	err := app.db.QueryRow(r.Context(), query, id, company.ID).Scan(&item)
+	query = `SELECT base.item || jsonb_build_object('record_number',n.number) FROM (` + query + `) AS base(item) LEFT JOIN record_numbers n ON n.record_id=$1::uuid AND n.tenant_id=$2 AND n.entity=$3`
+	err := app.db.QueryRow(r.Context(), query, id, company.ID, entity).Scan(&item)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "Запис не знайдено."})
 		return
@@ -150,5 +151,15 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"item": item, "related": related, "activity": events, "timezone": company.Timezone})
+	restriction := ""
+	if entity == "fleet" && actor.Role == "dispatcher" {
+		restriction = "Изменять автомобиль может администратор или владелец компании."
+	}
+	if entity == "trips" && actor.Role != "developer" {
+		var fields map[string]any
+		if json.Unmarshal(item, &fields) == nil && fields["status"] != "new" && fields["status"] != "assigned" {
+			restriction = "Детали можно менять у нового или назначенного рейса."
+		}
+	}
+	writeJSON(w, 200, map[string]any{"item": item, "related": related, "activity": events, "timezone": company.Timezone, "editRestriction": restriction})
 }

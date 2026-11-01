@@ -5,6 +5,7 @@ import { useFieldAutosave } from "@/components/use-field-autosave"
 import { AdminNotice } from "@/components/admin-notice"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/password-input"
 import { Badge } from "@/components/ui/badge"
 import { SettingsFormSection, SettingsRow } from "@/components/settings-form-1"
 import { sessionFetch } from "@/lib/session-navigation"
@@ -241,9 +242,9 @@ export function PersonalProfile({
                   label="Текущий пароль"
                   description="Подтвердите смену email. Другие сессии будут закрыты."
                 >
-                  <Input
+                  <PasswordInput
                     id="email-current-password"
-                    type="password"
+
                     autoComplete="current-password"
                     required
                     value={currentPassword}
@@ -288,10 +289,10 @@ export function PersonalProfile({
               onSubmit={(event) => void save(event, true)}
             >
               <SettingsRow id="profile-current-password" label="Текущий пароль">
-                <Input
+                <PasswordInput
                   id="profile-current-password"
                   autoComplete="current-password"
-                  type="password"
+
                   required
                   disabled={loading || saving}
                   value={currentPassword}
@@ -303,11 +304,11 @@ export function PersonalProfile({
                 label="Новый пароль"
                 description="От 10 символов. Максимум 72 байта."
               >
-                <Input
+                <PasswordInput
                   id="profile-new-password"
                   aria-describedby="profile-new-password-hint"
                   autoComplete="new-password"
-                  type="password"
+
                   minLength={10}
                   required
                   disabled={loading || saving}
@@ -319,10 +320,10 @@ export function PersonalProfile({
                 id="profile-confirmation"
                 label="Повторите новый пароль"
               >
-                <Input
+                <PasswordInput
                   id="profile-confirmation"
                   autoComplete="new-password"
-                  type="password"
+
                   minLength={10}
                   required
                   disabled={loading || saving}

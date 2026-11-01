@@ -10,6 +10,7 @@ import { CustomFieldManager } from "@/components/custom-field-manager"
 import { PaymentSettings } from "@/components/payment-settings"
 import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
 import { WorkflowStatusSettings } from "@/components/workflow-status-settings"
+import { RecordNumberSettings } from "@/components/record-number-settings"
 import { ActivityHistory } from "@/components/activity-history"
 import { ExchangeRateSettings } from "@/components/exchange-rate-settings"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -57,6 +58,7 @@ export type CompanySettingsSection =
   | "integrations"
   | "activity"
   | "statuses"
+  | "numbering"
 export function CompanySettings({
   section = "company",
 }: {
@@ -157,6 +159,11 @@ export function CompanySettings({
         data-disabled-scope={disabledReason}
       >
         <AdminNotice message={error} variant="error" />
+        {section === "numbering" && (
+          <RecordNumberSettings
+            disabled={loading || !!error || isSubscriptionLocked}
+          />
+        )}
         {section === "statuses" && (
           <WorkflowStatusSettings
             disabled={loading || !!error || isSubscriptionLocked}
