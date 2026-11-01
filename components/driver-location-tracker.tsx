@@ -484,15 +484,6 @@ export function DriverLocationTracker() {
                   : "Назначенного рейса пока нет."}
               </p>
             </div>
-            <Button
-              disabled={loading}
-              disabledReason={"Данные ещё загружаются. Дождитесь завершения."}
-              onClick={() => void loadFleet()}
-              size="sm"
-              variant="outline"
-            >
-              Обновить
-            </Button>
           </div>
         )}
 
