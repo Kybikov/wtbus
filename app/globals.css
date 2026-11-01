@@ -312,11 +312,8 @@ body:has([data-public-booking]) {
   --mobile-root-height: 100dvh;
   --mobile-safe-top: env(safe-area-inset-top, 0px);
   --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --mobile-dock-bottom-gap: 8px;
-  --mobile-dock-control-bottom: max(
-    0.375rem,
-    calc(var(--mobile-safe-bottom) - var(--mobile-dock-bottom-gap))
-  );
+  --mobile-dock-bottom-gap: max(8px, var(--mobile-safe-bottom));
+  --mobile-dock-control-bottom: 0.375rem;
 }
 .mobile-dock {
   padding-top: 0.375rem;
@@ -331,6 +328,8 @@ body:has([data-public-booking]) {
   padding: 0;
 }
 .mobile-dock > nav {
+  /* Keep the rounded bar symmetric. The full-width blurred dock below it,
+     rather than the pill itself, covers the home-indicator safe area. */
   padding-bottom: var(--mobile-dock-control-bottom);
 }
 

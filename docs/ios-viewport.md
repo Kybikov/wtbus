@@ -38,8 +38,9 @@ iOS version or installation state an individual user has.
 4. Layout and visual rectangles are separate. A focused input plus substantial
    occlusion indicates a software keyboard. Small stale offsets after dismissal
    do not shrink the idle application. Android may resize innerHeight itself.
-5. Bottom safe area is zero while the keyboard is visible. The dock consumes the
-   home-indicator inset inside its background, once; its external gap stays 8px.
+5. Bottom safe area is zero while the keyboard is visible. The full-width blurred
+   dock consumes the home-indicator inset once, below the rounded navigation bar.
+   The bar keeps equal top/bottom padding; safe area must never stretch its pill.
    Dialogs, drawers, search and footer clearance consume the same shared values.
 6. Focus recovery resets only document scrolling on iOS, never the application's
    inner record/dialog scroll areas. Pinch zoom remains browser-controlled. RAF,
