@@ -36,6 +36,8 @@ func (p *roadPoint) UnmarshalJSON(data []byte) error {
 type routeNavigation struct {
 	Start          *roadPoint  `json:"start"`
 	End            *roadPoint  `json:"end"`
+	StartLabel     string      `json:"startLabel,omitempty"`
+	EndLabel       string      `json:"endLabel,omitempty"`
 	Coordinates    []roadPoint `json:"coordinates,omitempty"`
 	DistanceMeters float64     `json:"distanceMeters,omitempty"`
 }
@@ -253,8 +255,10 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var input struct {
-		Start *roadPoint `json:"start"`
-		End   *roadPoint `json:"end"`
+		Start      *roadPoint `json:"start"`
+		End        *roadPoint `json:"end"`
+		StartLabel *string    `json:"startLabel"`
+		EndLabel   *string    `json:"endLabel"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
@@ -263,13 +267,42 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	nav := routeNavigation{Start: input.Start, End: input.End}
+	var previous routeNavigation
+	_ = json.Unmarshal(raw, &previous)
+	if input.StartLabel != nil {
+		nav.StartLabel = cleanPlaceLabel(*input.StartLabel)
+	} else if sameRoadPoint(input.Start, previous.Start) {
+		nav.StartLabel = previous.StartLabel
+	}
+	if input.EndLabel != nil {
+		nav.EndLabel = cleanPlaceLabel(*input.EndLabel)
+	} else if sameRoadPoint(input.End, previous.End) {
+		nav.EndLabel = previous.EndLabel
+	}
+	if !validPlaceLabel(nav.StartLabel) || !validPlaceLabel(nav.EndLabel) {
+		writeJSON(w, 400, map[string]string{"error": "Название места должно быть короче 300 символов."})
+		return
+	}
+	if nav.Start == nil {
+		nav.StartLabel = ""
+	}
+	if nav.End == nil {
+		nav.EndLabel = ""
+	}
 	base := os.Getenv("ROUTING_SERVICE_URL")
 	if base == "" {
 		base = "https://router.project-osrm.org"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	built, err := buildRoad(ctx, base, nav)
+	built := nav
+	var err error
+	if sameRoadPoint(nav.Start, previous.Start) && sameRoadPoint(nav.End, previous.End) && len(previous.Coordinates) > 1 {
+		built.Coordinates = previous.Coordinates
+		built.DistanceMeters = previous.DistanceMeters
+	} else {
+		built, err = buildRoad(ctx, base, nav)
+	}
 	if err != nil {
 		app.log.Warn("build route navigation", "error", err, "route", id)
 		writeJSON(w, 422, map[string]string{"error": "Не удалось построить дорогу. Уточните точки или повторите попытку."})

@@ -26,10 +26,11 @@ export function RouteNavigationMap({
     const instance = L.map(container.current, {
       scrollWheelZoom: false,
     }).setView([50.1, 23.8], 5)
+    instance.attributionControl.setPrefix(false)
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       referrerPolicy: "origin",
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.openstreetmap.org/fixthemap" title="Сообщить об ошибке карты" aria-label="Сообщить об ошибке карты">ⓘ</a>',
     }).addTo(instance)
     const layer = L.layerGroup().addTo(instance)
     instance.on("click", (event: L.LeafletMouseEvent) =>

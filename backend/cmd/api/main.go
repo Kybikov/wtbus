@@ -215,6 +215,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes", operations(app.requireActiveSubscription(app.createRoute)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.requireActiveSubscription(app.updateRoute)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.routeNavigation))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/navigation-places", operations(app.navigationPlaces))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -73,8 +74,34 @@ func TestRoadNavigationPostgres(t *testing.T) {
 	if w := request("PATCH", route, map[string]any{"start": []int{20, 50, 1}}); w.Code != 400 {
 		t.Fatalf("invalid coordinate %d", w.Code)
 	}
-	if w := request("PATCH", route, map[string]any{"start": []int{20, 50}, "end": []float64{20.02, 50.02}}); w.Code != 200 {
+	if w := request("PATCH", route, map[string]any{"start": []int{20, 50}, "end": []float64{20.02, 50.02}, "startLabel": "Krakow station", "endLabel": "Lviv station"}); w.Code != 200 {
 		t.Fatalf("save %d %s", w.Code, w.Body)
+	}
+	if got := row(`SELECT navigation->>'startLabel' FROM routes WHERE id=$1`, route); got != "Krakow station" {
+		t.Fatal("place name not retained", got)
+	}
+	// Older clients must preserve names for unchanged coordinates.
+	if w := request("PATCH", route, map[string]any{"start": []int{20, 50}, "end": []float64{20.02, 50.02}}); w.Code != 200 {
+		t.Fatal(w.Body)
+	}
+	if got := row(`SELECT navigation->>'startLabel' FROM routes WHERE id=$1`, route); got != "Krakow station" {
+		t.Fatal("legacy client erased name", got)
+	}
+	exec(`UPDATE routes SET navigation='{"start":[10,40],"startLabel":"Foreign private station"}'::jsonb WHERE id=$1`, foreign)
+	placesRequest := httptest.NewRequest("GET", "/api/v1/tenants/road-test/navigation-places", nil)
+	placesRequest.Header.Set("Authorization", "Bearer "+session.SessionToken)
+	placesResponse := httptest.NewRecorder()
+	handler.ServeHTTP(placesResponse, placesRequest)
+	var places struct {
+		Items []navigationPlace `json:"items"`
+	}
+	if err := json.Unmarshal(placesResponse.Body.Bytes(), &places); err != nil || placesResponse.Code != 200 || len(places.Items) != 2 {
+		t.Fatalf("saved places %d %s", placesResponse.Code, placesResponse.Body)
+	}
+	for _, place := range places.Items {
+		if strings.Contains(place.Label, "Foreign") {
+			t.Fatal("cross-company place exposed")
+		}
 	}
 	if got := row(`SELECT distance_km::text FROM routes WHERE id=$1`, route); got != "123" && got != "123.00" {
 		t.Fatal("tariff distance changed", got)
