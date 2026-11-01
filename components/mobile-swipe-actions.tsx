@@ -1,88 +1,69 @@
 "use client"
 import * as React from "react"
-import { Eye, Settings2, Trash2, CheckSquare2 } from "lucide-react"
+import { ArrowUpRight, Trash2 } from "lucide-react"
 import SwipeRow from "@/components/react-bits/micro/SwipeRow/SwipeRow"
 import { useIsMobile } from "@/hooks/use-mobile"
+
+export const mobileRecordRadius = 26
 
 export function MobileSwipeActions({
   children,
   label,
   onOpen,
-  actions = [],
+  onDelete,
   onHold,
-  onSelect,
-  selected,
   onTap,
 }: {
   children: React.ReactNode
   label: string
   onOpen?: () => void
-  actions?: { label: string; destructive?: boolean; onSelect: () => void }[]
+  onDelete?: () => void
   onHold?: () => void
-  onSelect?: () => void
-  selected?: boolean
   onTap?: () => void
 }) {
   const mobile = useIsMobile()
   if (!mobile) return children
-  const choices = [
-    ...(onOpen
-      ? [
-          {
-            id: "open",
-            label: "Открыть",
-            color: "var(--control-hover)",
-            icon: <Eye className="size-5" />,
-            callback: onOpen,
-          },
-        ]
-      : []),
-    ...actions.slice(0, 2).map((action, index) => ({
-      id: String(index),
-      label: action.label,
-      icon: action.destructive ? (
-        <Trash2 className="size-5" />
-      ) : (
-        <Settings2 className="size-5" />
-      ),
-      color: action.destructive ? "var(--destructive)" : "var(--control-hover)",
-      callback: action.onSelect,
-    })),
-  ]
-  if (!choices.length && !onSelect) return children
   return (
     <SwipeRow
-      actions={choices}
-      oppositeActions={
-        onSelect
+      actions={
+        onDelete
           ? [
               {
-                id: "select",
-                label: selected ? "Снять выбор" : "Выбрать",
-                color: "var(--primary)",
-                icon: <CheckSquare2 className="size-5" />,
-                onSelect,
+                id: "delete",
+                label: "Удалить",
+                color: "var(--destructive)",
+                icon: <Trash2 className="size-5" />,
+                onSelect: onDelete,
               },
             ]
-          : undefined
+          : []
+      }
+      oppositeActions={
+        onOpen
+          ? [
+              {
+                id: "details",
+                label: "Детали",
+                color: "var(--control-hover)",
+                icon: <ArrowUpRight className="size-5" />,
+                onSelect: onOpen,
+              },
+            ]
+          : []
       }
       onSurfaceHold={onHold}
       label={label}
       height="auto"
-      radius={16}
+      radius={mobileRecordRadius}
       fullSwipe={false}
-      actionColor={choices[0]?.color ?? "var(--control-hover)"}
+      actionColor="var(--destructive)"
       drawerColor="var(--control-hover)"
-      rowColor="var(--card)"
+      rowColor="transparent"
       textColor="var(--foreground)"
-      surfaceClassName="!block !h-auto !p-0"
-      onAction={(action) => {
-        if (action.id !== "select")
-          choices.find((choice) => choice.id === action.id)?.callback()
-      }}
+      surfaceClassName="!block !h-auto !p-0 rounded-[inherit]"
       onSurfaceTap={onTap ?? onOpen}
     >
-      <div className="w-full min-w-0">{children}</div>
+      <div className="w-full min-w-0 rounded-[inherit]">{children}</div>
     </SwipeRow>
   )
 }

@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button"
 import { HoldActionButton } from "@/components/ui/hold-action-button"
 import { AdminNotice } from "@/components/admin-notice"
 
-const removable = new Set<EntityCollection>([
+const removable = new Set<EntityCollection | "company">([
+  "company",
   "customers",
   "bookings",
   "trips",
@@ -33,7 +34,7 @@ type Preview = {
 }
 
 export function useRecordDeletion(
-  entity: EntityCollection,
+  entity: EntityCollection | "company",
   onDeleted: (id: string) => void
 ) {
   const [developer, setDeveloper] = React.useState(false)
@@ -134,7 +135,9 @@ export function useRecordDeletion(
         throw Error(payload.error ?? "Не удалось удалить запись.")
       const id = target.id
       setTarget(null)
-      toast.success("Запись удалена")
+      toast.success(
+        entity === "company" ? "Рабочие данные очищены" : "Запись удалена"
+      )
       window.dispatchEvent(
         new CustomEvent("vivat-record-deleted", { detail: { entity, id } })
       )
@@ -166,12 +169,16 @@ export function useRecordDeletion(
           if (!open && !pending.current) setTarget(null)
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[85svh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Удалить запись?</DialogTitle>
+            <DialogTitle>
+              {entity === "company"
+                ? "Очистить рабочие данные?"
+                : "Удалить запись?"}
+            </DialogTitle>
             <DialogDescription>
-              {target?.label}. Удаление необратимо. Проверьте связанные записи
-              перед подтверждением.
+              {target?.label}. Удаление необратимо. Проверьте состав перед
+              подтверждением.
             </DialogDescription>
           </DialogHeader>
           <AdminNotice message={error} variant="error" />
@@ -185,6 +192,14 @@ export function useRecordDeletion(
             </p>
           ) : preview ? (
             <>
+              {entity === "company" && (
+                <p className="text-sm text-muted-foreground">
+                  Сохранятся пользователи, доступы, настройки, сохранённые виды
+                  и журнал действий. Короткие номера не будут использоваться
+                  повторно. Операции в банке не отменяются; синхронизация может
+                  снова загрузить банковскую выписку.
+                </p>
+              )}
               <ul className="divide-y divide-border rounded-xl border border-border">
                 {preview.effects.map((effect, index) => (
                   <li
@@ -250,7 +265,11 @@ export function useRecordDeletion(
               }
               onConfirm={() => void remove()}
             >
-              {deleting ? "Удаляем…" : "Удалить"}
+              {deleting
+                ? "Удаляем…"
+                : entity === "company"
+                  ? "Очистить"
+                  : "Удалить"}
             </HoldActionButton>
           </DialogFooter>
         </DialogContent>

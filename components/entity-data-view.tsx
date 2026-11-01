@@ -31,6 +31,7 @@ import { entityDetailHref } from "@/lib/entity-details"
 import { mergeVisibleCardOrder } from "@/lib/kanban"
 import { MobileSwipeActions } from "@/components/mobile-swipe-actions"
 import { MobileRecordRow } from "@/components/mobile-record-row"
+import { recordListColumns } from "@/lib/record-list-layout"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useMobileToolsHost } from "@/components/mobile-navigation-provider"
 import { createPortal } from "react-dom"
@@ -865,6 +866,57 @@ export function EntityDataView<T>({
       </div>
     </div>
   )
+  const listCard = (item: T) => {
+    const fields = cardLayout
+      ? activeCard.rows.flatMap((row) => row.fields)
+      : visibleColumns
+          .filter((column) => {
+            const text = column.text?.(item)
+            return text === undefined || (text.trim() !== "" && text !== "—")
+          })
+          .slice(0, 6)
+          .map((column) => column.id)
+    const groups = recordListColumns(
+      [...new Set(fields)].filter((id) => columnById.has(id))
+    )
+    return (
+      <div
+        className="grid min-w-0 items-center gap-x-3 gap-y-2 text-xs"
+        style={{
+          gridTemplateColumns:
+            groups.length > 1
+              ? `minmax(0,1.5fr) repeat(${Math.min(groups.length, 3) - 1}, minmax(0,1fr))`
+              : "minmax(0,1fr)",
+        }}
+      >
+        {groups.map((group, groupIndex) => (
+          <div
+            key={group.join(":")}
+            className={cn("min-w-0 space-y-1", groupIndex > 0 && "text-right")}
+          >
+            {group.map((id, fieldIndex) => {
+              const column = columnById.get(id)!
+              return (
+                <div
+                  key={id}
+                  title={column.text?.(item) || column.label}
+                  className={cn(
+                    "truncate",
+                    groupIndex === 0 && fieldIndex === 0
+                      ? "text-sm font-semibold"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  <span className="sr-only">{column.label}: </span>
+                  {column.value(item)}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    )
+  }
   const openCard = (item: T, event: React.MouseEvent) => {
     if (!detailEnabled) return
     if (
@@ -891,21 +943,6 @@ export function EntityDataView<T>({
   const isMobile = useIsMobile()
   const [selecting, setSelecting] = React.useState(false)
   const selectionOpen = selecting || selected.size > 0
-  const movingFromMobile = React.useRef(new Set<string>())
-  async function moveFromMobile(item: T, group: string) {
-    const id = getId(item)
-    if (movingFromMobile.current.has(id)) return
-    movingFromMobile.current.add(id)
-    try {
-      await onKanbanGroupChange?.(item, group)
-    } catch (reason) {
-      toast.error(
-        reason instanceof Error ? reason.message : "Не удалось изменить статус."
-      )
-    } finally {
-      movingFromMobile.current.delete(id)
-    }
-  }
   const toolsHost = useMobileToolsHost()
   const toolbar = (
     <EntityViewToolbar
@@ -1004,14 +1041,12 @@ export function EntityDataView<T>({
           <div role="list" aria-label="Записи" className="space-y-2">
             {shownItems.map((item) => (
               <MobileRecordRow
-                content={card(item)}
-                swipeActions={sourceActions
-                  ?.filter((action) => !action.disabled?.(item))
-                  .map((action) => ({
-                    label: action.label,
-                    destructive: action.destructive,
-                    onSelect: () => action.onSelect(item),
-                  }))}
+                onDelete={
+                  deletion.available
+                    ? () => deletion.open(getId(item), getLabel(item))
+                    : undefined
+                }
+                content={listCard(item)}
                 key={getId(item)}
                 label={getLabel(item)}
                 selected={selected.has(getId(item))}
@@ -1039,16 +1074,6 @@ export function EntityDataView<T>({
                       {column.value(item)}
                     </span>
                   ))}
-                actions={
-                  actions.length ? (
-                    <EntityActionButtons
-                      extra={renderRowActions?.(item)}
-                      actions={actions}
-                      item={item}
-                      label={getLabel(item)}
-                    />
-                  ) : undefined
-                }
               />
             ))}
           </div>
@@ -1448,12 +1473,11 @@ export function EntityDataView<T>({
                         router.push(entityDetailHref(collection, getId(item)))
                     : undefined
                 }
-                actions={sourceActions
-                  ?.filter((action) => !action.disabled?.(item))
-                  .map((action) => ({
-                    ...action,
-                    onSelect: () => action.onSelect(item),
-                  }))}
+                onDelete={
+                  deletion.available
+                    ? () => deletion.open(getId(item), getLabel(item))
+                    : undefined
+                }
               >
                 <ContextMenu>
                   <ContextMenuTrigger
@@ -1546,14 +1570,12 @@ export function EntityDataView<T>({
               isMobile ? (
                 <div data-no-drag>
                   <MobileRecordRow
-                    content={card(item)}
-                    swipeActions={sourceActions
-                      ?.filter((action) => !action.disabled?.(item))
-                      .map((action) => ({
-                        label: action.label,
-                        destructive: action.destructive,
-                        onSelect: () => action.onSelect(item),
-                      }))}
+                    onDelete={
+                      deletion.available
+                        ? () => deletion.open(getId(item), getLabel(item))
+                        : undefined
+                    }
+                    content={listCard(item)}
                     label={getLabel(item)}
                     selected={selected.has(getId(item))}
                     selecting={selectionOpen}
@@ -1582,31 +1604,6 @@ export function EntityDataView<T>({
                           {column.value(item)}
                         </span>
                       ))}
-                    actions={
-                      <EntityActionButtons
-                        actions={[
-                          ...actions,
-                          ...(onKanbanGroupChange
-                            ? visibleBoardGroups
-                                .filter(
-                                  (group) =>
-                                    group.id !== groupOf(item) &&
-                                    (canMoveInKanban?.(item) ?? true) &&
-                                    (canMoveToKanbanGroup?.(item, group.id) ??
-                                      true)
-                                )
-                                .map((group) => ({
-                                  label: `Переместить: ${group.label}`,
-                                  onSelect: () => {
-                                    void moveFromMobile(item, group.id)
-                                  },
-                                }))
-                            : []),
-                        ]}
-                        item={item}
-                        label={getLabel(item)}
-                      />
-                    }
                   />
                 </div>
               ) : (

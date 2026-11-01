@@ -880,6 +880,22 @@ export function EntityDetailPage({
       pageDescription={`${entityNames[entity]} · данные, связанные записи и история`}
       onRefresh={load}
       refreshing={loading}
+      pageActions={
+        detail && deletion.available ? (
+          <Button
+            aria-label="Удалить запись"
+            title="Удалить запись"
+            size="icon-sm"
+            variant="ghost"
+            className="text-destructive"
+            disabled={saveState === "saving"}
+            disabledReason="Дождитесь сохранения изменений перед удалением."
+            onClick={() => deletion.open(id, title)}
+          >
+            <Trash2 />
+          </Button>
+        ) : undefined
+      }
     >
       {deletion.dialog}
       <AdminNotice message={resourceError} variant="error" />
@@ -917,19 +933,6 @@ export function EntityDetailPage({
         <EntityDetailContent
           overviewMeta={
             <div className="flex shrink-0 items-center gap-2">
-              {deletion.available && (
-                <Button
-                  aria-label="Удалить запись"
-                  title="Удалить запись"
-                  size="icon-sm"
-                  variant="destructive"
-                  disabled={saveState === "saving"}
-                  disabledReason="Дождитесь сохранения изменений перед удалением."
-                  onClick={() => deletion.open(id, title)}
-                >
-                  <Trash2 />
-                </Button>
-              )}
               {updateRequest(entity, id, detail.item, detail.timezone) ? (
                 <span
                   className="inline-flex w-5 shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:w-28"

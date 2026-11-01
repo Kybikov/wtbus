@@ -32,6 +32,9 @@ type deletionPreview struct {
 type deletionSet struct{ table, predicate, entity, label, operation string }
 
 func deletionSets(entity string) []deletionSet {
+	if entity == "company" {
+		return companyCleanupSets()
+	}
 	table := deletionTables[entity]
 	sets := []deletionSet{{table, "t.id=$1::uuid", entity, "Выбранная запись", "delete"}}
 	bookings := ""
@@ -70,11 +73,11 @@ func readDeletionPreview(ctx context.Context, tx pgx.Tx, entity, id, tenant stri
 		var fingerprint string
 		// Hash full row versions internally, exposing only a digest. IDs and values
 		// in a changed dependency invalidate consent even if its count stays equal.
-		err := tx.QueryRow(ctx, "SELECT count(*),coalesce(md5(string_agg(md5(to_jsonb(t)::text),'' ORDER BY t.id)),md5('')) FROM "+set.table+" t WHERE t.tenant_id=$2::uuid AND "+set.predicate, id, tenant).Scan(&count, &fingerprint)
+		err := tx.QueryRow(ctx, "SELECT count(*),coalesce(md5(string_agg(md5(to_jsonb(t)::text),'' ORDER BY md5(to_jsonb(t)::text))),md5('')) FROM "+set.table+" t WHERE "+deletionTenantScope(set.table)+" AND "+set.predicate, id, tenant).Scan(&count, &fingerprint)
 		if err != nil {
 			return result, err
 		}
-		if index == 0 && count == 0 {
+		if entity != "company" && index == 0 && count == 0 {
 			return result, pgx.ErrNoRows
 		}
 		hash.Write([]byte(set.table + ":" + set.operation + ":" + fingerprint))
@@ -106,6 +109,10 @@ func (app *application) entityDeletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entity, id := r.PathValue("entity"), r.PathValue("recordID")
+	if entity == "company" && id == "current" {
+		app.companyCleanup(w, r, company.ID, actor)
+		return
+	}
 	table, exists := deletionTables[entity]
 	if !exists {
 		writeJSON(w, 404, map[string]string{"error": "Удаление этой записи недоступно."})
@@ -198,7 +205,12 @@ func (app *application) entityDeletion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) deleteRecordSet(ctx context.Context, tx pgx.Tx, set deletionSet, id, tenant string, actor identity) error {
-	rows, err := tx.Query(ctx, "DELETE FROM "+set.table+" t WHERE t.tenant_id=$2::uuid AND "+set.predicate+" RETURNING id::text", id, tenant)
+	query := "DELETE FROM " + set.table + " t WHERE " + deletionTenantScope(set.table) + " AND " + set.predicate
+	if set.entity == "" {
+		_, err := tx.Exec(ctx, query, id, tenant)
+		return err
+	}
+	rows, err := tx.Query(ctx, query+" RETURNING id::text", id, tenant)
 	if err != nil {
 		return err
 	}

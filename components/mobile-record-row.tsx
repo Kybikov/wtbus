@@ -1,7 +1,10 @@
 "use client"
 import type { ReactNode } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
-import { MobileSwipeActions } from "@/components/mobile-swipe-actions"
+import {
+  MobileSwipeActions,
+  mobileRecordRadius,
+} from "@/components/mobile-swipe-actions"
 import { cn } from "@/lib/utils"
 
 export function MobileRecordRow({
@@ -13,8 +16,7 @@ export function MobileRecordRow({
   onOpen,
   summary,
   content,
-  actions,
-  swipeActions,
+  onDelete,
 }: {
   label: string
   selected: boolean
@@ -24,12 +26,7 @@ export function MobileRecordRow({
   onOpen?: () => void
   summary: ReactNode
   content?: ReactNode
-  actions?: ReactNode
-  swipeActions?: {
-    label: string
-    destructive?: boolean
-    onSelect: () => void
-  }[]
+  onDelete?: () => void
 }) {
   const tap = () => {
     if (selecting && selectable) onSelect()
@@ -41,18 +38,17 @@ export function MobileRecordRow({
       onOpen={onOpen}
       onTap={tap}
       onHold={selectable ? onSelect : undefined}
-      onSelect={selectable ? onSelect : undefined}
-      selected={selected}
-      actions={swipeActions}
+      onDelete={onDelete}
     >
       <article
         role="listitem"
         tabIndex={0}
         aria-label={selected ? `${label}, выбрано` : label}
         className={cn(
-          "flex min-h-20 items-center gap-3 rounded-[26px] border border-border bg-card px-4 py-3 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex min-h-20 items-center gap-3 border border-border bg-card px-4 py-3 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring",
           selected && "border-primary bg-primary/10"
         )}
+        style={{ borderRadius: mobileRecordRadius }}
         onContextMenu={(event) => event.preventDefault()}
         onClick={(event) => {
           if (
@@ -91,7 +87,6 @@ export function MobileRecordRow({
             </>
           )}
         </div>
-        {actions}
       </article>
     </MobileSwipeActions>
   )

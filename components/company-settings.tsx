@@ -11,6 +11,7 @@ import { PaymentSettings } from "@/components/payment-settings"
 import { IntegrationSecretsSettings } from "@/components/integration-secrets-settings"
 import { WorkflowStatusSettings } from "@/components/workflow-status-settings"
 import { RecordNumberSettings } from "@/components/record-number-settings"
+import { CompanyCleanup } from "@/components/company-cleanup"
 import { ActivityHistory } from "@/components/activity-history"
 import { ExchangeRateSettings } from "@/components/exchange-rate-settings"
 import { useFieldAutosave } from "@/components/use-field-autosave"
@@ -269,6 +270,7 @@ export function CompanySettings({
             )}
           </section>
         ) : null}
+        {role === "developer" && section === "company" && <CompanyCleanup />}
         {canManageSecrets && section === "payments" ? (
           <PaymentSettings
             key={`payment-${refreshVersion}`}

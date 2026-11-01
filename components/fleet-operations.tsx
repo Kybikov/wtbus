@@ -6,7 +6,6 @@ import { sessionFetch } from "@/lib/session-navigation"
 import * as React from "react"
 
 import { AppShell } from "@/components/app-shell"
-import { FleetLocationMap } from "@/components/fleet-location-map"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EntityDataView } from "@/components/entity-data-view"
@@ -349,29 +348,6 @@ export function FleetOperations() {
     }
   }
 
-  const moving = fleet.filter(
-    (vehicle) => vehicle.activeTrip?.status === "in_progress"
-  ).length
-  const reporting = fleet.filter(
-    (vehicle) =>
-      vehicle.lastLocation &&
-      now - Date.parse(vehicle.lastLocation.recordedAt) <= 120_000
-  ).length
-  const mapPoints = fleet.flatMap((vehicle) =>
-    vehicle.lastLocation
-      ? [
-          {
-            id: vehicle.id,
-            name: vehicle.name,
-            latitude: vehicle.lastLocation.latitude,
-            longitude: vehicle.lastLocation.longitude,
-            recordedAt: vehicle.lastLocation.recordedAt,
-            stale: now - Date.parse(vehicle.lastLocation.recordedAt) > 120_000,
-          },
-        ]
-      : []
-  )
-
   const filteredFleet = fleet.filter((item) =>
     [item.name, item.registrationNumber, item.driver, item.id]
       .join(" ")
@@ -436,6 +412,22 @@ export function FleetOperations() {
       false
     ),
     textColumn<Vehicle>("id", "ID", (item) => item.id, false),
+    numberColumn<Vehicle>(
+      "onLine",
+      "На линии",
+      (item) => (item.activeTrip?.status === "in_progress" ? 1 : 0),
+      false
+    ),
+    numberColumn<Vehicle>(
+      "freshGps",
+      "С актуальным GPS",
+      (item) =>
+        item.lastLocation &&
+        now - Date.parse(item.lastLocation.recordedAt) <= 120_000
+          ? 1
+          : 0,
+      false
+    ),
   ]
   async function bulkActive(active: boolean) {
     if (
@@ -484,44 +476,10 @@ export function FleetOperations() {
       refreshing={loading || refreshing}
       onCreate={startCreate}
       createDisabled={saving || !canManage}
-      pageDescription="Последняя GPS-точка каждого автомобиля · обновление раз в 30 секунд"
-      pageTitle="Транспорт и геолокация"
+      pageDescription="Автомобили, водители и состояние транспорта"
+      pageTitle="Автопарк"
     >
       <div className="w-full min-w-0 space-y-5">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-border bg-background/35 p-4">
-            <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
-              На линии
-            </p>
-            <p className="mt-2 text-2xl font-bold tabular-nums">{moving}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              рейс выполняется сейчас
-            </p>
-          </div>
-          <div className="rounded-2xl border border-border bg-background/35 p-4">
-            <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
-              С GPS
-            </p>
-            <p className="mt-2 text-2xl font-bold tabular-nums">
-              {reporting} / {fleet.length}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              авто передали точку за последние 2 минуты
-            </p>
-          </div>
-          <div className="rounded-2xl border border-border bg-background/35 p-4">
-            <p className="text-xs font-semibold tracking-[.08em] text-muted-foreground uppercase">
-              Часовой пояс
-            </p>
-            <p className="mt-2 text-lg font-bold">{timezone}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              время рейсов отображается локально
-            </p>
-          </div>
-        </div>
-
-        <FleetLocationMap points={mapPoints} />
-
         {error ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
             <span>{error}</span>

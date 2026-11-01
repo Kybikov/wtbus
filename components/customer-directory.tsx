@@ -42,17 +42,6 @@ type CustomerRevenue = {
   amountMinor: number
 }
 
-type CustomerBookingHistory = {
-  id: string
-  status: string
-  origin: string
-  destination: string
-  startsAt: string
-  seats: number
-  priceMinor: number
-  currency: string
-}
-
 type CustomField = {
   id: string
   key: string
@@ -103,17 +92,6 @@ function isCustomFieldCollection(
   )
 }
 
-function isCustomerDetails(
-  value: unknown
-): value is { bookingHistory: CustomerBookingHistory[] } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "bookingHistory" in value &&
-    Array.isArray(value.bookingHistory)
-  )
-}
-
 function customValueToText(value: unknown) {
   if (typeof value === "boolean") return value ? "Да" : "Нет"
   if (typeof value === "number" || typeof value === "string")
@@ -143,19 +121,6 @@ function formatTripCount(count: number) {
   if (lastDigit === 1) return `${count} поездка`
   if (lastDigit >= 2 && lastDigit <= 4) return `${count} поездки`
   return `${count} поездок`
-}
-
-function bookingStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    awaiting_payment: "Ожидает оплаты",
-    cash_on_boarding: "Наличными при посадке",
-    cancelled: "Отменено",
-    completed: "Завершено",
-    confirmed: "Подтверждено",
-    expired: "Истекло",
-    pending: "Новая бронь",
-  }
-  return labels[status] ?? status
 }
 
 function buildCustomData(
@@ -192,16 +157,6 @@ export function CustomerDirectory() {
   const importInput = React.useRef<HTMLInputElement>(null)
   const [importing, setImporting] = React.useState(false)
   const [exporting, setExporting] = React.useState(false)
-  const [expandedHistoryID, setExpandedHistoryID] = React.useState<
-    string | null
-  >(null)
-  const [historyByCustomer, setHistoryByCustomer] = React.useState<
-    Record<string, CustomerBookingHistory[]>
-  >({})
-  const [historyLoadingID, setHistoryLoadingID] = React.useState<string | null>(
-    null
-  )
-  const [historyError, setHistoryError] = React.useState<string | null>(null)
   const [importResult, setImportResult] = React.useState<{
     created: number
     updated: number
@@ -446,40 +401,6 @@ export function CustomerDirectory() {
     }
   }
 
-  async function toggleHistory(customerID: string) {
-    if (expandedHistoryID === customerID) {
-      setExpandedHistoryID(null)
-      setHistoryError(null)
-      return
-    }
-    setExpandedHistoryID(customerID)
-    setHistoryError(null)
-    if (historyByCustomer[customerID]) return
-
-    setHistoryLoadingID(customerID)
-    try {
-      const response = await sessionFetch(
-        `/api/customers/${encodeURIComponent(customerID)}`,
-        { cache: "no-store" }
-      )
-      const payload: unknown = await response.json()
-      if (!response.ok || !isCustomerDetails(payload))
-        throw new Error("Не удалось загрузить историю бронирований.")
-      setHistoryByCustomer((current) => ({
-        ...current,
-        [customerID]: payload.bookingHistory,
-      }))
-    } catch (reason) {
-      setHistoryError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось загрузить историю бронирований."
-      )
-    } finally {
-      setHistoryLoadingID(null)
-    }
-  }
-
   const columns: EntityColumn<Customer>[] = [
     {
       id: "name",
@@ -666,14 +587,6 @@ export function CustomerDirectory() {
                   customer.tripCount > 0 === (value === "with"),
               },
             ]}
-            actions={[
-              {
-                label: expandedHistoryID
-                  ? "Скрыть историю"
-                  : "Показать историю",
-                onSelect: (customer) => void toggleHistory(customer.id),
-              },
-            ]}
             columns={columns}
             emptyText="Клиентов не найдено."
             getId={(customer) => customer.id}
@@ -705,73 +618,6 @@ export function CustomerDirectory() {
             )}
             selected={selected}
           />
-          {customers.map((customer) =>
-            expandedHistoryID === customer.id ? (
-              <section
-                className="surface-card p-4"
-                key={`history-${customer.id}`}
-              >
-                <div className="flex items-center justify-between">
-                  <h2 className="font-semibold">
-                    История: {customer.fullName || customer.phone}
-                  </h2>
-                  <Button
-                    onClick={() => void toggleHistory(customer.id)}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    Закрыть
-                  </Button>
-                </div>
-                {expandedHistoryID === customer.id ? (
-                  <div className="mt-4 border-t border-border pt-3">
-                    <p className="text-sm font-semibold">
-                      История бронирований
-                    </p>
-                    {historyLoadingID === customer.id ? (
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Загружаем историю…
-                      </p>
-                    ) : historyError ? (
-                      <p className="mt-2 text-sm text-destructive" role="alert">
-                        {historyError}
-                      </p>
-                    ) : historyByCustomer[customer.id]?.length ? (
-                      <ul className="mt-2 divide-y divide-border">
-                        {historyByCustomer[customer.id].map((booking) => (
-                          <li
-                            className="flex flex-col gap-1 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
-                            key={booking.id}
-                          >
-                            <span className="font-medium">
-                              {booking.origin} → {booking.destination}
-                            </span>
-                            <span className="text-muted-foreground tabular-nums">
-                              {new Date(booking.startsAt).toLocaleString(
-                                "ru-RU",
-                                {
-                                  day: "2-digit",
-                                  month: "2-digit",
-                                  year: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                }
-                              )}
-                              {` · ${booking.seats} мест · ${formatCustomerMoney(booking.priceMinor, booking.currency)} · ${bookingStatusLabel(booking.status)}`}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        У клиента пока нет бронирований.
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-              </section>
-            ) : null
-          )}
         </div>
       </AppShell>
       <Dialog onOpenChange={setOpen} open={open}>
