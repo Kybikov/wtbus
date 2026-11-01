@@ -81,8 +81,11 @@ export function ActivityChanges({
   return (
     <dl className="grid min-w-0 gap-2.5">
       {changes.map((change) => (
-        <div key={change.field} className="min-w-0">
-          <dt className="mb-1 text-[11px] text-muted-foreground">
+        <div
+          key={change.field}
+          className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
+        >
+          <dt className="shrink-0 text-[11px] text-muted-foreground">
             {activityFields[change.field] ?? "Поле"}
           </dt>
           <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 [overflow-wrap:anywhere]">

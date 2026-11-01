@@ -102,6 +102,27 @@ func TestActivityPostgres(t *testing.T) {
 	if !foundStatus {
 		t.Fatal("status labels or historical tones missing", stored)
 	}
+	t.Run("configured map points preserve exact transitions", func(t *testing.T) {
+		path := "/api/v1/tenants/audit-qa/routes/" + routeID + "/navigation"
+		for _, place := range []struct {
+			x     float64
+			label string
+		}{{30.52, "Kyiv station"}, {30.53, "New Kyiv stop"}} {
+			result := request("PATCH", path, map[string]any{"start": []float64{place.x, 50.45}, "startLabel": place.label})
+			if result.Code != 200 {
+				t.Fatalf("point save: %d %s", result.Code, result.Body)
+			}
+		}
+		raw := row(`SELECT details->'changes' FROM activity_events WHERE tenant_id=$1 AND entity_id=$2 ORDER BY id DESC LIMIT 1`, tenant, routeID)
+		if !strings.Contains(raw, "Kyiv station") || !strings.Contains(raw, "New Kyiv stop") || !strings.Contains(raw, "pickup_place") {
+			t.Fatalf("point before/after missing: %s", raw)
+		}
+		total := row(`SELECT count(*)::text FROM activity_events WHERE tenant_id=$1 AND entity_id=$2`, tenant, routeID)
+		invalid := request("PATCH", path, map[string]any{"start": []float64{999, 50.45}})
+		if invalid.Code < 400 || row(`SELECT count(*)::text FROM activity_events WHERE tenant_id=$1 AND entity_id=$2`, tenant, routeID) != total {
+			t.Fatal("failed point edit became a successful history event")
+		}
+	})
 	request("GET", "/api/v1/tenants/audit-qa/customers?q=private-query", nil)
 	if row(`SELECT route FROM api_request_logs WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, tenant) != "GET /api/v1/tenants/{slug}/customers" {
 		t.Fatal("request log retained a raw URL")

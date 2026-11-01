@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"math"
 	"reflect"
 	"sort"
 	"strings"
@@ -20,10 +23,11 @@ type auditFieldChange struct {
 }
 
 // Audit only explicit operational values. Free-form notes, passenger documents,
-// contacts, custom data, location, credentials and provider payloads stay out.
+// contacts, custom data, live GPS, credentials and provider payloads stay out.
+// Configured pickup/dropoff places are operational route settings.
 var auditValueFields = func() map[string]bool {
 	m := map[string]bool{}
-	for _, key := range strings.Fields("name full_name display_name status is_active role origin_name destination_name currency default_price_minor default_pricing_mode driver_pay_minor price_minor pricing_mode distance_km tariff_mode vehicle_class registration_number capacity vehicle_id driver_id route_id trip_id customer_id booking_id starts_at ends_at kind seats amount_minor payment_method paid_at") {
+	for _, key := range strings.Fields("name full_name display_name status is_active role origin_name destination_name currency default_price_minor default_pricing_mode driver_pay_minor price_minor pricing_mode distance_km tariff_mode vehicle_class registration_number capacity vehicle_id driver_id route_id trip_id customer_id booking_id starts_at ends_at kind seats amount_minor payment_method paid_at pickup_place dropoff_place") {
 		m[key] = true
 	}
 	return m
@@ -43,7 +47,8 @@ func auditSafeValue(value any) (any, bool) {
 
 // Joined display labels and live GPS are derived, not changes to this record.
 func auditChangedFields(before, after map[string]any) []string {
-	derived := map[string]bool{"updated_at": true, "created_at": true, "last_location": true, "vehicle_name": true, "driver_name": true, "route_name": true, "customer_name": true, "customer_phone": true, "driver_phone": true, "payment_status": true, "payment_method": true}
+	before, after = auditOperationalSnapshot(before), auditOperationalSnapshot(after)
+	derived := map[string]bool{"navigation": true, "updated_at": true, "created_at": true, "last_location": true, "vehicle_name": true, "driver_name": true, "route_name": true, "customer_name": true, "customer_phone": true, "driver_phone": true, "payment_status": true, "payment_method": true}
 	fields := []string{}
 	for key, value := range before {
 		if !derived[key] && !reflect.DeepEqual(value, after[key]) {
@@ -55,6 +60,7 @@ func auditChangedFields(before, after map[string]any) []string {
 }
 
 func auditChanges(before, after map[string]any) []auditFieldChange {
+	before, after = auditOperationalSnapshot(before), auditOperationalSnapshot(after)
 	keys := make([]string, 0, len(auditValueFields))
 	for key := range auditValueFields {
 		if !reflect.DeepEqual(before[key], after[key]) {
@@ -111,4 +117,42 @@ func (app *application) labelAuditChanges(ctx context.Context, actor identity, e
 		change.BeforeLabel, change.BeforeTone = label(change.Before)
 		change.AfterLabel, change.AfterTone = label(change.After)
 	}
+}
+
+// Keep readable configured places, never the road polyline or live driver GPS.
+func auditOperationalSnapshot(item map[string]any) map[string]any {
+	result := make(map[string]any, len(item)+3)
+	for key, value := range item {
+		result[key] = value
+	}
+	result["pickup_place"], result["dropoff_place"] = nil, nil
+	raw, err := json.Marshal(item["navigation"])
+	var nav struct {
+		Start          *roadPoint `json:"start"`
+		End            *roadPoint `json:"end"`
+		StartLabel     string     `json:"startLabel"`
+		EndLabel       string     `json:"endLabel"`
+		DistanceMeters float64    `json:"distanceMeters"`
+	}
+	if err != nil || json.Unmarshal(raw, &nav) != nil {
+		return result
+	}
+	place := func(point *roadPoint, label string) any {
+		if point == nil || !validRoadPoint(*point) {
+			return nil
+		}
+		label = strings.TrimSpace(label)
+		if label == "" {
+			label = "Точка на карте"
+		}
+		if runes := []rune(label); len(runes) > 420 {
+			label = string(runes[:420]) + "…"
+		}
+		return fmt.Sprintf("%s · %.5f, %.5f", label, point[1], point[0])
+	}
+	result["pickup_place"], result["dropoff_place"] = place(nav.Start, nav.StartLabel), place(nav.End, nav.EndLabel)
+	if _, exists := result["distance_km"]; !exists && nav.DistanceMeters > 0 {
+		result["distance_km"] = math.Round(nav.DistanceMeters/10) / 100
+	}
+	return result
 }

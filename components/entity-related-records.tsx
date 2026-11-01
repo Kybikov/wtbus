@@ -3,7 +3,6 @@
 import * as React from "react"
 import Link from "next/link"
 import {
-  ArrowUpRight,
   Bus,
   Route,
   UserRound,
@@ -341,7 +340,7 @@ export function EntityRelatedRecords({
               <Link
                 key={`${record.entity}:${record.id}:${index}`}
                 href={entityDetailHref(record.entity, record.id)}
-                className="group grid min-w-0 grid-cols-[minmax(0,1fr)_1rem] items-center gap-x-3 gap-y-2 rounded-lg px-2 py-3.5 transition-colors hover:bg-accent/45 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none @min-[32rem]/related:grid-cols-[minmax(7rem,1fr)_auto_1rem]"
+                className="group grid min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 rounded-lg px-1 py-2.5 transition-colors hover:bg-accent/45 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none @min-[22rem]/related:grid-cols-[minmax(5rem,1fr)_auto]"
               >
                 <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
                   <RecordIcon
@@ -349,16 +348,19 @@ export function EntityRelatedRecords({
                     aria-hidden
                   />
                   <div className="min-w-0">
-                    <span className="mb-1 block text-xs text-muted-foreground">
+                    <span className="sr-only">
                       {entityNames[record.entity]}
                     </span>
-                    <span className="block text-sm font-medium [overflow-wrap:anywhere]">
+                    <span
+                      title={record.label}
+                      className="block truncate text-sm font-medium"
+                    >
                       {record.label}
                     </span>
                   </div>
                 </div>
                 {shown.some((key) => meta[key] !== undefined) ? (
-                  <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 pl-8 text-xs text-muted-foreground @min-[32rem]/related:col-start-2 @min-[32rem]/related:row-start-1 @min-[32rem]/related:justify-end @min-[32rem]/related:pl-0">
+                  <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-8 text-xs text-muted-foreground @min-[22rem]/related:col-start-2 @min-[22rem]/related:row-start-1 @min-[22rem]/related:max-w-[16rem] @min-[22rem]/related:justify-end @min-[22rem]/related:pl-0">
                     {shown.map((key) => {
                       const value = meta[key]
                       if (value === null || value === undefined || value === "")
@@ -417,7 +419,6 @@ export function EntityRelatedRecords({
                             {new Intl.DateTimeFormat("ru-RU", {
                               timeZone: timezone,
                               dateStyle: "short",
-                              timeStyle: "short",
                             }).format(new Date(String(value)))}
                           </span>
                         )
@@ -430,10 +431,6 @@ export function EntityRelatedRecords({
                     })}
                   </div>
                 ) : null}
-                <ArrowUpRight
-                  aria-hidden
-                  className="col-start-2 row-span-2 row-start-1 size-3.5 self-center text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 @min-[32rem]/related:col-start-3 @min-[32rem]/related:row-span-1"
-                />
               </Link>
             )
           })}

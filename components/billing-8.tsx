@@ -131,7 +131,7 @@ export default function EntityActivityTimeline({
     }).format(new Date(value))
   const grouped = groupActivityEvents(events)
   return (
-    <ol className="min-w-0">
+    <ol className="@container/history min-w-0">
       {grouped.map((event, index) => {
         const day = date(event.createdAt)
         const eventEntity =
@@ -150,7 +150,7 @@ export default function EntityActivityTimeline({
                 {day}
               </p>
             )}
-            <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-t border-border/70 py-3.5 @min-[30rem]:grid-cols-[2rem_minmax(7rem,0.85fr)_minmax(0,1.15fr)_auto]">
+            <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-t border-border/70 py-3.5 @min-[24rem]/history:grid-cols-[2rem_minmax(7rem,0.85fr)_minmax(0,1.15fr)_auto]">
               <span
                 aria-hidden
                 className={`row-span-2 grid size-8 shrink-0 place-items-center rounded-lg ${color}`}
@@ -174,7 +174,7 @@ export default function EntityActivityTimeline({
                   {event.actor}
                 </p>
               </div>
-              <div className="col-start-2 row-start-2 min-w-0 text-xs leading-5 [overflow-wrap:anywhere] text-muted-foreground @min-[30rem]:col-start-3 @min-[30rem]:row-start-1">
+              <div className="col-start-2 row-start-2 min-w-0 text-xs leading-5 [overflow-wrap:anywhere] text-muted-foreground @min-[24rem]/history:col-start-3 @min-[24rem]/history:row-start-1">
                 {event.recordLabel &&
                   event.entityId &&
                   eventEntity &&
@@ -230,7 +230,7 @@ export default function EntityActivityTimeline({
               <time
                 dateTime={event.createdAt}
                 title={formatEntityDate(event.createdAt, timezone)}
-                className="col-start-3 row-start-1 text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums @min-[30rem]:col-start-4"
+                className="col-start-3 row-start-1 text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums @min-[24rem]/history:col-start-4"
               >
                 {time(event.createdAt)}
               </time>
