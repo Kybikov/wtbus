@@ -1854,6 +1854,7 @@ type tripResourceResponse struct {
 }
 
 type routeResourceResponse struct {
+	DefaultDriverID    string           `json:"defaultDriverId"`
 	ID                 string           `json:"id"`
 	Name               string           `json:"name"`
 	Origin             string           `json:"origin"`
@@ -1868,6 +1869,7 @@ type routeResourceResponse struct {
 }
 
 type routeResponse struct {
+	DefaultDriverID    string           `json:"defaultDriverId"`
 	ID                 string           `json:"id"`
 	Name               string           `json:"name"`
 	Origin             string           `json:"origin"`
@@ -1919,7 +1921,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates, COALESCE(default_driver_id::text,'')
 		FROM routes WHERE tenant_id = $1 ORDER BY is_active DESC, name
 	`, tenant.ID)
 	if err != nil {
@@ -1932,7 +1934,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var item routeResponse
 		var rates []byte
-		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &rates); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &rates, &item.DefaultDriverID); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load routes"})
 			return
@@ -1952,6 +1954,7 @@ func (app *application) listRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 type routeInput struct {
+	DefaultDriverID    *string          `json:"defaultDriverId,omitempty"`
 	Navigation         *routeNavigation `json:"navigation,omitempty"`
 	Name               string           `json:"name"`
 	Origin             string           `json:"origin"`
@@ -2076,6 +2079,9 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route status does not exist"})
 		return
 	}
+	if !app.validateRouteDefaultDriver(w, r, tenant.ID, input.DefaultDriverID) {
+		return
+	}
 	var item routeResponse
 	ratesJSON, _ := json.Marshal(input.VehicleClassRates)
 	var navigationJSON any
@@ -2083,10 +2089,10 @@ func (app *application) createRoute(w http.ResponseWriter, r *http.Request) {
 		navigationJSON, _ = json.Marshal(input.Navigation)
 	}
 	err := app.db.QueryRow(r.Context(), `
-		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km, vehicle_class_rates, navigation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
-	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON, navigationJSON).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON)
+		INSERT INTO routes (tenant_id, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km, vehicle_class_rates, navigation, default_driver_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15,'')::uuid)
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates, COALESCE(default_driver_id::text,'')
+	`, tenant.ID, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON, navigationJSON, routeDefaultDriverValue(input.DefaultDriverID)).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON, &item.DefaultDriverID)
 	if err != nil {
 		app.log.Error("create route", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create route"})
@@ -2122,13 +2128,16 @@ func (app *application) updateRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "route status does not exist"})
 		return
 	}
+	if !app.validateRouteDefaultDriver(w, r, tenant.ID, input.DefaultDriverID) {
+		return
+	}
 	var item routeResponse
 	ratesJSON, _ := json.Marshal(input.VehicleClassRates)
 	err := app.db.QueryRow(r.Context(), `
-		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, driver_pay_minor=$7, is_active = $8, status = $9, tariff_mode=$10, distance_km=$11, vehicle_class_rates=$12, updated_at = now()
+		UPDATE routes SET name = $1, origin_name = $2, destination_name = $3, currency = $4, default_price_minor = $5, default_pricing_mode = $6, driver_pay_minor=$7, is_active = $8, status = $9, tariff_mode=$10, distance_km=$11, vehicle_class_rates=$12, default_driver_id=CASE WHEN $15 THEN NULLIF($16,'')::uuid ELSE default_driver_id END, updated_at = now()
 		WHERE id = $13 AND tenant_id = $14
-		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates
-	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON, routeID, tenant.ID).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON)
+		RETURNING id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, is_active, status, tariff_mode, distance_km::float8, vehicle_class_rates, COALESCE(default_driver_id::text,'')
+	`, input.Name, input.Origin, input.Destination, input.Currency, input.DefaultPriceMinor, input.DefaultPricingMode, input.DriverPayMinor, available, input.Status, input.TariffMode, input.DistanceKM, ratesJSON, routeID, tenant.ID, input.DefaultDriverID != nil, routeDefaultDriverValue(input.DefaultDriverID)).Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.IsActive, &item.Status, &item.TariffMode, &item.DistanceKM, &ratesJSON, &item.DefaultDriverID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "route not found"})
 		return
@@ -2839,7 +2848,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	}
 
 	routes, err := app.db.Query(r.Context(), `
-		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, tariff_mode, distance_km::float8, vehicle_class_rates
+		SELECT id::text, name, origin_name, destination_name, currency, default_price_minor, default_pricing_mode, driver_pay_minor, tariff_mode, distance_km::float8, vehicle_class_rates, COALESCE(default_driver_id::text,'')
 		FROM routes WHERE tenant_id = $1 AND is_active ORDER BY name
 	`, tenant.ID)
 	if err != nil {
@@ -2852,7 +2861,7 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 	for routes.Next() {
 		var item routeResourceResponse
 		var rates []byte
-		if err := routes.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.TariffMode, &item.DistanceKM, &rates); err != nil {
+		if err := routes.Scan(&item.ID, &item.Name, &item.Origin, &item.Destination, &item.Currency, &item.DefaultPriceMinor, &item.DefaultPricingMode, &item.DriverPayMinor, &item.TariffMode, &item.DistanceKM, &rates, &item.DefaultDriverID); err != nil {
 			app.log.Error("scan route", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trip resources"})
 			return
@@ -2873,24 +2882,28 @@ func (app *application) listTripResources(w http.ResponseWriter, r *http.Request
 }
 
 type createTripRequest struct {
-	Kind        string         `json:"kind"`
-	RouteID     string         `json:"routeId"`
-	Origin      string         `json:"origin"`
-	Destination string         `json:"destination"`
-	StartsAt    string         `json:"startsAt"`
-	EndsAt      string         `json:"endsAt"`
-	VehicleID   string         `json:"vehicleId"`
-	DriverID    string         `json:"driverId"`
-	Notes       string         `json:"notes"`
-	PriceMinor  int64          `json:"priceMinor"`
-	PricingMode string         `json:"pricingMode"`
-	CustomData  map[string]any `json:"customData"`
+	Navigation  *routeNavigation `json:"navigation,omitempty"`
+	Kind        string           `json:"kind"`
+	RouteID     string           `json:"routeId"`
+	Origin      string           `json:"origin"`
+	Destination string           `json:"destination"`
+	StartsAt    string           `json:"startsAt"`
+	EndsAt      string           `json:"endsAt"`
+	VehicleID   string           `json:"vehicleId"`
+	DriverID    string           `json:"driverId"`
+	Notes       string           `json:"notes"`
+	PriceMinor  int64            `json:"priceMinor"`
+	PricingMode string           `json:"pricingMode"`
+	CustomData  map[string]any   `json:"customData"`
 }
 
 type createTripScheduleRequest struct {
 	createTripRequest
 	RepeatUntil string `json:"repeatUntil"`
 	Weekdays    []int  `json:"weekdays"`
+	Frequency   string `json:"frequency"`
+	Interval    int    `json:"interval"`
+	MonthDay    int    `json:"monthDay"`
 }
 
 type tripScheduleResponse struct {
@@ -2905,20 +2918,7 @@ type scheduledTripInstance struct {
 }
 
 func expandWeeklyTripSchedule(startsAt, endsAt, repeatUntil time.Time, weekdays map[time.Weekday]struct{}) []scheduledTripInstance {
-	location := startsAt.Location()
-	firstDay := time.Date(startsAt.Year(), startsAt.Month(), startsAt.Day(), 0, 0, 0, 0, location)
-	instances := make([]scheduledTripInstance, 0, 52)
-	for day := firstDay; !day.After(repeatUntil); day = day.AddDate(0, 0, 1) {
-		if _, selected := weekdays[day.Weekday()]; !selected {
-			continue
-		}
-		candidateStart := time.Date(day.Year(), day.Month(), day.Day(), startsAt.Hour(), startsAt.Minute(), 0, 0, location)
-		instances = append(instances, scheduledTripInstance{
-			startsAt: candidateStart,
-			endsAt:   candidateStart.Add(endsAt.Sub(startsAt)),
-		})
-	}
-	return instances
+	return expandTripRecurrence(startsAt, endsAt, repeatUntil, weekdays, "weekly", 1, 0)
 }
 
 func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Request) {
@@ -2944,6 +2944,9 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 	input.DriverID = strings.TrimSpace(input.DriverID)
 	input.Notes = strings.TrimSpace(input.Notes)
 	input.PricingMode = strings.TrimSpace(input.PricingMode)
+	if !app.fillTripDefaultDriver(w, r, tenant.ID, &input) {
+		return
+	}
 	if input.Kind != "regular" || input.RouteID == "" || input.VehicleID == "" || input.DriverID == "" || input.PriceMinor < 0 || input.PriceMinor > 10_000_000_000 || (input.PricingMode != "" && !isPricingMode(input.PricingMode)) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fill in a regular route, vehicle and driver"})
 		return
@@ -2953,7 +2956,7 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 	var defaultPricingMode string
 	var tripCurrency string
 	var tripDriverPayMinor int64
-	if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency, &tripDriverPayMinor); err != nil {
+	if err := app.db.QueryRow(r.Context(), `SELECT COALESCE(NULLIF($3,''),origin_name), COALESCE(NULLIF($4,''),destination_name), default_price_minor, default_pricing_mode, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID, input.Origin, input.Destination).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency, &tripDriverPayMinor); err != nil {
 		app.writeResourceLookupError(w, err, "route")
 		return
 	}
@@ -2964,7 +2967,7 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		input.PricingMode = defaultPricingMode
 	}
 	input.PricingMode = normalizePricingMode(input.PricingMode)
-	if len([]rune(input.Notes)) > 2000 {
+	if len([]rune(input.Origin)) > 120 || len([]rune(input.Destination)) > 120 || len([]rune(input.Notes)) > 2000 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip notes are too long"})
 		return
 	}
@@ -3012,7 +3015,17 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		}
 		weekdays[time.Weekday(weekday)] = struct{}{}
 	}
-	if len(weekdays) == 0 {
+	if request.Frequency == "" {
+		request.Frequency = "weekly"
+	}
+	if request.Interval == 0 {
+		request.Interval = 1
+	}
+	if (request.Frequency != "daily" && request.Frequency != "weekly" && request.Frequency != "monthly") || request.Interval < 1 || request.Interval > 12 || request.MonthDay < -1 || request.MonthDay > 31 {
+		writeJSON(w, 400, map[string]string{"error": "Выберите период повторения от 1 до 12 и корректный день месяца."})
+		return
+	}
+	if request.Frequency == "weekly" && len(weekdays) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "choose at least one weekday"})
 		return
 	}
@@ -3027,12 +3040,17 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	instances := expandWeeklyTripSchedule(startsAt, endsAt, repeatUntil, weekdays)
+	instances := expandTripRecurrence(startsAt, endsAt, repeatUntil, weekdays, request.Frequency, request.Interval, request.MonthDay)
 	if len(instances) == 0 || len(instances) > 90 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the selected period must create from 1 to 90 trips"})
 		return
 	}
 
+	road, err := prepareTripNavigation(r.Context(), input.Navigation)
+	if err != nil {
+		writeJSON(w, 422, map[string]string{"error": "Не удалось построить дорогу для рейса. Уточните места посадки и высадки."})
+		return
+	}
 	tx, err := app.db.Begin(r.Context())
 	if err != nil {
 		app.log.Error("begin trip schedule", "error", err, "tenant", slug)
@@ -3057,12 +3075,13 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "one or more planned departures fall into an unavailable period"})
 			return
 		}
-		_, err := tx.Exec(r.Context(), `
+		var createdID string
+		err := tx.QueryRow(r.Context(), `
 			INSERT INTO trips (
 				tenant_id, route_id, vehicle_id, driver_id, kind, status, origin_name, destination_name,
 				starts_at, ends_at, capacity, price_minor, currency, pricing_mode, notes, custom_data, driver_pay_minor
-			) VALUES ($1, $2, $3, $4, 'regular', 'assigned', $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), $14, $15)
-		`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Origin, input.Destination, instance.startsAt, instance.endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData, tripDriverPayMinor)
+			) VALUES ($1, $2, $3, $4, 'regular', 'assigned', $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), $14, $15) RETURNING id::text
+		`, tenant.ID, input.RouteID, input.VehicleID, input.DriverID, input.Origin, input.Destination, instance.startsAt, instance.endsAt, capacity, input.PriceMinor, tripCurrency, input.PricingMode, input.Notes, encodedCustomData, tripDriverPayMinor).Scan(&createdID)
 		if err != nil {
 			var pgError *pgconn.PgError
 			if errors.As(err, &pgError) && pgError.Code == "23P01" {
@@ -3071,6 +3090,10 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 			}
 			app.log.Error("insert scheduled trip", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create trip schedule"})
+			return
+		}
+		if err := persistTripNavigation(r.Context(), tx, tenant.ID, createdID, road); err != nil {
+			app.publicFailure(w, err)
 			return
 		}
 	}
@@ -3114,6 +3137,9 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 	input.DriverID = strings.TrimSpace(input.DriverID)
 	input.Notes = strings.TrimSpace(input.Notes)
 	input.PricingMode = strings.TrimSpace(input.PricingMode)
+	if !app.fillTripDefaultDriver(w, r, tenant.ID, &input) {
+		return
+	}
 	if (input.Kind != "regular" && input.Kind != "individual") || ((input.Origin == "" || input.Destination == "") && input.RouteID == "") || input.VehicleID == "" || input.DriverID == "" || (input.Kind != "regular" && input.RouteID != "") || input.PriceMinor < 0 || input.PriceMinor > 10_000_000_000 || (input.PricingMode != "" && !isPricingMode(input.PricingMode)) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fill in trip type, route, vehicle and driver"})
 		return
@@ -3123,7 +3149,7 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 	if input.RouteID != "" {
 		var defaultPriceMinor int64
 		var defaultPricingMode string
-		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, default_price_minor, default_pricing_mode, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency, &tripDriverPayMinor); err != nil {
+		if err := app.db.QueryRow(r.Context(), `SELECT COALESCE(NULLIF($3,''),origin_name), COALESCE(NULLIF($4,''),destination_name), default_price_minor, default_pricing_mode, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID, input.Origin, input.Destination).Scan(&input.Origin, &input.Destination, &defaultPriceMinor, &defaultPricingMode, &tripCurrency, &tripDriverPayMinor); err != nil {
 			app.writeResourceLookupError(w, err, "route")
 			return
 		}
@@ -3199,8 +3225,19 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	road, err := prepareTripNavigation(r.Context(), input.Navigation)
+	if err != nil {
+		writeJSON(w, 422, map[string]string{"error": "Не удалось построить дорогу для рейса. Уточните места посадки и высадки."})
+		return
+	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var trip tripResponse
-	err = app.db.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		WITH created AS (
 			INSERT INTO trips (
 				tenant_id, route_id, vehicle_id, driver_id, kind, status, origin_name, destination_name,
@@ -3243,6 +3280,14 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err = persistTripNavigation(r.Context(), tx, tenant.ID, trip.ID, road); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"item": trip, "timezone": tenant.Timezone})
 }
 
@@ -3265,6 +3310,9 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 	input.Origin, input.Destination = strings.TrimSpace(input.Origin), strings.TrimSpace(input.Destination)
 	input.VehicleID, input.DriverID, input.Notes = strings.TrimSpace(input.VehicleID), strings.TrimSpace(input.DriverID), strings.TrimSpace(input.Notes)
 	input.PricingMode = normalizePricingMode(input.PricingMode)
+	if !app.fillTripDefaultDriver(w, r, tenant.ID, &input) {
+		return
+	}
 	if (input.Kind != "regular" && input.Kind != "individual") || ((input.Origin == "" || input.Destination == "") && input.RouteID == "") || input.VehicleID == "" || input.DriverID == "" || (input.Kind != "regular" && input.RouteID != "") || input.PriceMinor < 0 || input.PriceMinor > 10_000_000_000 || !isPricingMode(input.PricingMode) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fill in trip type, route, vehicle and driver"})
 		return
@@ -3272,7 +3320,7 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 	tripCurrency := tenant.BaseCurrency
 	var tripDriverPayMinor int64
 	if input.RouteID != "" {
-		if err := app.db.QueryRow(r.Context(), `SELECT origin_name, destination_name, currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID).Scan(&input.Origin, &input.Destination, &tripCurrency, &tripDriverPayMinor); err != nil {
+		if err := app.db.QueryRow(r.Context(), `SELECT COALESCE(NULLIF($3,''),origin_name), COALESCE(NULLIF($4,''),destination_name), currency, driver_pay_minor FROM routes WHERE id = $1 AND tenant_id = $2 AND is_active`, input.RouteID, tenant.ID, input.Origin, input.Destination).Scan(&input.Origin, &input.Destination, &tripCurrency, &tripDriverPayMinor); err != nil {
 			app.writeResourceLookupError(w, err, "route")
 			return
 		}
@@ -3325,9 +3373,20 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		app.writeResourceLookupError(w, err, "driver")
 		return
 	}
+	road, err := prepareTripNavigation(r.Context(), input.Navigation)
+	if err != nil {
+		writeJSON(w, 422, map[string]string{"error": "Не удалось построить дорогу для рейса. Уточните места посадки и высадки."})
+		return
+	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var trip tripResponse
 	var responseCustomData []byte
-	err = app.db.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		WITH updated AS (
 			UPDATE trips SET route_id = NULLIF($1, '')::uuid, vehicle_id = $2, driver_id = $3, kind = $4::trip_kind,
 				origin_name = $5, destination_name = $6, starts_at = $7, ends_at = $8, capacity = $9, price_minor = $10, pricing_mode = $11,
@@ -3355,6 +3414,14 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 	trip.CustomData, err = decodeCustomData(responseCustomData)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update trip"})
+		return
+	}
+	if err = persistTripNavigation(r.Context(), tx, tenant.ID, trip.ID, road); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": trip, "timezone": tenant.Timezone})

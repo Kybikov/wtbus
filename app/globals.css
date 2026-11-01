@@ -448,6 +448,28 @@ body:has([data-public-booking]) {
       calc(104px + var(--mobile-safe-bottom))
       max(16px, env(safe-area-inset-left));
   }
+  .workspace-content form,
+  .workspace-content form > *,
+  .workspace-content form label,
+  [data-slot="dialog-content"] form,
+  [data-slot="dialog-content"] form > *,
+  [data-slot="dialog-content"] form label {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .workspace-content form.grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  input[type="datetime-local"],
+  input[type="date"],
+  input[type="time"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+  input::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+  }
   .app-workspace:has(.mobile-collection-footer) .workspace-content {
     padding-bottom: 16px;
   }

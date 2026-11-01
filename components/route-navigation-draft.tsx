@@ -23,10 +23,14 @@ export function RouteNavigationDraft({
   value,
   onChange,
   onBusyChange,
+  disabled = false,
+  disabledReason = "Загружаем места маршрута. Дождитесь завершения.",
 }: {
   value: RouteNavigation
   onChange: (value: RouteNavigation) => void
   onBusyChange: (busy: boolean) => void
+  disabled?: boolean
+  disabledReason?: string
 }) {
   const [target, setTarget] = React.useState<"start" | "end">("start")
   const [error, setError] = React.useState<string | null>(null)
@@ -43,7 +47,12 @@ export function RouteNavigationDraft({
   ])
   React.useEffect(() => {
     const current = latest.current.value
-    if (!current.start || !current.end) {
+    if (
+      disabled ||
+      !current.start ||
+      !current.end ||
+      (current.coordinates?.length && current.distanceMeters)
+    ) {
       latest.current.onBusyChange(false)
       return
     }
@@ -85,7 +94,7 @@ export function RouteNavigationDraft({
       active = false
       controller.abort()
     }
-  }, [selection, retry])
+  }, [selection, retry, disabled])
   function choose(
     key: "start" | "end",
     point: RoadPoint | null,
@@ -109,14 +118,16 @@ export function RouteNavigationDraft({
             title={key === "start" ? "Отправление" : "Прибытие"}
             label={key === "start" ? value.startLabel : value.endLabel}
             point={value[key]}
-            disabled={false}
-            disabledReason=""
+            disabled={disabled}
+            disabledReason={disabledReason}
             onOpen={() => setTarget(key)}
             onChoose={(point, label) => choose(key, point, label)}
           />
         ))}
       </div>
       <FieldSelect
+        disabled={disabled}
+        disabledReason={disabledReason}
         aria-label="Точка на карте"
         value={target}
         onValueChange={(v) => setTarget(v as "start" | "end")}
@@ -128,7 +139,9 @@ export function RouteNavigationDraft({
       <div className="isolate overflow-hidden rounded-xl border">
         <RoadMap
           navigation={value}
-          onChoose={(point) => choose(target, point, "Точка на карте")}
+          onChoose={(point) => {
+            if (!disabled) choose(target, point, "Точка на карте")
+          }}
         />
       </div>
       {error ? (

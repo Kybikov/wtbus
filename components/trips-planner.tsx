@@ -1,6 +1,9 @@
 "use client"
 import Link from "next/link"
 import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { RouteNavigationDraft } from "@/components/route-navigation-draft"
+import type { RouteNavigation } from "@/components/route-navigation-editor"
 import { useActionConfirmation } from "@/components/action-confirmation"
 
 import { sessionFetch } from "@/lib/session-navigation"
@@ -90,6 +93,7 @@ type TripResource = {
 }
 
 type RouteResource = {
+  defaultDriverId?: string
   id: string
   name: string
   origin: string
@@ -130,6 +134,9 @@ type TripForm = {
   notes: string
   price: string
   pricingMode: "per_passenger" | "per_booking"
+  frequency: "" | "daily" | "weekly" | "monthly"
+  interval: number
+  monthDay: number
   repeatUntil: string
   weekdays: number[]
   customData: CustomDataValues
@@ -347,6 +354,9 @@ function createEmptyTripForm(day: string): TripForm {
     notes: "",
     price: "",
     pricingMode: "per_passenger",
+    frequency: "",
+    interval: 1,
+    monthDay: Number(day.slice(8, 10)),
     repeatUntil: "",
     weekdays: [new Date(`${day}T12:00:00`).getDay()],
     customData: {},
@@ -440,6 +450,54 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
   const [tripForm, setTripForm] = React.useState<TripForm>(() =>
     createEmptyTripForm(days[selectedDay].iso)
   )
+  const [tripNavigation, setTripNavigation] = React.useState<RouteNavigation>({
+    start: null,
+    end: null,
+  })
+  const [tripRoadLoading, setTripRoadLoading] = React.useState(false)
+  const [tripRoadBusy, setTripRoadBusy] = React.useState(false)
+  React.useEffect(() => {
+    if (!isCreateOpen) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      setTripNavigation({ start: null, end: null })
+      if (!tripForm.routeId && !editingTripID) {
+        setTripRoadLoading(false)
+        return
+      }
+      setTripRoadLoading(true)
+      const entity = editingTripID ? "trips" : "routes",
+        id = editingTripID || tripForm.routeId
+      void sessionFetch(
+        `/api/routes/navigation?entity=${entity}&id=${encodeURIComponent(id)}`,
+        { signal: controller.signal }
+      )
+        .then(async (response) => {
+          const payload = await response.json()
+          if (!response.ok)
+            throw new Error(
+              payload.error || "Не удалось загрузить места маршрута."
+            )
+          if (!controller.signal.aborted)
+            setTripNavigation(payload.navigation || { start: null, end: null })
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted)
+            setFormError(
+              error instanceof Error
+                ? error.message
+                : "Не удалось загрузить места маршрута."
+            )
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setTripRoadLoading(false)
+        })
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [isCreateOpen, tripForm.routeId, editingTripID])
   const weekLabel = `${days[0].date}–${new Intl.DateTimeFormat("ru-RU", {
     day: "numeric",
     month: "long",
@@ -518,6 +576,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
             setTripForm({
               ...createEmptyTripForm(formatISODate(new Date())),
               routeId: route.id,
+              driverId: route.defaultDriverId || "",
               origin: route.origin,
               destination: route.destination,
               price: (route.defaultPriceMinor / 100).toFixed(2),
@@ -674,6 +733,22 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
   async function submitTrip(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
+    if (tripForm.kind === "regular" && !tripForm.routeId) {
+      setFormError("Выберите маршрут для регулярного рейса.")
+      return
+    }
+    if (
+      tripRoadLoading ||
+      tripRoadBusy ||
+      !tripNavigation.start ||
+      !tripNavigation.end ||
+      !tripNavigation.distanceMeters
+    ) {
+      setFormError(
+        "Выберите места посадки и высадки и дождитесь построения дороги."
+      )
+      return
+    }
     const priceMinor = parsePriceMinor(tripForm.price)
     if (priceMinor === null) {
       setFormError(
@@ -681,7 +756,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       )
       return
     }
-    const { repeatUntil, weekdays } = tripForm
+    const { repeatUntil, weekdays, frequency, interval, monthDay } = tripForm
     const tripPayload = {
       kind: tripForm.kind,
       routeId: tripForm.routeId,
@@ -693,11 +768,24 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       driverId: tripForm.driverId,
       notes: tripForm.notes,
       pricingMode: tripForm.pricingMode,
+      navigation: {
+        start: tripNavigation.start,
+        end: tripNavigation.end,
+        startLabel: tripNavigation.startLabel,
+        endLabel: tripNavigation.endLabel,
+      },
     }
     const isEditing = editingTripID !== null
     const isSchedule =
-      !isEditing && tripForm.kind === "regular" && repeatUntil !== ""
-    if (isSchedule && weekdays.length === 0) {
+      !isEditing &&
+      tripForm.kind === "regular" &&
+      frequency !== "" &&
+      repeatUntil !== ""
+    if (frequency && !repeatUntil) {
+      setFormError("Выберите дату окончания повторений.")
+      return
+    }
+    if (isSchedule && frequency === "weekly" && weekdays.length === 0) {
       setFormError("Выберите хотя бы один день недели для регулярного графика.")
       return
     }
@@ -716,7 +804,9 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
           body: JSON.stringify({
             ...tripPayload,
             priceMinor,
-            ...(isSchedule ? { repeatUntil, weekdays } : {}),
+            ...(isSchedule
+              ? { repeatUntil, weekdays, frequency, interval, monthDay }
+              : {}),
             customData: serializeCustomData(
               tripCustomFields,
               tripForm.customData
@@ -1254,435 +1344,523 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
         </div>
       </AppShell>
       {isCreateOpen ? (
-        <div
-          aria-labelledby="create-trip-title"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-end bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !isSubmitting)
-              setIsCreateOpen(false)
+        <Dialog
+          open={isCreateOpen}
+          onOpenChange={(open) => {
+            if (!isSubmitting) setIsCreateOpen(open)
           }}
-          role="dialog"
         >
-          <form
-            className="max-h-[94svh] w-full overflow-y-auto rounded-t-[var(--app-radius)] border border-border bg-card p-5 shadow-2xl sm:max-w-2xl sm:rounded-[var(--app-radius)] sm:p-6"
-            onSubmit={submitTrip}
+          <DialogContent
+            className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-2xl"
+            showCloseButton={false}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2
-                  className="text-xl font-bold tracking-[-0.03em]"
-                  id="create-trip-title"
-                >
-                  {editingTripID ? "Изменить рейс" : "Новый рейс"}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Время указывается по часовому поясу компании.
-                </p>
-              </div>
-              <Button
-                disabled={isSubmitting}
-                disabledReason={
-                  "Действие с рейсом выполняется. Дождитесь завершения."
-                }
-                onClick={() => {
-                  setIsCreateOpen(false)
-                  setEditingTripID(null)
-                }}
-                type="button"
-                variant="ghost"
-              >
-                Отмена
-              </Button>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold">
-                Тип рейса
-                <FieldSelect
-                  onValueChange={(value) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      kind: value as TripForm["kind"],
-                      routeId: value === "regular" ? current.routeId : "",
-                      repeatUntil:
-                        value === "regular" ? current.repeatUntil : "",
-                    }))
+            <form className="w-full min-w-0 p-5 sm:p-6" onSubmit={submitTrip}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <DialogTitle
+                    className="text-xl font-bold tracking-[-0.03em]"
+                    id="create-trip-title"
+                  >
+                    {editingTripID ? "Изменить рейс" : "Новый рейс"}
+                  </DialogTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Время указывается по часовому поясу компании.
+                  </p>
+                </div>
+                <Button
+                  disabled={isSubmitting}
+                  disabledReason={
+                    "Действие с рейсом выполняется. Дождитесь завершения."
                   }
-                  options={[
-                    { value: "regular", label: "Регулярный" },
-                    { value: "individual", label: "Индивидуальный" },
-                  ]}
-                  value={tripForm.kind}
-                />
-              </label>
-              {tripForm.kind === "regular" ? (
+                  onClick={() => {
+                    setIsCreateOpen(false)
+                    setEditingTripID(null)
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  Отмена
+                </Button>
+              </div>
+
+              <div className="mt-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="grid gap-2 text-sm font-semibold">
-                  Шаблон маршрута
+                  Тип рейса
                   <FieldSelect
-                    disabled={isResourcesLoading}
-                    onValueChange={(value) => {
-                      const route = resources.routes.find(
-                        (item) => item.id === value
-                      )
+                    onValueChange={(value) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        kind: value as TripForm["kind"],
+                        routeId: value === "regular" ? current.routeId : "",
+                        repeatUntil:
+                          value === "regular" ? current.repeatUntil : "",
+                      }))
+                    }
+                    options={[
+                      { value: "regular", label: "Регулярный" },
+                      { value: "individual", label: "Индивидуальный" },
+                    ]}
+                    value={tripForm.kind}
+                  />
+                </label>
+                {tripForm.kind === "regular" ? (
+                  <label className="grid gap-2 text-sm font-semibold">
+                    Маршрут
+                    <FieldSelect
+                      disabled={isResourcesLoading}
+                      onValueChange={(value) => {
+                        setTripNavigation({ start: null, end: null })
+                        setTripRoadLoading(true)
+                        const route = resources.routes.find(
+                          (item) => item.id === value
+                        )
+                        setTripForm((current) => {
+                          const price = routePrice(
+                            route,
+                            current.vehicleId,
+                            resources.vehicles
+                          )
+                          return {
+                            ...current,
+                            routeId: value,
+                            driverId:
+                              route?.defaultDriverId || current.driverId,
+                            origin: route?.origin ?? current.origin,
+                            destination:
+                              route?.destination ?? current.destination,
+                            price: route
+                              ? price === null
+                                ? ""
+                                : (price / 100).toFixed(2)
+                              : current.price,
+                            pricingMode:
+                              route?.defaultPricingMode ?? current.pricingMode,
+                          }
+                        })
+                      }}
+                      options={[
+                        { value: "", label: "Выберите маршрут" },
+                        ...resources.routes.map((route) => ({
+                          value: route.id,
+                          label: `${route.name} · ${(route.defaultPriceMinor / 100).toFixed(2)} ${route.currency}`,
+                        })),
+                      ]}
+                      value={tripForm.routeId}
+                    />
+                  </label>
+                ) : null}
+                <label className="grid gap-2 text-sm font-semibold">
+                  Транспорт
+                  <FieldSelect
+                    disabled={
+                      isResourcesLoading || resources.vehicles.length === 0
+                    }
+                    onValueChange={(value) =>
                       setTripForm((current) => {
-                        const price = routePrice(
+                        const route = resources.routes.find(
+                          (item) => item.id === current.routeId
+                        )
+                        const nextPrice = routePrice(
                           route,
-                          current.vehicleId,
+                          value,
                           resources.vehicles
                         )
                         return {
                           ...current,
-                          routeId: value,
-                          origin: route?.origin ?? current.origin,
-                          destination:
-                            route?.destination ?? current.destination,
-                          price: route
-                            ? price === null
-                              ? ""
-                              : (price / 100).toFixed(2)
-                            : current.price,
-                          pricingMode:
-                            route?.defaultPricingMode ?? current.pricingMode,
+                          vehicleId: value,
+                          ...(nextPrice === null
+                            ? route?.tariffMode === "per_km"
+                              ? { price: "" }
+                              : {}
+                            : { price: (nextPrice / 100).toFixed(2) }),
                         }
                       })
-                    }}
+                    }
                     options={[
-                      { value: "", label: "Ввести маршрут вручную" },
-                      ...resources.routes.map((route) => ({
-                        value: route.id,
-                        label: `${route.name} · ${(route.defaultPriceMinor / 100).toFixed(2)} ${route.currency}`,
+                      {
+                        value: "",
+                        label: isResourcesLoading
+                          ? "Загружаем транспорт…"
+                          : "Выберите транспорт",
+                      },
+                      ...resources.vehicles.map((vehicle) => ({
+                        value: vehicle.id,
+                        label: `${vehicle.name}${vehicle.capacity ? ` · ${vehicle.capacity} мест` : ""}`,
                       })),
                     ]}
-                    value={tripForm.routeId}
+                    value={tripForm.vehicleId}
                   />
                 </label>
-              ) : null}
-              <label className="grid gap-2 text-sm font-semibold">
-                Транспорт
-                <FieldSelect
-                  disabled={
-                    isResourcesLoading || resources.vehicles.length === 0
-                  }
-                  onValueChange={(value) =>
-                    setTripForm((current) => {
-                      const route = resources.routes.find(
-                        (item) => item.id === current.routeId
-                      )
-                      const nextPrice = routePrice(
-                        route,
-                        value,
-                        resources.vehicles
-                      )
-                      return {
+                <label className="grid gap-2 text-sm font-semibold">
+                  Откуда
+                  <Input
+                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                    maxLength={120}
+                    onChange={(event) =>
+                      setTripForm((current) => ({
                         ...current,
-                        vehicleId: value,
-                        ...(nextPrice === null
-                          ? route?.tariffMode === "per_km"
-                            ? { price: "" }
-                            : {}
-                          : { price: (nextPrice / 100).toFixed(2) }),
-                      }
-                    })
-                  }
-                  options={[
-                    {
-                      value: "",
-                      label: isResourcesLoading
-                        ? "Загружаем транспорт…"
-                        : "Выберите транспорт",
-                    },
-                    ...resources.vehicles.map((vehicle) => ({
-                      value: vehicle.id,
-                      label: `${vehicle.name}${vehicle.capacity ? ` · ${vehicle.capacity} мест` : ""}`,
-                    })),
-                  ]}
-                  value={tripForm.vehicleId}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Откуда
-                <Input
-                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
-                  disabled={
-                    tripForm.kind === "regular" && tripForm.routeId !== ""
-                  }
-                  maxLength={120}
-                  onChange={(event) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      origin: event.target.value,
-                    }))
-                  }
-                  placeholder="Например, Варшава"
-                  required
-                  value={tripForm.origin}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Куда
-                <Input
-                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
-                  disabled={
-                    tripForm.kind === "regular" && tripForm.routeId !== ""
-                  }
-                  maxLength={120}
-                  onChange={(event) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      destination: event.target.value,
-                    }))
-                  }
-                  placeholder="Например, Киев"
-                  required
-                  value={tripForm.destination}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Отправление
-                <Input
-                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                  onChange={(event) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      startsAt: event.target.value,
-                    }))
-                  }
-                  required
-                  type="datetime-local"
-                  value={tripForm.startsAt}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Прибытие
-                <Input
-                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                  onChange={(event) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      endsAt: event.target.value,
-                    }))
-                  }
-                  required
-                  type="datetime-local"
-                  value={tripForm.endsAt}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                Модель цены
-                <FieldSelect
-                  onValueChange={(value) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      pricingMode: value as TripForm["pricingMode"],
-                    }))
-                  }
-                  options={[
-                    { value: "per_passenger", label: "За пассажира" },
-                    { value: "per_booking", label: "За всю бронь" },
-                  ]}
-                  value={tripForm.pricingMode}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">
-                {tripForm.pricingMode === "per_booking"
-                  ? "Цена за всю бронь"
-                  : "Цена за пассажира"}{" "}
-                · {resources.currency}
-                <Input
-                  className="h-11 rounded-xl border border-border bg-control px-3 text-sm tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
-                  disabled={isResourcesLoading}
-                  inputMode="decimal"
-                  max="100000000"
-                  min="0"
-                  onChange={(event) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      price: event.target.value,
-                    }))
-                  }
-                  placeholder="Укажите цену"
-                  required
-                  step="0.01"
-                  type="number"
-                  value={tripForm.price}
-                />
-                <span className="text-xs font-normal text-muted-foreground">
+                        origin: event.target.value,
+                      }))
+                    }
+                    placeholder="Например, Варшава"
+                    required
+                    value={tripForm.origin}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Куда
+                  <Input
+                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                    maxLength={120}
+                    onChange={(event) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        destination: event.target.value,
+                      }))
+                    }
+                    placeholder="Например, Киев"
+                    required
+                    value={tripForm.destination}
+                  />
+                </label>
+                <div className="min-w-0 sm:col-span-2">
+                  <RouteNavigationDraft
+                    key={`${editingTripID || "new"}:${tripForm.routeId}`}
+                    value={tripNavigation}
+                    onChange={setTripNavigation}
+                    onBusyChange={setTripRoadBusy}
+                    disabled={tripRoadLoading}
+                  />
+                </div>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Дата и время отправления
+                  <Input
+                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+                    onChange={(event) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        startsAt: event.target.value,
+                      }))
+                    }
+                    required
+                    type="datetime-local"
+                    value={tripForm.startsAt}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Дата и время прибытия
+                  <Input
+                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+                    onChange={(event) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        endsAt: event.target.value,
+                      }))
+                    }
+                    required
+                    type="datetime-local"
+                    value={tripForm.endsAt}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
+                  Модель цены
+                  <FieldSelect
+                    onValueChange={(value) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        pricingMode: value as TripForm["pricingMode"],
+                      }))
+                    }
+                    options={[
+                      { value: "per_passenger", label: "За пассажира" },
+                      { value: "per_booking", label: "За всю бронь" },
+                    ]}
+                    value={tripForm.pricingMode}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
                   {tripForm.pricingMode === "per_booking"
-                    ? "Сумма не меняется от количества пассажиров."
-                    : "Сумма брони рассчитывается по количеству пассажиров."}
-                </span>
-              </label>
-              {tripForm.kind === "regular" && !editingTripID ? (
-                <div className="grid gap-3 rounded-2xl border border-border bg-muted/30 p-4 sm:col-span-2">
-                  <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-baseline">
-                    <p className="text-sm font-semibold">Регулярный график</p>
-                    <p className="text-xs text-muted-foreground">
-                      Необязательно: создаёт рейсы одной серией, максимум 90.
-                    </p>
-                  </div>
-                  <label className="grid gap-2 text-sm font-semibold sm:max-w-xs">
-                    Повторять еженедельно до
-                    <Input
-                      className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                      min={tripForm.startsAt.slice(0, 10)}
-                      onChange={(event) =>
-                        setTripForm((current) => ({
-                          ...current,
-                          repeatUntil: event.target.value,
-                        }))
-                      }
-                      type="date"
-                      value={tripForm.repeatUntil}
-                    />
-                  </label>
-                  {tripForm.repeatUntil ? (
-                    <div className="grid gap-2">
-                      <span className="text-sm font-semibold">
-                        Дни отправления
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {weekdayOptions.map((weekday) => {
-                          const selected = tripForm.weekdays.includes(
-                            weekday.value
-                          )
-                          return (
-                            <button
-                              aria-pressed={selected}
-                              className={cn(
-                                "h-9 min-w-10 rounded-xl border px-3 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                                selected
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
-                              )}
-                              key={weekday.value}
-                              onClick={() =>
+                    ? "Цена за всю бронь"
+                    : "Цена за пассажира"}{" "}
+                  · {resources.currency}
+                  <Input
+                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
+                    disabled={isResourcesLoading}
+                    inputMode="decimal"
+                    max="100000000"
+                    min="0"
+                    onChange={(event) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        price: event.target.value,
+                      }))
+                    }
+                    placeholder="Укажите цену"
+                    required
+                    step="0.01"
+                    type="number"
+                    value={tripForm.price}
+                  />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {tripForm.pricingMode === "per_booking"
+                      ? "Сумма не меняется от количества пассажиров."
+                      : "Сумма брони рассчитывается по количеству пассажиров."}
+                  </span>
+                </label>
+                {tripForm.kind === "regular" && !editingTripID ? (
+                  <>
+                    <label className="grid min-w-0 gap-2 text-sm font-semibold">
+                      Повторение
+                      <FieldSelect
+                        aria-label="Повторение"
+                        value={tripForm.frequency}
+                        onValueChange={(value) =>
+                          setTripForm((current) => ({
+                            ...current,
+                            frequency: value as TripForm["frequency"],
+                            repeatUntil: value ? current.repeatUntil : "",
+                          }))
+                        }
+                        options={[
+                          { value: "", label: "Не повторять" },
+                          { value: "daily", label: "По дням" },
+                          { value: "weekly", label: "По неделям" },
+                          { value: "monthly", label: "По месяцам" },
+                        ]}
+                      />
+                    </label>
+                    {tripForm.frequency ? (
+                      <>
+                        <label className="grid min-w-0 gap-2 text-sm font-semibold">
+                          Интервал
+                          <FieldSelect
+                            aria-label="Интервал повторения"
+                            value={String(tripForm.interval)}
+                            onValueChange={(value) =>
+                              setTripForm((current) => ({
+                                ...current,
+                                interval: Number(value),
+                              }))
+                            }
+                            options={Array.from({ length: 12 }, (_, i) => ({
+                              value: String(i + 1),
+                              label:
+                                String(i + 1) +
+                                {
+                                  daily: " дн.",
+                                  weekly: " нед.",
+                                  monthly: " мес.",
+                                }[
+                                  tripForm.frequency as
+                                    "daily" | "weekly" | "monthly"
+                                ],
+                            }))}
+                          />
+                        </label>
+                        {tripForm.frequency === "monthly" ? (
+                          <label className="grid min-w-0 gap-2 text-sm font-semibold">
+                            День месяца
+                            <FieldSelect
+                              aria-label="День месяца"
+                              value={String(tripForm.monthDay)}
+                              onValueChange={(value) =>
                                 setTripForm((current) => ({
                                   ...current,
-                                  weekdays: current.weekdays.includes(
-                                    weekday.value
-                                  )
-                                    ? current.weekdays.filter(
-                                        (value) => value !== weekday.value
-                                      )
-                                    : [...current.weekdays, weekday.value],
+                                  monthDay: Number(value),
                                 }))
                               }
-                              type="button"
-                            >
-                              {weekday.label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
-                Водитель
-                <FieldSelect
-                  disabled={
-                    isResourcesLoading || resources.drivers.length === 0
-                  }
-                  onValueChange={(value) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      driverId: value,
-                    }))
-                  }
-                  options={[
-                    {
-                      value: "",
-                      label: isResourcesLoading
-                        ? "Загружаем водителей…"
-                        : "Выберите водителя",
-                    },
-                    ...resources.drivers.map((driver) => ({
-                      value: driver.id,
-                      label: driver.name,
-                    })),
-                  ]}
-                  value={tripForm.driverId}
-                />
-                {!isResourcesLoading && resources.drivers.length === 0 ? (
-                  <span className="text-xs font-normal text-amber-500">
-                    Нет подключённых водителей.{" "}
-                    <Link href="/team" className="underline">
-                      Подключите аккаунт в команде
-                    </Link>
-                    .
-                  </span>
+                              options={[
+                                ...Array.from({ length: 31 }, (_, i) => ({
+                                  value: String(i + 1),
+                                  label: String(i + 1),
+                                })),
+                                { value: "-1", label: "Последний день" },
+                              ]}
+                            />
+                            {tripForm.monthDay > 28 ? (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                В коротком месяце — последний день.
+                              </span>
+                            ) : null}
+                          </label>
+                        ) : null}
+                        <label className="grid min-w-0 gap-2 text-sm font-semibold">
+                          Повторять до
+                          <Input
+                            aria-label="Повторять до"
+                            type="date"
+                            min={tripForm.startsAt.slice(0, 10)}
+                            value={tripForm.repeatUntil}
+                            onChange={(event) =>
+                              setTripForm((current) => ({
+                                ...current,
+                                repeatUntil: event.target.value,
+                              }))
+                            }
+                            required
+                          />
+                        </label>
+                        {tripForm.frequency === "weekly" ? (
+                          <div className="min-w-0 space-y-2 sm:col-span-2">
+                            <p className="text-sm font-semibold">
+                              Дни отправления
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {weekdayOptions.map((day) => (
+                                <Button
+                                  key={day.value}
+                                  type="button"
+                                  variant={
+                                    tripForm.weekdays.includes(day.value)
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  size="sm"
+                                  aria-pressed={tripForm.weekdays.includes(
+                                    day.value
+                                  )}
+                                  onClick={() =>
+                                    setTripForm((current) => ({
+                                      ...current,
+                                      weekdays: current.weekdays.includes(
+                                        day.value
+                                      )
+                                        ? current.weekdays.filter(
+                                            (value) => value !== day.value
+                                          )
+                                        : [...current.weekdays, day.value],
+                                    }))
+                                  }
+                                >
+                                  {day.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </>
                 ) : null}
-              </label>
-              <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
-                Комментарий{" "}
-                <span className="font-normal text-muted-foreground">
-                  (необязательно)
-                </span>
-                <Textarea
-                  className="min-h-24 resize-y"
-                  maxLength={2000}
-                  onChange={(event) =>
-                    setTripForm((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
+                <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
+                  Водитель
+                  <FieldSelect
+                    disabled={
+                      isResourcesLoading || resources.drivers.length === 0
+                    }
+                    onValueChange={(value) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        driverId: value,
+                      }))
+                    }
+                    options={[
+                      {
+                        value: "",
+                        label: isResourcesLoading
+                          ? "Загружаем водителей…"
+                          : "Выберите водителя",
+                      },
+                      ...resources.drivers.map((driver) => ({
+                        value: driver.id,
+                        label: driver.name,
+                      })),
+                    ]}
+                    value={tripForm.driverId}
+                  />
+                  {!isResourcesLoading && resources.drivers.length === 0 ? (
+                    <span className="text-xs font-normal text-amber-500">
+                      Нет подключённых водителей.{" "}
+                      <Link href="/team" className="underline">
+                        Подключите аккаунт в команде
+                      </Link>
+                      .
+                    </span>
+                  ) : null}
+                </label>
+                <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
+                  Комментарий{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (необязательно)
+                  </span>
+                  <Textarea
+                    className="min-h-24 resize-y"
+                    maxLength={2000}
+                    onChange={(event) =>
+                      setTripForm((current) => ({
+                        ...current,
+                        notes: event.target.value,
+                      }))
+                    }
+                    placeholder="Особые условия или детали рейса"
+                    value={tripForm.notes}
+                  />
+                </label>
+              </div>
+              <CustomDataFields
+                disabled={isSubmitting || isResourcesLoading}
+                fields={tripCustomFields}
+                onChange={(customData) =>
+                  setTripForm((current) => ({ ...current, customData }))
+                }
+                values={tripForm.customData}
+              />
+              {resourceError || formError ? (
+                <p
+                  className="mt-4 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2 text-sm text-foreground"
+                  role="alert"
+                >
+                  {formError ?? resourceError}
+                </p>
+              ) : null}
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <Button
+                  className="order-2 sm:order-1"
+                  disabled={isSubmitting}
+                  disabledReason={
+                    "Действие с рейсом выполняется. Дождитесь завершения."
                   }
-                  placeholder="Особые условия или детали рейса"
-                  value={tripForm.notes}
-                />
-              </label>
-            </div>
-            <CustomDataFields
-              disabled={isSubmitting || isResourcesLoading}
-              fields={tripCustomFields}
-              onChange={(customData) =>
-                setTripForm((current) => ({ ...current, customData }))
-              }
-              values={tripForm.customData}
-            />
-            {resourceError || formError ? (
-              <p
-                className="mt-4 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2 text-sm text-foreground"
-                role="alert"
-              >
-                {formError ?? resourceError}
-              </p>
-            ) : null}
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <Button
-                className="order-2 sm:order-1"
-                disabled={isSubmitting}
-                disabledReason={
-                  "Действие с рейсом выполняется. Дождитесь завершения."
-                }
-                onClick={() => setIsCreateOpen(false)}
-                type="button"
-                variant="outline"
-              >
-                Отмена
-              </Button>
-              <Button
-                disabled={isSubmitting || isResourcesLoading || !!resourceError}
-                disabledReason={
-                  isSubmitting
-                    ? "Рейс сохраняется. Дождитесь завершения."
-                    : isResourcesLoading
-                      ? "Дождитесь загрузки маршрутов, транспорта и водителей."
-                      : "Не удалось загрузить данные для рейса. Обновите страницу и повторите попытку."
-                }
-                type="submit"
-              >
-                {isSubmitting
-                  ? "Сохраняем рейс…"
-                  : editingTripID
-                    ? "Сохранить изменения"
-                    : "Создать рейс"}
-              </Button>
-            </div>
-          </form>
-        </div>
+                  onClick={() => setIsCreateOpen(false)}
+                  type="button"
+                  variant="outline"
+                >
+                  Отмена
+                </Button>
+                <Button
+                  disabled={
+                    isSubmitting ||
+                    isResourcesLoading ||
+                    !!resourceError ||
+                    tripRoadLoading ||
+                    tripRoadBusy ||
+                    !tripNavigation.distanceMeters ||
+                    (tripForm.kind === "regular" && !tripForm.routeId)
+                  }
+                  disabledReason={
+                    isSubmitting
+                      ? "Рейс сохраняется. Дождитесь завершения."
+                      : isResourcesLoading
+                        ? "Дождитесь загрузки маршрутов, транспорта и водителей."
+                        : resourceError
+                          ? "Не удалось загрузить данные для рейса. Обновите страницу и повторите попытку."
+                          : tripForm.kind === "regular" && !tripForm.routeId
+                            ? "Выберите маршрут для регулярного рейса."
+                            : tripRoadLoading || tripRoadBusy
+                              ? "Загружаем или строим дорогу. Дождитесь завершения."
+                              : "Выберите места посадки и высадки и постройте дорогу."
+                  }
+                  type="submit"
+                >
+                  {isSubmitting
+                    ? "Сохраняем рейс…"
+                    : editingTripID
+                      ? "Сохранить изменения"
+                      : "Создать рейс"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </>
   )

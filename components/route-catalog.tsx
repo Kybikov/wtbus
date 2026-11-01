@@ -30,6 +30,7 @@ import {
 } from "@/components/route-status-field"
 
 type Route = {
+  defaultDriverId: string
   id: string
   name: string
   origin: string
@@ -60,6 +61,7 @@ type RouteForm = Omit<
 }
 
 const emptyForm: RouteForm = {
+  defaultDriverId: "",
   name: "",
   origin: "",
   destination: "",
@@ -122,6 +124,27 @@ export function RouteCatalog() {
     end: null,
   })
   const [roadBusy, setRoadBusy] = React.useState(false)
+  const [driverChoices, setDriverChoices] = React.useState<
+    { id: string; name: string }[]
+  >([])
+  const [driversLoading, setDriversLoading] = React.useState(true)
+  const [driversError, setDriversError] = React.useState(false)
+  React.useEffect(() => {
+    const controller = new AbortController()
+    void sessionFetch("/api/trip-resources", { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok) throw new Error()
+        if (!controller.signal.aborted) setDriverChoices(payload.drivers || [])
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setDriversError(true)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDriversLoading(false)
+      })
+    return () => controller.abort()
+  }, [])
 
   const [query, setQuery] = usePageSearch()
   const selection = useEntitySelection<Route>((item) => item.id)
@@ -318,6 +341,7 @@ export function RouteCatalog() {
           defaultPriceMinor,
           defaultPricingMode: form.defaultPricingMode,
           driverPayMinor,
+          defaultDriverId: form.defaultDriverId,
           tariffMode: form.tariffMode,
           distanceKm,
           vehicleClassRates,
@@ -484,16 +508,36 @@ export function RouteCatalog() {
                 Сумма за один выполненный рейс в валюте маршрута.
               </span>
             </label>
+            <label className="grid min-w-0 gap-2 text-sm font-semibold">
+              Основной водитель
+              <FieldSelect
+                aria-label="Основной водитель"
+                value={form.defaultDriverId}
+                onValueChange={(value) => updateForm("defaultDriverId", value)}
+                disabled={driversLoading || driversError}
+                disabledReason={
+                  driversLoading
+                    ? "Загружаем водителей. Дождитесь завершения."
+                    : "Не удалось загрузить водителей. Обновите страницу."
+                }
+                options={[
+                  { value: "", label: "Назначать в рейсе" },
+                  ...driverChoices.map((driver) => ({
+                    value: driver.id,
+                    label: driver.name,
+                  })),
+                ]}
+              />
+            </label>
             <label className="grid gap-2 text-sm font-semibold">
               Валюта
-              <Input
-                className="h-11 rounded-xl border border-border bg-control px-3 font-normal uppercase transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                maxLength={3}
-                onChange={(event) =>
-                  updateForm("currency", event.target.value.toUpperCase())
-                }
-                required
+              <FieldSelect
+                aria-label="Валюта маршрута"
                 value={form.currency}
+                onValueChange={(value) => updateForm("currency", value)}
+                options={[
+                  ...new Set([currency, "EUR", "UAH", "PLN", "USD"]),
+                ].map((value) => ({ value, label: value }))}
               />
             </label>
             <label className="grid gap-2 text-sm font-semibold">

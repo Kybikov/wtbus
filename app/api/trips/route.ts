@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
   }
 
   const abortController = new AbortController()
-  const timeout = setTimeout(() => abortController.abort(), 5_000)
+  const timeout = setTimeout(() => abortController.abort(), 25_000)
 
   try {
     const upstream = await apiFetch(
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error },
         {
-          status: [400, 401, 402, 403, 409].includes(upstream.status)
+          status: [400, 401, 402, 403, 409, 422].includes(upstream.status)
             ? upstream.status
             : 502,
         }
@@ -215,7 +215,7 @@ export async function PUT(request: NextRequest) {
     )
   }
   const abortController = new AbortController()
-  const timeout = setTimeout(() => abortController.abort(), 5_000)
+  const timeout = setTimeout(() => abortController.abort(), 25_000)
   try {
     const upstream = await apiFetch(
       `${apiBaseURL}/api/v1/tenants/vivat-bus/trips/${encodeURIComponent(tripID)}`,

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 10_000)
+  const timer = setTimeout(() => controller.abort(), 25_000)
   try {
     const upstream = await apiFetch(
       `${apiBaseURL}/api/v1/tenants/vivat-bus/trips/schedule`,

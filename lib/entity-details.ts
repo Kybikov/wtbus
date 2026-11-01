@@ -61,6 +61,7 @@ export const entityFieldLabels: Record<string, string> = {
   default_price_minor: "Базовая цена",
   driver_pay_minor: "Зарплата водителя за маршрут",
   tariff_mode: "Тип тарифа",
+  default_driver_id: "Основной водитель",
   distance_km: "Расстояние по дороге, км",
   vehicle_class_rates: "Тарифы по классам авто",
   pricing_mode: "Модель цены",

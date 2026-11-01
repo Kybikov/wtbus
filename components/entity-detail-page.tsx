@@ -64,6 +64,7 @@ type EditableField = {
 }
 const editableFields: Partial<Record<EntityCollection, EditableField[]>> = {
   routes: [
+    { key: "default_driver_id", type: "select" },
     { key: "name" },
     { key: "origin_name" },
     { key: "destination_name" },
@@ -221,6 +222,7 @@ function updateRequest(
         defaultPriceMinor: Number(item.default_price_minor),
         defaultPricingMode: item.default_pricing_mode,
         driverPayMinor: Number(item.driver_pay_minor ?? 0),
+        defaultDriverId: String(item.default_driver_id ?? ""),
         tariffMode: item.tariff_mode ?? "fixed",
         distanceKm: Number(item.distance_km ?? 0),
         vehicleClassRates: item.vehicle_class_rates ?? {},
@@ -300,7 +302,7 @@ export function EntityDetailPage({
   >({})
   const [resourceError, setResourceError] = React.useState("")
   React.useEffect(() => {
-    if (entity !== "trips") return
+    if (entity !== "trips" && entity !== "routes") return
     const controller = new AbortController()
     sessionFetch("/api/trip-resources", { signal: controller.signal })
       .then(async (response) => {
@@ -544,6 +546,25 @@ export function EntityDetailPage({
       (candidate) => candidate.key === key
     )
     if (!field) return null
+    if (key === "default_driver_id")
+      return (
+        <FieldSelect
+          aria-label="Основной водитель"
+          value={String(value ?? "")}
+          onValueChange={(next) => changeField(key, next)}
+          disabled={!resources.drivers || !!resourceError}
+          disabledReason={
+            resourceError || "Загружаем водителей. Дождитесь завершения."
+          }
+          options={[
+            { value: "", label: "Назначать в рейсе" },
+            ...(resources.drivers || []).map((driver) => ({
+              value: driver.id,
+              label: driver.name,
+            })),
+          ]}
+        />
+      )
     if (entity === "routes" && key === "status")
       return (
         <RouteStatusField
@@ -587,11 +608,26 @@ export function EntityDetailPage({
               ? [
                   { value: "EUR", label: "EUR" },
                   { value: "UAH", label: "UAH" },
+                  { value: "PLN", label: "PLN" },
+                  { value: "USD", label: "USD" },
                 ]
-              : ["vehicle_id", "driver_id", "route_id"].includes(key)
+              : [
+                    "vehicle_id",
+                    "driver_id",
+                    "route_id",
+                    "default_driver_id",
+                  ].includes(key)
                 ? [
-                    ...(key === "route_id"
-                      ? [{ value: "", label: "Без маршрута" }]
+                    ...(["route_id", "default_driver_id"].includes(key)
+                      ? [
+                          {
+                            value: "",
+                            label:
+                              key === "route_id"
+                                ? "Без маршрута"
+                                : "Назначать в рейсе",
+                          },
+                        ]
                       : []),
                     ...(
                       resources[
@@ -599,6 +635,7 @@ export function EntityDetailPage({
                           {
                             vehicle_id: "vehicles",
                             driver_id: "drivers",
+                            default_driver_id: "drivers",
                             route_id: "routes",
                           } as Record<string, string>
                         )[key]
@@ -611,6 +648,7 @@ export function EntityDetailPage({
                           {
                             vehicle_id: "vehicles",
                             driver_id: "drivers",
+                            default_driver_id: "drivers",
                             route_id: "routes",
                           } as Record<string, string>
                         )[key]
