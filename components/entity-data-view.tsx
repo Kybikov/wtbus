@@ -932,6 +932,7 @@ export function EntityDataView<T>({
       filterRequest={filterRequest}
       onFilterRequestHandled={() => setFilterRequest(null)}
       onConfigureCard={
+        (isMobile && mode === "table") ||
         mode === "kanban" ||
         mode === "list" ||
         mode === "gallery" ||
@@ -1001,20 +1002,16 @@ export function EntityDataView<T>({
           </div>
         ) : isMobile && (mode === "table" || mode === "list") ? (
           <div role="list" aria-label="Записи" className="space-y-2">
-            {!selectionOpen && (
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setSelecting(true)}
-                >
-                  <CheckSquare2 className="size-4" />
-                  Выбрать
-                </Button>
-              </div>
-            )}
             {shownItems.map((item) => (
               <MobileRecordRow
+                content={card(item)}
+                swipeActions={sourceActions
+                  ?.filter((action) => !action.disabled?.(item))
+                  .map((action) => ({
+                    label: action.label,
+                    destructive: action.destructive,
+                    onSelect: () => action.onSelect(item),
+                  }))}
                 key={getId(item)}
                 label={getLabel(item)}
                 selected={selected.has(getId(item))}
@@ -1549,6 +1546,14 @@ export function EntityDataView<T>({
               isMobile ? (
                 <div data-no-drag>
                   <MobileRecordRow
+                    content={card(item)}
+                    swipeActions={sourceActions
+                      ?.filter((action) => !action.disabled?.(item))
+                      .map((action) => ({
+                        label: action.label,
+                        destructive: action.destructive,
+                        onSelect: () => action.onSelect(item),
+                      }))}
                     label={getLabel(item)}
                     selected={selected.has(getId(item))}
                     selecting={selectionOpen}

@@ -39,6 +39,8 @@ export interface SwipeAction {
 export interface SwipeRowProps {
   children?: ReactNode
   actions?: SwipeAction[]
+  oppositeActions?: SwipeAction[]
+  onSurfaceHold?: () => void
   actionColor?: string
   drawerColor?: string
   rowColor?: string
@@ -70,6 +72,7 @@ type Sample = [number, number]
 type Phase = "idle" | "committing" | "collapsing"
 
 interface Grip {
+  held?: boolean
   id: number
   x0: number
   y0: number
@@ -128,7 +131,9 @@ const watchWindow = (live: { current: Live }) => {
 
 const SwipeRow: React.FC<SwipeRowProps> = ({
   children,
-  actions = DEFAULT_ACTIONS,
+  actions: primaryActions = DEFAULT_ACTIONS,
+  oppositeActions,
+  onSurfaceHold,
   actionColor = "#e5484d",
   drawerColor = "#3f3f46",
   rowColor = "#27272a",
@@ -157,7 +162,12 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
 }) => {
   const uid = useId()
   const reduce = useReducedMotion()
-  const s = direction === "left" ? -1 : 1
+  const [activeDirection, setActiveDirection] = useState(direction)
+  const actions =
+    activeDirection === direction
+      ? primaryActions
+      : (oppositeActions ?? primaryActions)
+  const s = activeDirection === "left" ? -1 : 1
   const A = actionWidth
   const n = actions.length
   const D = n * A
@@ -176,6 +186,7 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
   const unwatch = useRef<(() => void) | null>(null)
   const live = useRef<Live>({} as Live)
   const foldTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const heading = useRef<number | null>(null)
 
   const x = useMotionValue(0)
@@ -232,6 +243,7 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
   useEffect(
     () => () => {
       clearTimeout(foldTimer.current)
+      clearTimeout(holdTimer.current)
       unwatch.current?.()
     },
     []
@@ -312,7 +324,7 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
   const down = (e: React.PointerEvent<HTMLDivElement>) => {
     if (
       disabled ||
-      n === 0 ||
+      (n === 0 && !oppositeActions?.length && !onSurfaceHold) ||
       phase !== "idle" ||
       grip.current ||
       e.button !== 0
@@ -335,6 +347,14 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
       hist: [],
       touch: e.pointerType === "touch",
     }
+    clearTimeout(holdTimer.current)
+    if (onSurfaceHold)
+      holdTimer.current = setTimeout(() => {
+        const g = grip.current
+        if (!g || g.moved) return
+        g.held = true
+        onSurfaceHold()
+      }, 450)
     try {
       surface.current?.setPointerCapture(e.pointerId)
     } catch {}
@@ -344,10 +364,19 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
   const move = (e: PointerEvent) => {
     const g = grip.current
     if (!g || g.id !== e.pointerId) return
+    const dx = e.clientX - g.x0,
+      dy = e.clientY - g.y0
+    if (Math.hypot(dx, dy) > 8) clearTimeout(holdTimer.current)
+    if (g.held) return
     if (g.grab === null) {
-      const dx = e.clientX - g.x0
-      const dy = e.clientY - g.y0
       if (Math.abs(dx) < HYST || Math.abs(dx) < Math.abs(dy)) return
+      if (!open && oppositeActions?.length) {
+        const wanted = dx < 0 ? "left" : "right"
+        if (wanted !== activeDirection) {
+          setActiveDirection(wanted)
+          return
+        }
+      }
       g.grab = s * (g.x0 + Math.sign(dx) * HYST) - inv(exposed.get())
       g.moved = true
       root.current?.setAttribute("data-dragging", "")
@@ -361,11 +390,12 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
   const up = (e: PointerEvent) => {
     const g = grip.current
     if (!g || g.id !== e.pointerId) return
+    clearTimeout(holdTimer.current)
     grip.current = null
     unwatch.current?.()
     unwatch.current = null
     root.current?.removeAttribute("data-dragging")
-    if (g.moved) {
+    if (g.moved || g.held) {
       skipClick.current = true
       setTimeout(() => {
         skipClick.current = false
@@ -464,7 +494,7 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
       aria-label={label}
       className={`group relative [height:var(--sr-h)] overflow-hidden [transition:height_var(--sr-collapse)_cubic-bezier(0.23,1,0.32,1),margin-bottom_var(--sr-collapse)_cubic-bezier(0.23,1,0.32,1),opacity_var(--sr-collapse)_cubic-bezier(0.23,1,0.32,1)] data-[disabled]:pointer-events-none data-[phase=collapsing]:mb-0! data-[phase=collapsing]:h-0! data-[phase=collapsing]:opacity-0 data-[disabled]:opacity-55${className ? ` ${className}` : ""}`}
       data-swipe-row
-      data-direction={direction}
+      data-direction={activeDirection}
       data-open={open ? "" : undefined}
       data-phase={phase}
       data-disabled={disabled ? "" : undefined}
@@ -477,8 +507,8 @@ const SwipeRow: React.FC<SwipeRowProps> = ({
           "--sr-text": textColor,
           "--sr-drawer": drawerColor,
           "--sr-on-drawer": onColor(drawerColor),
-          "--sr-action": actionColor,
-          "--sr-on-action": onColor(actionColor),
+          "--sr-action": primary?.color ?? actionColor,
+          "--sr-on-action": onColor(primary?.color ?? actionColor),
           "--sr-collapse": `${collapseMs}ms`,
           ...style,
         } as CSSProperties

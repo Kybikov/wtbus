@@ -860,7 +860,7 @@ export function EntityViewToolbar<T>({
               config={config}
               onChange={onChange}
             />
-            {config.mode === "table" ? (
+            {config.mode === "table" && !isMobile ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -909,6 +909,7 @@ export function EntityViewToolbar<T>({
               />
             ) : onConfigureCard ? (
               <Button
+                aria-label="Настроить карточку"
                 className={control}
                 onClick={onConfigureCard}
                 size="sm"

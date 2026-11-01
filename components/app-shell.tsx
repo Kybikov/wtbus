@@ -391,7 +391,12 @@ function VivatSidebar({
     return (
       <Sidebar collapsible="icon" className="app-sidebar">
         <SidebarHeader className="min-h-16 justify-center px-5">
-          <span className="truncate text-lg font-bold">{brand.tenantName}</span>
+          <div className="flex min-w-0 items-center gap-3">
+            <BrandMark brand={brand} className="size-9 shrink-0" />
+            <span className="truncate text-lg font-bold">
+              {brand.tenantName}
+            </span>
+          </div>
         </SidebarHeader>
         <SidebarContent className="px-4 py-3">
           <nav aria-label="Главная навигация" className="space-y-1">
@@ -440,7 +445,13 @@ function VivatSidebar({
                         )}
                         onClick={() => setExpanded(opened ? null : item.href)}
                       >
-                        {item.label}
+                        <HugeiconsIcon
+                          icon={item.icon}
+                          className="size-5 shrink-0"
+                        />
+                        <span className="min-w-0 flex-1 text-left">
+                          {item.label}
+                        </span>
                         {opened ? (
                           <ChevronDown className="size-4" />
                         ) : (
@@ -468,10 +479,14 @@ function VivatSidebar({
                       aria-current={active ? "page" : undefined}
                       onClick={() => setOpenMobile(false)}
                       className={cn(
-                        "flex min-h-14 items-center rounded-2xl px-3 text-xl font-bold hover:bg-control",
+                        "flex min-h-14 items-center gap-3 rounded-2xl px-3 text-xl font-bold hover:bg-control",
                         active && "text-primary"
                       )}
                     >
+                      <HugeiconsIcon
+                        icon={item.icon}
+                        className="size-5 shrink-0"
+                      />
                       {item.label}
                     </Link>
                   )}
@@ -643,30 +658,27 @@ export function AppShell({
     ]
   )
   const pageMenu = React.useMemo(
-    () => (
-      <>
-        <h2 className="text-sm font-semibold">{pageTitle}</h2>
-        {pageControls}
-        {mobilePageMenu}
-        {pageActions && (
-          <div className="flex flex-wrap gap-2">{pageActions}</div>
-        )}
-        {(dataActions || viewExport) && (
-          <UniversalHeaderActions
-            role={brand.role}
-            ready={identityReady}
-            dataActions={dataActions}
-            viewExport={viewExport}
-            onImported={refreshPage}
-          />
-        )}
-      </>
-    ),
+    () =>
+      pageControls || mobilePageMenu || dataActions || viewExport ? (
+        <>
+          <h2 className="text-sm font-semibold">{pageTitle}</h2>
+          {pageControls}
+          {mobilePageMenu}
+          {(dataActions || viewExport) && (
+            <UniversalHeaderActions
+              role={brand.role}
+              ready={identityReady}
+              dataActions={dataActions}
+              viewExport={viewExport}
+              onImported={refreshPage}
+            />
+          )}
+        </>
+      ) : null,
     [
       pageTitle,
       pageControls,
       mobilePageMenu,
-      pageActions,
       dataActions,
       viewExport,
       brand.role,
@@ -1208,6 +1220,23 @@ export function AppShell({
               </div>
               <div className="mobile-header-notifications">
                 <NotificationsBell onUnreadChange={setUnread} />
+              </div>
+              <div className="mobile-page-actions flex shrink-0 items-center gap-1 md:hidden">
+                {pageActions}
+                {onCreate && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Создать запись"
+                    disabled={createDisabled}
+                    disabledReason="Дождитесь загрузки данных для создания записи."
+                    onClick={onCreate}
+                  >
+                    <span className="text-2xl leading-none" aria-hidden>
+                      +
+                    </span>
+                  </Button>
+                )}
               </div>
               <Button
                 aria-label={`Открыть правое меню${unread ? `: ${unread} непрочитанных` : ""}`}

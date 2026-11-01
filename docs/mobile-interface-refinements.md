@@ -4,7 +4,7 @@ This update adapts the licensed React Bits Pro Mobile 5 Sorbet and Download 6 so
 
 ## Records and navigation
 
-- Mobile table/list views use compact independent rows. Gallery remains a separate view. A hold selects a row; movement cancels the hold so ordinary scrolling remains available. Keyboard Space and the Select button offer the same selection flow.
+- Mobile table/list views use compact independent rows. Gallery remains a separate view. A hold selects a row; movement cancels the hold so ordinary scrolling remains available. Keyboard Space and the opposite-side swipe action offer the same selection flow.
 - Selection actions occupy a footer row, including Select all. Unsaved-view controls occupy another row above the metrics; neither overlays metrics. Ordinary record changes remain separate from view drafts.
 - Mobile Kanban uses shared status tabs and full-width snap columns. Native horizontal panning changes the visible column; the selected tab follows the scroll position. Existing workflow validation and confirmations remain in place.
 - The full-screen main menu follows Mobile 5, with expandable overview/settings sections, the plain booking-page link and a profile footer. Dock configuration is a dialog with the existing accessible reorder list and a separate list of available pages.
@@ -37,3 +37,13 @@ Download 6 supplies the split hero/platform-list layout for `/profile/app`. It o
 - At a measured CSS viewport width of 312 px, document width stayed 312 px. Scale endpoints produced 12/20 px root fonts and 36/60 px create buttons; the 75% setting survived reload. Kanban columns matched the 280 px content rail. The unsaved banner ended at 505.6 px and metrics began at 513.6 px. The create list reports `scrollbar-width: none`; open/closed create-button positions differed only by subpixel rounding.
 
 Physical iOS safe-area rendering, native touch holds/swipes and OS-level PWA installation still need device acceptance; browser checks and synthetic install-event tests do not replace it. The local preview remains available for review. The user authorized commit/push after the final checks.
+
+## Mobile navigation follow-up
+
+The full main menu again includes section icons and the company mark. The account role aligns with the close control; dock configuration stays in a separate bottom footer. Page actions, including the current-page create button, appear immediately before the mobile account trigger. Empty page-control headings are omitted.
+
+The mobile list exposes the shared card-layout editor, including in the default table mode. Its field changes remain view drafts until explicitly saved. The Select heading is removed. Shared React Bits Swipe Row owns both the hold timer and drag capture: holding selects, movement cancels the hold, and hold/drag completion suppresses the following navigation click. Left swipes reveal record actions; right swipes reveal selection. Full-swipe execution is disabled, preserving explicit destructive and financial confirmations.
+
+Mobile Sonner banners enter below the topbar and top safe area, with upward and sideways dismissal plus a close button. Desktop positioning remains bottom-right. HTML/JSON parser failures become a concise retry message; actual business restrictions remain visible. Details use a static query endpoint with server-side collection/identifier validation and the existing authenticated tenant-aware forwarding. Explicit customer and booking pages share the same detail component. Initial load failures render Retry and Back to list instead of an empty detail panel. This handles malformed responses but does not establish the cause of the production HTML response in the screenshot.
+
+Follow-up checks: 108 frontend tests, scoped ESLint, TypeScript and production build pass. Local fixture browser checks cover icons, the pinned footer, a 401 px document without horizontal overflow, page create placement, configurable list-field preview and cancellation, keyboard selection, customer/booking/trip details, HTML-response failure and successful retry, top toast placement and close-button dismissal. Native touch holds, two-direction swipes and iPhone safe areas still require physical-device acceptance. No production records were changed.

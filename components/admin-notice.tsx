@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
+import { uiErrorMessage } from "@/lib/ui-error"
 
 export function AdminNotice({
   message,
@@ -24,7 +25,7 @@ export function AdminNotice({
     const translated =
       message === "the company must keep at least one active owner"
         ? "В команде должен остаться хотя бы один активный владелец."
-        : message
+        : uiErrorMessage(message)
     const options = title ? { description: translated } : undefined
     if (variant === "error") toast.error(title ?? translated, options)
     else if (variant === "info") toast.info(title ?? translated, options)

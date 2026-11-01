@@ -3,6 +3,7 @@
 import * as React from "react"
 import { toast } from "sonner"
 import { createAutosaveQueue } from "@/lib/autosave"
+import { uiErrorMessage } from "@/lib/ui-error"
 
 export function useFieldAutosave<T extends object>(
   persist: (value: T) => Promise<T>
@@ -17,7 +18,7 @@ export function useFieldAutosave<T extends object>(
       return queue.commit(patch, persistRef.current).catch((error: unknown) => {
         toast.error("Изменения не сохранены", {
           description:
-            error instanceof Error ? error.message : "Повторите попытку.",
+            error instanceof Error ? uiErrorMessage(error.message) : "Повторите попытку.",
         })
       })
     },

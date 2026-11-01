@@ -44,7 +44,7 @@ export function MobileDockSettings({
       <DialogContent className="max-h-[85dvh] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-3xl sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Нижняя навигация</DialogTitle>
-          <DialogDescription>
+        <DialogDescription className="sr-only">
             Перетащите разделы за ручку, чтобы изменить порядок. Добавьте нужные
             страницы.
           </DialogDescription>

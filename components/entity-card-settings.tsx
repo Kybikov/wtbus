@@ -271,7 +271,7 @@ export function EntityCardSettings({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Настройка карточки</DialogTitle>
-          <DialogDescription>Настроить карточный вид</DialogDescription>
+          <DialogDescription className="sr-only">Выберите поля и расположение.</DialogDescription>
         </DialogHeader>
         {open ? (
           <CardSettingsForm

@@ -107,7 +107,7 @@ export function MobileAccountMenu({
       >
         <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 bg-card/80 px-3 pt-[calc(.75rem+env(safe-area-inset-top))] pb-3 backdrop-blur-xl">
           <SheetTitle className="sr-only">Профиль и разделы</SheetTitle>
-          <div className="flex min-w-0 items-center gap-2 pr-10">
+          <div className="flex min-w-0 items-center gap-2 pr-28">
             <span
               aria-hidden
               className="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
@@ -122,15 +122,15 @@ export function MobileAccountMenu({
                 >
                   {account?.name || "Ваш профиль"}
                 </p>
-                <span className="shrink-0 rounded-md bg-control px-1.5 py-1 text-[10px] text-muted-foreground">
-                  {roleNames[role]}
-                </span>
               </div>
               <SheetDescription className="mt-0.5 truncate text-xs">
                 {account?.company}
               </SheetDescription>
             </div>
           </div>
+          <span className="absolute top-[calc(.5rem+env(safe-area-inset-top))] right-14 flex h-9 items-center rounded-md px-1.5 text-[10px] text-muted-foreground">
+            {roleNames[role]}
+          </span>
           <SheetClose
             render={
               <Button
@@ -287,12 +287,14 @@ export function MobileAccountMenu({
                   ))}
               </section>
             )}
-            <MobileDockSettings
-              role={role}
-              hrefs={dockHrefs}
-              onChange={onDockChange}
-            />
           </nav>
+        </div>
+        <div className="shrink-0 border-t border-border/70 bg-card px-3 pt-2 pb-[max(.75rem,env(safe-area-inset-bottom))]">
+          <MobileDockSettings
+            role={role}
+            hrefs={dockHrefs}
+            onChange={onDockChange}
+          />
         </div>
       </SheetContent>
     </Sheet>

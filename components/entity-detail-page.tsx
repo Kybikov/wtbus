@@ -404,12 +404,18 @@ export function EntityDetailPage({
       setError(null)
       try {
         const response = await sessionFetch(
-          `/api/entity-details/${entity}/${encodeURIComponent(id)}`,
+          `/api/entity-details?entity=${encodeURIComponent(entity)}&id=${encodeURIComponent(id)}`,
           { cache: "no-store", signal: controller.signal }
         )
-        const payload = await response.json()
+        const payload = await response.json().catch(() => null)
         if (!response.ok || !isDetail(payload))
-          throw new Error(payload.error ?? "Не удалось загрузить запись.")
+          throw new Error(
+            typeof payload?.error === "string"
+              ? payload.error
+              : response.status === 404
+                ? "Запись не найдена."
+                : "Не удалось загрузить запись. Повторите попытку."
+          )
         if (!controller.signal.aborted) {
           setDetail(payload)
           persistedItem.current = payload.item
@@ -446,7 +452,7 @@ export function EntityDetailPage({
         busy = true
         try {
           const response = await sessionFetch(
-            `/api/entity-details/${entity}/${encodeURIComponent(id)}`,
+            `/api/entity-details?entity=${encodeURIComponent(entity)}&id=${encodeURIComponent(id)}`,
             { cache: "no-store", signal: controller.signal }
           )
           const payload = await response.json()
@@ -878,7 +884,7 @@ export function EntityDetailPage({
       {deletion.dialog}
       <AdminNotice message={resourceError} variant="error" />
       <AdminNotice
-        message={error}
+        message={detail ? error : null}
         variant="error"
         title="Не удалось выполнить действие"
       />
@@ -891,6 +897,21 @@ export function EntityDetailPage({
           <Skeleton className="h-72 w-full lg:col-span-2" />
           <Skeleton className="h-40 w-full" />
           <Skeleton className="h-40 w-full" />
+        </div>
+      ) : !detail && error ? (
+        <div role="alert" className="surface-card space-y-3 p-5">
+          <h2 className="font-semibold">Не удалось открыть запись</h2>
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void load()}>Повторить</Button>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link href={`/${entity}`} />}
+            >
+              К списку
+            </Button>
+          </div>
         </div>
       ) : detail ? (
         <EntityDetailContent
