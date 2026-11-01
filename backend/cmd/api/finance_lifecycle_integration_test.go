@@ -85,8 +85,15 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	other := login("other-driver-lifecycle@test.invalid", "disposable-other-password", "driver")
 	call("", "POST", "auth/login", loginRequest{Email: "driver-lifecycle@test.invalid", Password: "wrong-password"}, 401)
 	call(accountant, "PATCH", company+"/finance/settings", accountingSettings{payrollRates: payrollRates{Income: 1000, Levy: 500, Employer: 2000}}, 200)
-	vehicle := row(`INSERT INTO vehicles(tenant_id,name,registration_number,vehicle_class,capacity) VALUES($1,'QA Bus','LIFE-QA','bus',8) RETURNING id::text`, tenant)
-	route := row(`INSERT INTO routes(tenant_id,name,origin_name,destination_name,currency,default_price_minor,driver_pay_minor) VALUES($1,'Киев — Львов QA','Киев','Львов','UAH',100000,20000) RETURNING id::text`, tenant)
+	var vehicleResult struct{ Item vehicleResponse }
+	decode(call(dev, "POST", company+"/fleet", vehicleInput{Name: "QA Bus", RegistrationNumber: "LIFE-QA", VehicleClass: "bus", Capacity: 8, IsActive: true, Status: "ready"}, 201), &vehicleResult)
+	vehicle := vehicleResult.Item.ID
+	var routeResult struct{ Item routeResponse }
+	decode(call(dev, "POST", company+"/routes", routeInput{Name: "Киев — Львов QA", Origin: "Киев", Destination: "Львов", Currency: "UAH", DefaultPriceMinor: 100000, DefaultPricingMode: "per_passenger", DriverPayMinor: 20000, Status: "active", TariffMode: "fixed"}, 201), &routeResult)
+	route := routeResult.Item.ID
+	if vehicle == "" || route == "" || vehicleResult.Item.Capacity != 8 || routeResult.Item.DriverPayMinor != 20000 {
+		t.Fatal("resource creation lost identity, capacity or driver pay")
+	}
 	location, _ := time.LoadLocation("Europe/Kyiv")
 	start := time.Now().In(location).Add(24 * time.Hour).Truncate(time.Minute)
 	var created struct {

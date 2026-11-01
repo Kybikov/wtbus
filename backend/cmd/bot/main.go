@@ -1231,7 +1231,7 @@ func (app *app) createIndividualTransferRequest(ctx context.Context, telegramID 
 	if len([]rune(passengerName)) < 2 || len([]rune(passengerName)) > 160 || passengerPhone == "" {
 		return time.Time{}, errors.New("individual transfer passenger is invalid")
 	}
-	birthDate, ok := parsePassengerBirthDate(state.PassengerBirthDate, app.timezone, time.Now())
+	birthDate, ok := parsePassengerBirthDate(formatBirthDate(state.PassengerBirthDate), app.timezone, time.Now())
 	if !ok {
 		return time.Time{}, errors.New("individual transfer birth date is invalid")
 	}
