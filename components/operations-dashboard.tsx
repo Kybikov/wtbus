@@ -348,13 +348,7 @@ export function OperationsDashboard({
             <h2 className="font-bold" id="active-trips-heading">
               Активные рейсы
             </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Призрачный автобус — план сейчас, яркий — момент последнего GPS
-            </p>
           </div>
-          <span className="text-xs text-muted-foreground">
-            Обновление каждые 30 секунд
-          </span>
         </div>
         <div className="divide-y divide-border">
           {!isLoading &&
