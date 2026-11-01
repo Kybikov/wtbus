@@ -1,5 +1,6 @@
 "use client"
 
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useState } from "react"
 import { CalendarDays, ChevronDown } from "lucide-react"
 import { ru } from "react-day-picker/locale"
@@ -39,6 +40,7 @@ export function StatisticsPeriodPicker({
   to: string
   onChange: (range: { from: string; to: string }) => void
 }) {
+  const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
   const [month, setMonth] = useState<Date>()
   const [draft, setDraft] = useState<DateRange>()
@@ -83,13 +85,13 @@ export function StatisticsPeriodPicker({
       <PopoverContent
         align="end"
         aria-label="Выбор периода"
-        className="statistics-period-popup w-[34rem] max-w-[calc(100vw-1rem)] gap-0 overscroll-contain p-0"
+        className="statistics-period-popup w-[42rem] max-w-[calc(100vw-1rem)] gap-0 overscroll-contain p-0"
       >
-        <div className="order-2 px-2 pt-2 sm:order-1 sm:px-3">
+        <div className="order-1 px-2 pt-2 sm:px-3">
           <Calendar
             mode="range"
             locale={ru}
-            numberOfMonths={2}
+            numberOfMonths={isMobile ? 1 : 2}
             captionLayout="dropdown"
             formatters={{
               formatMonthDropdown: (value) =>
@@ -141,7 +143,7 @@ export function StatisticsPeriodPicker({
               : "Выберите первую и последнюю дату периода"}
           </p>
         </div>
-        <div className="order-1 border-b p-4 sm:order-2 sm:border-t sm:border-b-0">
+        <div className="order-2 border-t p-4">
           <p className="mb-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
             Быстрый выбор
           </p>

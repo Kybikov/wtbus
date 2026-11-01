@@ -8,6 +8,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+## Shared interface controls
+
+Use the shared FieldSelect/Select for dropdowns, including calendar month and year selectors. Separate page-specific topbar controls and actions from the permanent create, refresh and notification controls with the shared vertical Separator. Keep all product controls consistent with the existing design system.
+
+## Delivery
+
+After completing changes and passing the relevant checks, commit and push them immediately. Do not ask again for routine push approval. Preserve unrelated local files and never commit secrets.
+
 ## Editing existing data
 
 Use blur-based autosave for existing records and settings throughout the product. Text and number fields commit when focus leaves the field; completed selects, switches and uploads commit immediately. Use the serialized field queue described in `docs/interface-settings.md`. Preserve newer drafts, report failed writes and never abort a previous mutation to replace it. New-record creation, deletion, credential confirmation and financial actions remain explicit. Do not add Save buttons to ordinary updates.

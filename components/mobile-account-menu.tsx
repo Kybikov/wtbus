@@ -3,25 +3,17 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useTheme } from "next-themes"
+import { DeliverySwitch } from "@/components/ui/delivery-switch"
+import { settingsSections } from "@/components/settings-workspace"
+import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Bell,
-  CalendarDays,
-  Car,
   ChevronRight,
   ExternalLink,
-  House,
-  Inbox,
   LogOut,
-  Moon,
-  Palette,
-  Route,
   Settings,
-  Sun,
   Ticket,
   User,
-  Users,
-  Wallet,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -34,10 +26,7 @@ import {
   SheetClose,
 } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
-import {
-  mobileNavigation,
-  isMobileDestinationActive,
-} from "@/lib/mobile-navigation"
+import { mobileNavigation } from "@/lib/mobile-navigation"
 import type { StaffRole } from "@/lib/admin-actions"
 import { sessionFetch } from "@/lib/session-navigation"
 import { cn } from "@/lib/utils"
@@ -47,19 +36,7 @@ export type MobileAccount = {
   initials: string
   company: string
   tenantSlug: string
-}
-const icons = {
-  home: House,
-  calendar: CalendarDays,
-  ticket: Ticket,
-  inbox: Inbox,
-  route: Route,
-  car: Car,
-  users: Users,
-  wallet: Wallet,
-  settings: Settings,
-  bell: Bell,
-  user: User,
+  membershipId?: string
 }
 const roleNames: Record<StaffRole, string> = {
   accountant: "Бухгалтер",
@@ -69,12 +46,6 @@ const roleNames: Record<StaffRole, string> = {
   dispatcher: "Диспетчер",
   driver: "Водитель",
 }
-const companyPages = new Set([
-  "/finance",
-  "/team",
-  "/settings",
-  "/availability",
-])
 
 export function MobileAccountMenu({
   role,
@@ -82,20 +53,27 @@ export function MobileAccountMenu({
   open,
   onOpenChange,
   trigger,
+  dockHrefs,
+  onDockChange,
+  pageMenu,
+  pageTools,
+  unread = 0,
 }: {
   role: StaffRole
+  dockHrefs: string[]
+  onDockChange: (hrefs: string[]) => void
+  pageTools?: React.ReactNode
+  pageMenu?: React.ReactNode
+  unread?: number
   account?: MobileAccount
   open: boolean
   onOpenChange: (open: boolean) => void
   trigger: React.RefObject<HTMLElement | null>
 }) {
   const pathname = usePathname()
-  const { resolvedTheme, setTheme } = useTheme()
   const [leaving, setLeaving] = React.useState(false)
   const close = () => onOpenChange(false)
-  const pages = mobileNavigation(role).filter(
-    (page) => page.href !== "/profile" && page.href !== "/notifications"
-  )
+  const pages = mobileNavigation(role)
   async function signOut() {
     if (leaving) return
     setLeaving(true)
@@ -118,16 +96,12 @@ export function MobileAccountMenu({
       label: "Настройки уведомлений",
       icon: Bell,
     },
-    {
-      href: "/profile/personalization",
-      label: "Персонализация",
-      icon: Palette,
-    },
     { href: "/profile/app", label: "Приложение", icon: Settings },
   ]
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
+        keepMounted
         side="right"
         showCloseButton={false}
         finalFocus={trigger}
@@ -167,51 +141,55 @@ export function MobileAccountMenu({
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
           data-mobile-menu-scroll
         >
-          <nav aria-label="Разделы правого меню" className="space-y-4">
-            {[
-              {
-                label: "Работа",
-                items: pages.filter((page) => !companyPages.has(page.href)),
-              },
-              {
-                label: "Компания",
-                items: pages.filter((page) => companyPages.has(page.href)),
-              },
-            ].map((group) =>
-              group.items.length ? (
-                <div key={group.label}>
-                  <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">
-                    {group.label}
-                  </p>
-                  {group.items.map((page) => {
-                    const Icon = icons[page.icon],
-                      active = isMobileDestinationActive(pathname, page.href)
-                    return (
-                      <Link
-                        key={page.href}
-                        href={page.href}
-                        onClick={close}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-control focus-visible:outline-2 focus-visible:outline-ring",
-                          active && "bg-control font-semibold text-primary"
-                        )}
-                      >
-                        <Icon className="size-5 shrink-0" />
-                        <span className="min-w-0 flex-1 break-words">
-                          {page.label}
-                        </span>
-                        {active && (
-                          <span
-                            aria-hidden
-                            className="size-1.5 shrink-0 rounded-full bg-primary"
-                          />
-                        )}
-                      </Link>
-                    )
-                  })}
-                </div>
-              ) : null
+          <nav
+            aria-label="Разделы правого меню"
+            className="space-y-4"
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("a[href]")) close()
+            }}
+          >
+            {pageMenu && (
+              <section
+                aria-label="Управление страницей"
+                className="space-y-3 rounded-2xl border border-border p-3"
+              >
+                {pageMenu}
+              </section>
+            )}
+            {pageTools}
+            {(pathname.startsWith("/settings") ||
+              pathname.startsWith("/profile")) && (
+              <section aria-label="Подразделы страницы" className="space-y-1">
+                {settingsSections
+                  .filter(
+                    (section) =>
+                      section.href.startsWith(
+                        pathname.startsWith("/settings")
+                          ? "/settings"
+                          : "/profile"
+                      ) &&
+                      (!section.roles || section.roles.includes(role))
+                  )
+                  .map((section) => (
+                    <Link
+                      key={section.href}
+                      href={section.href}
+                      onClick={close}
+                      aria-current={
+                        pathname === section.href ? "page" : undefined
+                      }
+                      className={cn(
+                        "flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-control",
+                        pathname === section.href &&
+                          "bg-control font-semibold text-primary"
+                      )}
+                    >
+                      <section.icon className="size-5" />
+                      <span className="min-w-0 flex-1">{section.label}</span>
+                      <ChevronRight className="size-4" />
+                    </Link>
+                  ))}
+              </section>
             )}
             <div className="border-t border-border/70 pt-3">
               <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">
@@ -240,9 +218,73 @@ export function MobileAccountMenu({
                 className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-control"
               >
                 <Bell className="size-5" />
-                История уведомлений
+                Уведомления{" "}
+                {unread > 0 && (
+                  <span className="ml-auto rounded-full bg-primary px-2 text-xs text-primary-foreground">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
               </Link>
             </div>
+            {(role === "developer" ||
+              role === "owner" ||
+              role === "admin" ||
+              role === "accountant") && (
+              <Link
+                href="/settings"
+                onClick={close}
+                className="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm hover:bg-control"
+              >
+                <Settings className="size-5" />
+                Настройки компании
+                <ChevronRight className="ml-auto size-4" />
+              </Link>
+            )}
+            <section
+              aria-label="Нижняя навигация"
+              className="rounded-2xl border border-border p-3"
+            >
+              <h3 className="text-sm font-semibold">Нижняя навигация</h3>
+              <p className="mt-1 mb-2 text-xs text-muted-foreground">
+                {dockHrefs.length >= 3
+                  ? "Выбрано три раздела. Уберите один, чтобы добавить другой."
+                  : dockHrefs.length === 1
+                    ? "Оставьте хотя бы один раздел. Можно выбрать до трёх."
+                    : "Выберите до трёх разделов."}
+              </p>
+              {pages.map((page) => {
+                const checked = dockHrefs.includes(page.href)
+                const reason =
+                  checked && dockHrefs.length === 1
+                    ? "Оставьте хотя бы один раздел."
+                    : !checked && dockHrefs.length >= 3
+                      ? "Уберите один из выбранных разделов, чтобы добавить другой."
+                      : undefined
+                return (
+                  <div
+                    key={page.href}
+                    className="border-b border-border/50 py-1 last:border-0"
+                  >
+                    <div className="flex min-h-12 items-center justify-between gap-3">
+                      <span className="min-w-0 text-sm">{page.label}</span>
+                      <DeliverySwitch
+                        label={page.label + " в нижней навигации"}
+                        checked={checked}
+                        disabled={!!reason}
+                        disabledReason={reason}
+                        onChange={(value) =>
+                          onDockChange(
+                            value
+                              ? [...dockHrefs, page.href]
+                              : dockHrefs.filter((href) => href !== page.href)
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </section>
             {account?.tenantSlug && (
               <Link
                 href={`/book/${encodeURIComponent(account.tenantSlug)}`}
@@ -259,16 +301,7 @@ export function MobileAccountMenu({
           </nav>
         </div>
         <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-border/70 bg-card px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Button
-            variant="outline"
-            className="h-11"
-            onClick={() =>
-              setTheme(resolvedTheme === "dark" ? "light" : "dark")
-            }
-          >
-            {resolvedTheme === "dark" ? <Sun /> : <Moon />}
-            {resolvedTheme === "dark" ? "Светлая тема" : "Тёмная тема"}
-          </Button>
+          <ThemeToggle />
           <Button
             variant="ghost"
             className="h-11 text-destructive hover:text-destructive"

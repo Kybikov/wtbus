@@ -356,10 +356,17 @@ function InboxFilter({
     </Tabs>
   )
 }
-export function NotificationsBell() {
+export function NotificationsBell({
+  onUnreadChange,
+}: {
+  onUnreadChange?: (count: number) => void
+}) {
   const [open, setOpen] = React.useState(false)
   const [filter, setFilter] = React.useState("all")
   const inbox = useInbox(filter === "unread")
+  React.useEffect(() => {
+    onUnreadChange?.(inbox.unread)
+  }, [inbox.unread, onUnreadChange])
   const reduce = useReducedMotion()
   return (
     <Popover

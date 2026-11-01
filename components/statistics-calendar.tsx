@@ -1,7 +1,11 @@
 "use client"
 
-import { useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
 import {
@@ -30,7 +34,6 @@ export function StatisticsCalendar({
   metric: string
   onMetricChange: (value: string) => void
 }) {
-  const [selected, setSelected] = useState("")
   const month = statisticsMonth(report.from)
   const days = statisticsCalendar(month.from)
   const byDate = new Map(report.daily.map((day) => [day.date, day]))
@@ -45,12 +48,6 @@ export function StatisticsCalendar({
     1,
     ...report.daily.map((day) => Math.abs(valueFor(day.date)))
   )
-  const selectedDate = byDate.has(selected)
-    ? selected
-    : byDate.has(report.today)
-      ? report.today
-      : report.from
-  const day = byDate.get(selectedDate)!
   return (
     <Panel
       title="Календарь показателей"
@@ -117,7 +114,7 @@ export function StatisticsCalendar({
           const value = valueFor(date)
           const intensity =
             available && value ? 0.08 + (Math.abs(value) / max) * 0.22 : 0
-          return (
+          const button = (
             <Button
               key={date}
               variant="ghost"
@@ -128,13 +125,10 @@ export function StatisticsCalendar({
                   : "Дата другого месяца. Переключите месяц стрелками."
               }
               aria-label={`${dateLabel(date, true)}: ${available ? (metric === "revenue" ? money(value) : integer(value)) : "вне периода"}`}
-              aria-pressed={selectedDate === date}
-              onClick={() => setSelected(date)}
               className={cn(
                 "relative flex h-16 min-w-0 flex-col items-center justify-between gap-1 rounded-lg border border-transparent px-0.5 py-2 font-normal sm:h-24 sm:p-3",
                 available && "bg-muted/30",
                 !inMonth && "opacity-30",
-                selectedDate === date && "border-primary ring-1 ring-primary",
                 date === report.today && "font-semibold"
               )}
               style={
@@ -162,41 +156,51 @@ export function StatisticsCalendar({
               </span>
             </Button>
           )
+          const day = byDate.get(date)
+          if (!available || !day) return button
+          return (
+            <Popover key={date}>
+              <PopoverTrigger
+                openOnHover
+                delay={200}
+                closeDelay={150}
+                render={button}
+              />
+              <PopoverContent
+                side="top"
+                className="w-72 gap-3"
+                aria-label={dateLabel(date, true)}
+              >
+                <h3 className="text-sm font-semibold">
+                  {dateLabel(date, true)}
+                </h3>
+                <dl className="grid grid-cols-2 gap-4 text-xs">
+                  {[
+                    { label: "Бронирования", value: integer(day.bookings) },
+                    { label: "Пассажиры", value: integer(day.passengers) },
+                    { label: "Рейсы", value: integer(day.trips) },
+                    ...(report.finance
+                      ? [
+                          {
+                            label: "Получено",
+                            value: money(cash.get(date) ?? 0),
+                          },
+                        ]
+                      : []),
+                  ].map((item) => (
+                    <div key={item.label}>
+                      <dt className="text-muted-foreground">{item.label}</dt>
+                      <dd className="mt-1 text-base font-semibold tabular-nums">
+                        {item.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </PopoverContent>
+            </Popover>
+          )
         })}
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Чем насыщеннее цвет, тем выше показатель.
-        {metric === "revenue" && ` Суммы в ${report.finance?.currency}.`}
-      </p>
-      {day && (
-        <div className="mt-5 rounded-xl border bg-muted/20 p-4">
-          <h3 className="mb-3 text-sm font-semibold">
-            {dateLabel(selectedDate, true)}
-          </h3>
-          <dl className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
-            {[
-              { label: "Бронирования", value: integer(day.bookings) },
-              { label: "Пассажиры", value: integer(day.passengers) },
-              { label: "Рейсы", value: integer(day.trips) },
-              ...(report.finance
-                ? [
-                    {
-                      label: "Получено",
-                      value: money(cash.get(selectedDate) ?? 0),
-                    },
-                  ]
-                : []),
-            ].map((item) => (
-              <div key={item.label}>
-                <dt className="text-muted-foreground">{item.label}</dt>
-                <dd className="mt-1 text-base font-semibold tabular-nums">
-                  {item.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
     </Panel>
   )
 }

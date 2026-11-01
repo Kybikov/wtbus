@@ -68,3 +68,19 @@ export function mobileDockNavigation(role: StaffRole) {
 export function isMobileDestinationActive(pathname: string, href: string) {
   return pathname === href || (href !== "/" && pathname.startsWith(href + "/"))
 }
+
+// Validate saved shortcuts against current permissions, preserving the chosen order.
+export function resolveMobileDock(role: StaffRole, value: unknown) {
+  const allowed = mobileNavigation(role)
+  if (!Array.isArray(value)) return mobileDockNavigation(role)
+  const seen = new Set<string>()
+  const selected = value
+    .flatMap((href) => {
+      if (typeof href !== "string" || seen.has(href)) return []
+      seen.add(href)
+      const page = allowed.find((item) => item.href === href)
+      return page ? [page] : []
+    })
+    .slice(0, 3)
+  return selected.length ? selected : mobileDockNavigation(role)
+}

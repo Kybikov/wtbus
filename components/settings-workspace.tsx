@@ -114,7 +114,7 @@ export function SettingsWorkspace({
   )
   return (
     <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
-      <div className="workspace-panel min-w-0 space-y-2 p-3 xl:hidden">
+      <div className="workspace-panel hidden min-w-0 space-y-2 p-3 md:block xl:hidden">
         <p className="text-xs text-muted-foreground">Раздел настроек</p>
         <FieldSelect
           aria-label="Раздел настроек"
@@ -155,3 +155,5 @@ export function SettingsWorkspace({
     </div>
   )
 }
+
+export { sections as settingsSections }

@@ -20,8 +20,9 @@ import {
   Wallet,
   X,
   ListFilter,
-  Menu,
 } from "lucide-react"
+import { MobileCreateMenu } from "@/components/mobile-create-menu"
+import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import type { MobileAccount } from "@/components/mobile-account-menu"
 import {
@@ -40,7 +41,7 @@ import {
 } from "@/components/ui/command"
 import {
   mobileNavigation,
-  mobileDockNavigation,
+  resolveMobileDock,
   isMobileDestinationActive,
 } from "@/lib/mobile-navigation"
 import type { StaffRole } from "@/lib/admin-actions"
@@ -86,6 +87,11 @@ const emptyResults: SearchState = {
 // Shadcn owns controls, modal focus/keyboard handling and the real CRM result list.
 export type MobileDockProps = {
   role: StaffRole
+  dockHrefs?: string[]
+  onCreate?: () => void
+  createDisabled?: boolean
+  pageMenu?: React.ReactNode
+  unread?: number
   account?: MobileAccount
   localSearch?: {
     value: string
@@ -99,7 +105,9 @@ export function MobileDock({
   role,
   localSearch,
   menuOpen,
-  onOpenMenu,
+  dockHrefs,
+  onCreate,
+  createDisabled,
 }: MobileDockProps & {
   menuOpen: boolean
   onOpenMenu: (trigger: HTMLElement) => void
@@ -108,6 +116,7 @@ export function MobileDock({
   const router = useRouter()
   const reduceMotion = useReducedMotion()
   const layoutId = React.useId()
+  const [createOpen, setCreateOpen] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [results, setResults] = React.useState<SearchState>(emptyResults)
@@ -243,9 +252,20 @@ export function MobileDock({
           aria-label="Основная навигация"
           layout={!reduceMotion}
           layoutId={`${layoutId}-dock-frame`}
-          className="pointer-events-auto flex h-16 w-full max-w-md min-w-0 items-center gap-1 rounded-2xl border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
+          className="pointer-events-auto flex h-16 w-full max-w-lg min-w-0 items-center gap-1 rounded-2xl border border-border bg-card/95 p-1.5 shadow-lg backdrop-blur-md"
         >
-          {mobileDockNavigation(role).map((item) => {
+          <MobileCreateMenu
+            role={role}
+            onCreate={onCreate}
+            createDisabled={createDisabled}
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+          />
+          <Separator
+            orientation="vertical"
+            className="mx-1 h-7 data-vertical:self-center"
+          />
+          {resolveMobileDock(role, dockHrefs).map((item) => {
             const active = isMobileDestinationActive(pathname, item.href)
             const Icon = icons[item.icon]
             return (
@@ -285,37 +305,24 @@ export function MobileDock({
               </Button>
             )
           })}
-          {role !== "driver" && (
+          <Separator
+            orientation="vertical"
+            className="mx-1 h-7 data-vertical:self-center"
+          />
+          {
             <DialogTrigger
               render={
                 <Button
                   ref={searchTrigger}
-                  aria-label="Поиск и все разделы"
+                  aria-label="Глобальный поиск"
                   variant="ghost"
-                  className="h-full min-w-0 flex-1 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none"
+                  className="size-12 shrink-0 rounded-full"
                 />
               }
             >
               <Search className="size-5" />
-              <span>Поиск</span>
             </DialogTrigger>
-          )}
-          <Button
-            aria-label="Профиль и разделы"
-            aria-haspopup="dialog"
-            aria-expanded={menuOpen}
-            variant="ghost"
-            onClick={(event) => onOpenMenu(event.currentTarget)}
-            className={cn(
-              "h-full min-w-0 flex-1 flex-col gap-1 rounded-xl px-0.5 text-[11px] leading-none",
-              !mobileDockNavigation(role).some((item) =>
-                isMobileDestinationActive(pathname, item.href)
-              ) && "bg-control text-primary"
-            )}
-          >
-            <Menu className="size-5" />
-            <span>Ещё</span>
-          </Button>
+          }
         </motion.nav>
       </div>
       <DialogContent

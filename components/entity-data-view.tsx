@@ -30,6 +30,8 @@ import { useRouter } from "next/navigation"
 import { entityDetailHref } from "@/lib/entity-details"
 import { mergeVisibleCardOrder } from "@/lib/kanban"
 import { MobileSwipeActions } from "@/components/mobile-swipe-actions"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { useMobileToolsHost } from "@/components/mobile-navigation-provider"
 import { createPortal } from "react-dom"
 import { serializeViewCsv } from "@/lib/admin-actions"
 import { EntityExportContext } from "@/components/entity-export-context"
@@ -827,42 +829,51 @@ export function EntityDataView<T>({
   }))
   const visibleBoardGroups = arrangeBoardGroups(boardGroups, board)
   const hiddenBoardGroups = new Set(board?.hidden ?? [])
+  const isMobile = useIsMobile()
+  const toolsHost = useMobileToolsHost()
+  const toolbar = (
+    <EntityViewToolbar
+      key={collection}
+      ready={!loading}
+      collection={collection}
+      config={config}
+      defaults={defaults}
+      onChange={applyConfig}
+      modes={modes}
+      columns={columns}
+      resultCount={items.length}
+      loading={loading}
+      filters={filters}
+      queryFields={queryFields}
+      queryCount={(query) =>
+        sourceItems.filter((item) => matchesQuery(item, query, queryFields))
+          .length
+      }
+      extras={toolbarExtras}
+      bulkActions={bulkActions}
+      selectedCount={selected.size}
+      onClearSelection={() => onSelectedChange(new Set())}
+      filterRequest={filterRequest}
+      onFilterRequestHandled={() => setFilterRequest(null)}
+      onConfigureCard={
+        mode === "kanban" ||
+        mode === "list" ||
+        mode === "gallery" ||
+        mode === "calendar"
+          ? () => setCardSettingsOpen(true)
+          : undefined
+      }
+      groups={boardGroups}
+    />
+  )
   return (
     <section className={cn("space-y-3", className)} aria-busy={loading}>
       {deletion.dialog}
-      <EntityViewToolbar
-        key={collection}
-        ready={!loading}
-        collection={collection}
-        config={config}
-        defaults={defaults}
-        onChange={applyConfig}
-        modes={modes}
-        columns={columns}
-        resultCount={items.length}
-        loading={loading}
-        filters={filters}
-        queryFields={queryFields}
-        queryCount={(query) =>
-          sourceItems.filter((item) => matchesQuery(item, query, queryFields))
-            .length
-        }
-        extras={toolbarExtras}
-        bulkActions={bulkActions}
-        selectedCount={selected.size}
-        onClearSelection={() => onSelectedChange(new Set())}
-        filterRequest={filterRequest}
-        onFilterRequestHandled={() => setFilterRequest(null)}
-        onConfigureCard={
-          mode === "kanban" ||
-          mode === "list" ||
-          mode === "gallery" ||
-          mode === "calendar"
-            ? () => setCardSettingsOpen(true)
-            : undefined
-        }
-        groups={boardGroups}
-      />
+      {isMobile
+        ? toolsHost
+          ? createPortal(toolbar, toolsHost)
+          : null
+        : toolbar}
       <EntityColumnSearch
         field={queryFields.find((field) => field.id === searchColumn)}
         values={values}
@@ -915,7 +926,7 @@ export function EntityDataView<T>({
         ) : mode === "table" ? (
           <>
             <div
-              className="space-y-3 md:hidden"
+              className="mobile-record-list space-y-2 md:hidden"
               role="list"
               aria-label="Записи"
             >
@@ -949,7 +960,7 @@ export function EntityDataView<T>({
                     key={getId(item)}
                     role="listitem"
                     className={cn(
-                      "workspace-panel gap-3 py-3",
+                      "workspace-panel gap-3 rounded-[26px] py-3 shadow-sm",
                       selected.has(getId(item)) && "ring-1 ring-primary"
                     )}
                   >
@@ -1422,7 +1433,7 @@ export function EntityDataView<T>({
             </div>
           </>
         ) : mode === "list" ? (
-          <div className="surface-card divide-y">
+          <div className="mobile-record-list surface-card divide-y">
             {shownItems.map((item) => (
               <MobileSwipeActions
                 key={getId(item)}

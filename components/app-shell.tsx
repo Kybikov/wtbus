@@ -1,6 +1,7 @@
 "use client"
 
 import { sessionFetch } from "@/lib/session-navigation"
+import { PullToRefresh } from "@/components/pull-to-refresh"
 import { NotificationsBell } from "@/components/notifications-inbox"
 import { realtimeEvent } from "@/lib/realtime"
 import {
@@ -27,8 +28,8 @@ import {
   UserGroupIcon,
   Wallet01Icon,
 } from "@hugeicons/core-free-icons"
-import { MoreHorizontal, Sun, Moon } from "lucide-react"
-import { useTheme } from "next-themes"
+import { MoreHorizontal } from "lucide-react"
+import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Popover,
   PopoverContent,
@@ -107,6 +108,7 @@ type AppShellProps = {
   }
   utilities?: React.ReactNode
   pageActions?: React.ReactNode
+  mobilePageMenu?: React.ReactNode
   pageControls?: React.ReactNode
   onCreate?: () => void
   createDisabled?: boolean
@@ -390,7 +392,23 @@ function VivatSidebar({
         </ScrollArea>
       </SidebarContent>
       <SidebarFooter>
-        <div className="h-2 group-data-[collapsible=icon]:hidden" />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="Страница бронирования"
+              render={
+                <Link
+                  href={`/book/${encodeURIComponent(brand.tenantSlug)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+            >
+              <HugeiconsIcon icon={Ticket01Icon} strokeWidth={1.8} />
+              <span>Страница бронирования</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   )
@@ -404,6 +422,7 @@ export function AppShell({
   utilities,
   pageActions,
   pageControls,
+  mobilePageMenu,
   onCreate,
   createDisabled,
   dataActions,
@@ -412,7 +431,6 @@ export function AppShell({
   collectionFooter = false,
 }: AppShellProps) {
   const pathname = usePathname()
-  const { resolvedTheme, setTheme } = useTheme()
   const router = useRouter()
   const [footerHost, setFooterHost] = React.useState<HTMLDivElement | null>(
     null
@@ -426,7 +444,7 @@ export function AppShell({
   const [manualRefreshing, setManualRefreshing] = React.useState(false)
   const [refreshPending, startRefresh] = React.useTransition()
   const isRefreshing = refreshing || manualRefreshing || refreshPending
-  async function refreshPage() {
+  const refreshPage = React.useCallback(async () => {
     if (isRefreshing) return
     if (!onRefresh) {
       startRefresh(() => router.refresh())
@@ -438,7 +456,7 @@ export function AppShell({
     } finally {
       setManualRefreshing(false)
     }
-  }
+  }, [isRefreshing, onRefresh, router])
   const {
     preferences,
     override: sidebarOverride,
@@ -456,6 +474,8 @@ export function AppShell({
     [preferences.sidebarMode, setSidebarOverride]
   )
   const [viewExport, setViewExport] = React.useState<EntityExport | null>(null)
+  const [unread, setUnread] = React.useState(0)
+  const [membershipId, setMembershipId] = React.useState("")
   const [identityReady, setIdentityReady] = React.useState(false)
   const [brand, setBrand] = React.useState(defaultShellBrand)
   const [userName, setUserName] = React.useState("")
@@ -466,14 +486,57 @@ export function AppShell({
       initials: brand.userInitials,
       company: brand.tenantName,
       tenantSlug: brand.tenantSlug,
+      membershipId,
     }),
-    [userName, brand.tenantName, brand.userInitials, brand.tenantSlug]
+    [
+      userName,
+      brand.tenantName,
+      brand.userInitials,
+      brand.tenantSlug,
+      membershipId,
+    ]
+  )
+  const pageMenu = React.useMemo(
+    () => (
+      <>
+        <h2 className="text-sm font-semibold">{pageTitle}</h2>
+        {pageControls}
+        {mobilePageMenu}
+        {pageActions && (
+          <div className="flex flex-wrap gap-2">{pageActions}</div>
+        )}
+        {(dataActions || viewExport) && (
+          <UniversalHeaderActions
+            role={brand.role}
+            ready={identityReady}
+            dataActions={dataActions}
+            viewExport={viewExport}
+            onImported={refreshPage}
+          />
+        )}
+      </>
+    ),
+    [
+      pageTitle,
+      pageControls,
+      mobilePageMenu,
+      pageActions,
+      dataActions,
+      viewExport,
+      brand.role,
+      identityReady,
+      refreshPage,
+    ]
   )
   useMobilePageNavigation(identityReady, {
     pathname,
     role: brand.role,
     localSearch,
     account,
+    pageMenu,
+    unread,
+    onCreate,
+    createDisabled,
   })
   const profileVersion = React.useRef(0)
   React.useEffect(() => {
@@ -495,7 +558,6 @@ export function AppShell({
   const shortcutLabel = useSearchShortcutLabel()
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =
     React.useState(false)
-  const [mobileActionsOpen, setMobileActionsOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
   const [searchLoading, setSearchLoading] = React.useState(false)
   const [searchError, setSearchError] = React.useState<string | null>(null)
@@ -509,6 +571,14 @@ export function AppShell({
       .then(({ branding, brandingOK, identity, identityOK }) => {
         if (cancelled) return
         setIdentityReady(identityOK)
+        if (
+          identityOK &&
+          typeof identity === "object" &&
+          identity !== null &&
+          "membershipId" in identity &&
+          typeof identity.membershipId === "string"
+        )
+          setMembershipId(identity.membershipId)
         if (
           initialProfileVersion === profileVersion.current &&
           identityOK &&
@@ -904,81 +974,11 @@ export function AppShell({
               ) : null}
             </div>
             {pageControls && (
-              <div className="order-last w-full min-w-0 basis-full pb-1 xl:order-none xl:w-auto xl:shrink-0 xl:basis-auto xl:pb-0">
+              <div className="order-last hidden w-full min-w-0 basis-full pb-1 md:block xl:order-none xl:w-auto xl:shrink-0 xl:basis-auto xl:pb-0">
                 {pageControls}
               </div>
             )}
             <div className="flex shrink-0 items-center gap-0.5 md:gap-1.5">
-              <Popover
-                open={mobileActionsOpen}
-                onOpenChange={setMobileActionsOpen}
-              >
-                <PopoverTrigger
-                  render={
-                    <Button
-                      aria-label="Действия страницы"
-                      className="size-11 rounded-lg md:hidden"
-                      size="icon-lg"
-                      variant="ghost"
-                    />
-                  }
-                >
-                  <MoreHorizontal className="size-5" />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="w-[min(22rem,calc(100vw-2rem))] gap-3 p-3 md:hidden"
-                >
-                  <p className="text-sm font-semibold">{pageTitle}</p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {pageDescription ??
-                      pageDescriptions[pageTitle] ??
-                      pageTitle}
-                  </p>
-                  {onCreate ? (
-                    <Button
-                      className="w-full"
-                      disabled={!identityReady || createDisabled}
-                      disabledReason={
-                        !identityReady
-                          ? "Дождитесь загрузки данных аккаунта."
-                          : "Дождитесь загрузки данных для создания записи."
-                      }
-                      onClick={() => {
-                        setMobileActionsOpen(false)
-                        onCreate()
-                      }}
-                    >
-                      Создать запись
-                    </Button>
-                  ) : null}
-                  {pageActions ? (
-                    <div className="flex flex-wrap gap-2 [&_[data-slot=button]]:justify-start">
-                      {pageActions}
-                    </div>
-                  ) : null}
-                  <div className="flex items-center gap-2">
-                    <UniversalHeaderActions
-                      role={brand.role}
-                      ready={identityReady}
-                      onCreate={onCreate}
-                      createDisabled={createDisabled}
-                      dataActions={dataActions}
-                      viewExport={viewExport}
-                      onImported={refreshPage}
-                    />
-                    <Button
-                      variant="outline"
-                      disabled={isRefreshing}
-                      disabledReason={"Дождитесь завершения текущей операции."}
-                      onClick={() => void refreshPage()}
-                    >
-                      <HugeiconsIcon icon={RefreshIcon} />
-                      Обновить
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
               <div className="hidden items-center gap-1.5 md:flex">
                 {pageActions ? (
                   <>
@@ -1007,10 +1007,13 @@ export function AppShell({
                     </Popover>
                   </>
                 ) : null}
-                {pageActions ? (
+                {pageActions || pageControls ? (
                   <Separator
                     orientation="vertical"
-                    className="mx-1 h-5 data-vertical:self-center"
+                    className={cn(
+                      "mx-1 h-5 data-vertical:self-center",
+                      !pageActions && "hidden xl:block"
+                    )}
                   />
                 ) : null}
                 <UniversalHeaderActions
@@ -1050,20 +1053,30 @@ export function AppShell({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <NotificationsBell />
+              <div className="mobile-header-notifications">
+                <NotificationsBell onUnreadChange={setUnread} />
+              </div>
               <Button
-                aria-label="Открыть правое меню"
+                aria-label={`Открыть правое меню${unread ? `: ${unread} непрочитанных` : ""}`}
                 disabled={!identityReady}
                 disabledReason="Загружаем ваш профиль. Подождите немного."
                 aria-haspopup="dialog"
                 onClick={(event) => openMenu(event.currentTarget)}
-                className="mobile-account-trigger ml-0.5 size-11 rounded-full md:hidden"
+                className="mobile-account-trigger relative ml-0.5 size-11 rounded-full md:hidden"
                 size="icon-lg"
                 variant="secondary"
               >
                 <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                   {brand.userInitials}
                 </span>
+                {unread > 0 && (
+                  <span
+                    aria-hidden
+                    className="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white"
+                  >
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -1093,34 +1106,7 @@ export function AppShell({
                   <DropdownMenuItem render={<Link href="/profile" />}>
                     Личный профиль
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    render={
-                      <Link
-                        href={`/book/${brand.tenantSlug}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    }
-                  >
-                    Страница бронирования
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    render={<Link href="/profile/personalization" />}
-                  >
-                    Персонализация
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() =>
-                      setTheme(resolvedTheme === "dark" ? "light" : "dark")
-                    }
-                  >
-                    {resolvedTheme === "dark" ? (
-                      <Sun className="size-4" />
-                    ) : (
-                      <Moon className="size-4" />
-                    )}
-                    {resolvedTheme === "dark" ? "Светлая тема" : "Тёмная тема"}
-                  </DropdownMenuItem>
+                  <ThemeToggle menu />
                   {managementRoles.includes(brand.role) ||
                   brand.role === "accountant" ? (
                     <DropdownMenuItem render={<Link href="/settings" />}>
@@ -1155,11 +1141,13 @@ export function AppShell({
           </header>
           {utilities ? <div className="hidden">{utilities}</div> : null}
           <EntityFooterContext.Provider value={footerContext}>
-            <ScrollArea className="dashboard-content min-h-0 min-w-0 flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden">
-              <div className="workspace-content w-full min-w-0 py-3">
-                {children}
-              </div>
-            </ScrollArea>
+            <PullToRefresh onRefresh={refreshPage} refreshing={isRefreshing}>
+              <ScrollArea className="dashboard-content min-h-0 min-w-0 flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden">
+                <div className="workspace-content w-full min-w-0 py-3">
+                  {children}
+                </div>
+              </ScrollArea>
+            </PullToRefresh>
             {collectionFooter ? (
               <div className="mobile-collection-footer min-w-0 shrink-0 pt-1">
                 <div ref={setFooterHost} className="min-h-[50px]" />

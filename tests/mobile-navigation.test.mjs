@@ -4,6 +4,7 @@ import {
   mobileNavigation,
   mobileDockNavigation,
   isMobileDestinationActive,
+  resolveMobileDock,
 } from "../lib/mobile-navigation.ts"
 
 test("mobile navigation gives drivers only their trip, notifications and profile", () => {
@@ -15,6 +16,40 @@ test("mobile navigation gives drivers only their trip, notifications and profile
     mobileDockNavigation("driver").map((item) => item.href),
     ["/driver", "/notifications", "/profile"]
   )
+})
+
+test("saved dock shortcuts retain order and reject duplicates, invalid entries and forbidden pages", () => {
+  assert.deepEqual(
+    resolveMobileDock("dispatcher", [
+      "/customers",
+      "/finance",
+      "/customers",
+      null,
+      "/team",
+      "/routes",
+      "/bookings",
+      "/trips",
+    ]).map((item) => item.href),
+    ["/customers", "/routes", "/bookings"]
+  )
+  assert.deepEqual(
+    resolveMobileDock("driver", ["/finance", "/customers"]).map(
+      (item) => item.href
+    ),
+    ["/driver", "/notifications", "/profile"]
+  )
+  assert.deepEqual(
+    resolveMobileDock("developer", ["/team", "/driver"]).map(
+      (item) => item.href
+    ),
+    ["/team", "/driver"]
+  )
+  for (const malformed of [null, {}, "not-an-array", []]) {
+    assert.deepEqual(
+      resolveMobileDock("accountant", malformed),
+      mobileDockNavigation("accountant")
+    )
+  }
 })
 test("dispatcher mobile search cannot suggest management or finance pages", () => {
   const pages = mobileNavigation("dispatcher").map((item) => item.href)

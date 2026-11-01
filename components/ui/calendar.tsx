@@ -7,7 +7,10 @@ import {
   getDefaultClassNames,
   type DayButton,
   type Locale,
+  type DropdownProps,
 } from "react-day-picker"
+
+import { FieldSelect } from "@/components/ui/field-select"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -139,6 +142,29 @@ function Calendar({
         ...classNames,
       }}
       components={{
+        Dropdown: ({
+          options,
+          value,
+          onChange,
+          disabled,
+          "aria-label": label,
+        }: DropdownProps) => (
+          <FieldSelect
+            aria-label={label}
+            value={String(value ?? "")}
+            disabled={disabled}
+            options={(options ?? []).map((option) => ({
+              ...option,
+              value: String(option.value),
+            }))}
+            triggerClassName="h-8 w-auto min-w-0 gap-1 px-2 text-xs"
+            onValueChange={(next) =>
+              onChange?.({
+                target: { value: next },
+              } as React.ChangeEvent<HTMLSelectElement>)
+            }
+          />
+        ),
         PreviousMonthButton: (buttonProps) => (
           <Button
             {...buttonProps}

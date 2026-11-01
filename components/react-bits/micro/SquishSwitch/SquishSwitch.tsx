@@ -38,6 +38,7 @@ export interface SquishSwitchProps {
   colorDuration?: number
   ariaLabel?: string
   className?: string
+  tabIndex?: number
   id?: string
 }
 
@@ -79,6 +80,7 @@ const SquishSwitch: React.FC<SquishSwitchProps> = ({
   ariaLabel,
   className = "",
   id,
+  tabIndex,
 }) => {
   const reduce = useReducedMotion()
   const inset = Math.max(3, Math.round(height * 0.11))
@@ -211,6 +213,7 @@ const SquishSwitch: React.FC<SquishSwitchProps> = ({
         id={buttonId}
         type="button"
         role="switch"
+        tabIndex={tabIndex}
         aria-checked={on}
         disabled={disabled}
         data-slot="switch"

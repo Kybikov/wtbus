@@ -231,6 +231,25 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
           />
         ) : undefined
       }
+      mobilePageMenu={
+        <nav aria-label="Разделы статистики" className="space-y-1">
+          {visibleSections.map((item) => (
+            <Link
+              key={item.key}
+              href={`/?${new URLSearchParams({ ...Object.fromEntries(params), section: item.key })}`}
+              scroll={false}
+              aria-current={section === item.key ? "page" : undefined}
+              className={cn(
+                "flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm hover:bg-control",
+                section === item.key && "bg-control font-semibold text-primary"
+              )}
+            >
+              <item.icon className="size-5" />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      }
       onRefresh={() => setRefresh((value) => value + 1)}
       refreshing={refreshing}
     >
@@ -275,7 +294,7 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
           )}
         </aside>
         <div className="min-w-0 space-y-4">
-          <div className="workspace-panel rounded-2xl border bg-card p-3 xl:hidden">
+          <div className="workspace-panel hidden rounded-2xl border bg-card p-3 md:block xl:hidden">
             <FieldSelect
               aria-label="Раздел статистики"
               value={section}
@@ -349,14 +368,6 @@ export function StatisticsWorkspace({ role }: { role: string | null }) {
                         icon={finance ? Wallet : Ticket}
                       />
                     ))}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-                    <h1 className="text-base font-semibold">
-                      За выбранный период
-                    </h1>
-                    <span className="text-xs text-muted-foreground">
-                      {dateLabel(report.from)} — {dateLabel(report.to)}
-                    </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 2xl:grid-cols-4">
                     <Metric

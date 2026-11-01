@@ -727,11 +727,11 @@ body:has([data-disabled-action-hint][data-open])
   --chart-1: oklch(0.68 0.14 75);
   --chart-2: oklch(0.61 0.12 175);
   --chart-3: oklch(0.59 0.17 255);
-  --chart-4: oklch(0.60 0.17 305);
-  --chart-5: oklch(0.60 0.18 15);
+  --chart-4: oklch(0.6 0.17 305);
+  --chart-5: oklch(0.6 0.18 15);
 }
 .dark .statistics-workspace {
-  --chart-1: oklch(0.80 0.14 80);
+  --chart-1: oklch(0.8 0.14 80);
   --chart-2: oklch(0.74 0.12 175);
   --chart-3: oklch(0.73 0.13 255);
   --chart-4: oklch(0.74 0.13 305);
@@ -746,5 +746,54 @@ body:has([data-disabled-action-hint][data-open])
   .app-shell-frame .app-topbar.app-topbar-with-controls {
     border-radius: 24px;
     padding-block: 8px;
+  }
+}
+/* Mobile application controls: keep page tools in the right sheet. */
+@media (max-width: 767px),
+  (max-width: 1023px) and (max-height: 500px) and (pointer: coarse) {
+  .mobile-header-notifications {
+    display: none;
+  }
+  .app-topbar-with-controls {
+    flex-wrap: nowrap !important;
+    height: 56px !important;
+  }
+  .app-shell-frame,
+  .app-workspace,
+  .dashboard-content,
+  .workspace-content {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .dashboard-content [data-slot="scroll-area-viewport"] {
+    overscroll-behavior-y: contain;
+  }
+  .mobile-create-menu {
+    top: auto !important;
+    bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+    left: max(12px, env(safe-area-inset-left)) !important;
+    right: max(12px, env(safe-area-inset-right)) !important;
+    width: auto !important;
+    max-width: 26rem !important;
+    transform: none !important;
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - 9rem) !important;
+    overflow-y: auto;
+  }
+  .statistics-period-popup {
+    width: calc(100vw - 24px) !important;
+    max-width: 26rem !important;
+  }
+  .statistics-period-popup [data-slot="calendar"] {
+    width: 100%;
+  }
+}
+@media (max-width: 767px),
+  (max-width: 1023px) and (max-height: 500px) and (pointer: coarse) {
+  .mobile-page-tools [aria-label="Сохранённые виды"] {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .mobile-page-tools [aria-label="Виды и настройки отображения"] {
+    border-radius: 26px;
   }
 }
