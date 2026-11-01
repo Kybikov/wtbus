@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"net/http"
 	"regexp"
 )
@@ -82,8 +83,19 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var item json.RawMessage
-	query = `SELECT base.item || jsonb_build_object('record_number',n.number) FROM (` + query + `) AS base(item) LEFT JOIN record_numbers n ON n.record_id=$1::uuid AND n.tenant_id=$2 AND n.entity=$3`
-	err := app.db.QueryRow(r.Context(), query, id, company.ID, entity).Scan(&item)
+	numberedQuery := `SELECT base.item || jsonb_build_object('record_number',n.number) FROM (` + query + `) AS base(item) LEFT JOIN record_numbers n ON n.record_id=$1::uuid AND n.tenant_id=$2 AND n.entity=$3`
+	err := app.db.QueryRow(r.Context(), numberedQuery, id, company.ID, entity).Scan(&item)
+	// Numbering is optional read metadata during a rolling deployment. An API
+	// update can precede migration 46; existing records must remain accessible.
+	// Check the specific missing relation so unrelated database failures still fail.
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) && databaseError.Code == "42P01" {
+		var numberingMissing bool
+		if checkErr := app.db.QueryRow(r.Context(), `SELECT to_regclass('record_numbers') IS NULL`).Scan(&numberingMissing); checkErr == nil && numberingMissing {
+			app.log.Warn("record details read without numbering; apply migration 46", "entity", entity)
+			err = app.db.QueryRow(r.Context(), query, id, company.ID).Scan(&item)
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "Запис не знайдено."})
 		return
