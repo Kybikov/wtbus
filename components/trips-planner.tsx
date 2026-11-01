@@ -1,6 +1,9 @@
 "use client"
 import Link from "next/link"
 import { Textarea } from "@/components/ui/textarea"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
+import { DatePicker } from "@/components/ui/date-picker"
+import { retargetTripDate } from "@/lib/trip-recurrence"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { RouteNavigationDraft } from "@/components/route-navigation-draft"
 import type { RouteNavigation } from "@/components/route-navigation-editor"
@@ -1492,7 +1495,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-semibold">
-                  Откуда
+                  Город отправления
                   <Input
                     className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                     maxLength={120}
@@ -1508,7 +1511,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-semibold">
-                  Куда
+                  Город прибытия
                   <Input
                     className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                     maxLength={120}
@@ -1532,36 +1535,28 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                     disabled={tripRoadLoading}
                   />
                 </div>
-                <label className="grid gap-2 text-sm font-semibold">
-                  Дата и время отправления
-                  <Input
-                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                    onChange={(event) =>
-                      setTripForm((current) => ({
-                        ...current,
-                        startsAt: event.target.value,
-                      }))
-                    }
-                    required
-                    type="datetime-local"
+                <div className="grid min-w-0 gap-2 text-sm font-semibold">
+                  <span>Дата и время отправления</span>
+                  <DateTimePicker
+                    label="Отправление"
                     value={tripForm.startsAt}
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-semibold">
-                  Дата и время прибытия
-                  <Input
-                    className="h-11 rounded-xl border border-border bg-control px-3 text-sm transition-colors outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                    onChange={(event) =>
-                      setTripForm((current) => ({
-                        ...current,
-                        endsAt: event.target.value,
-                      }))
-                    }
                     required
-                    type="datetime-local"
-                    value={tripForm.endsAt}
+                    onValueChange={(value) =>
+                      setTripForm((current) => retargetTripDate(current, value))
+                    }
                   />
-                </label>
+                </div>
+                <div className="grid min-w-0 gap-2 text-sm font-semibold">
+                  <span>Дата и время прибытия</span>
+                  <DateTimePicker
+                    label="Прибытие"
+                    value={tripForm.endsAt}
+                    required
+                    onValueChange={(value) =>
+                      setTripForm((current) => ({ ...current, endsAt: value }))
+                    }
+                  />
+                </div>
                 <label className="grid gap-2 text-sm font-semibold">
                   Модель цены
                   <FieldSelect
@@ -1631,6 +1626,19 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                     </label>
                     {tripForm.frequency ? (
                       <>
+                        <p
+                          className="min-w-0 text-xs text-muted-foreground sm:col-span-2"
+                          aria-live="polite"
+                        >
+                          Первый рейс:{" "}
+                          {tripForm.startsAt
+                            .slice(0, 10)
+                            .split("-")
+                            .reverse()
+                            .join(".")}{" "}
+                          в {tripForm.startsAt.slice(11, 16)}. Повторения
+                          отсчитываются от этой даты.
+                        </p>
                         <label className="grid min-w-0 gap-2 text-sm font-semibold">
                           Интервал
                           <FieldSelect
@@ -1686,18 +1694,17 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                         ) : null}
                         <label className="grid min-w-0 gap-2 text-sm font-semibold">
                           Повторять до
-                          <Input
-                            aria-label="Повторять до"
-                            type="date"
+                          <DatePicker
+                            label="Повторять до"
                             min={tripForm.startsAt.slice(0, 10)}
                             value={tripForm.repeatUntil}
-                            onChange={(event) =>
+                            required
+                            onValueChange={(value) =>
                               setTripForm((current) => ({
                                 ...current,
-                                repeatUntil: event.target.value,
+                                repeatUntil: value,
                               }))
                             }
-                            required
                           />
                         </label>
                         {tripForm.frequency === "weekly" ? (

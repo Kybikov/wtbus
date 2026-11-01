@@ -127,9 +127,15 @@ func TestTelegramPassengerJourneyPostgres(t *testing.T) {
 		t.Fatalf("first booking did not request contact: %s", state.Step)
 	}
 	app.handleMessage(&tgbotapi.Message{From: from, Chat: chat, Contact: &tgbotapi.Contact{UserID: chatID, PhoneNumber: "+380500005001"}})
-	for _, text := range []string{"Ivan Test", "+380500005001", "01.01.1990", "2"} {
+	for _, text := range []string{"Ivan Test", "+380500005001", "01011990"} {
 		message(text)
 	}
+	state, _ = app.getState(chatID)
+	if state.PassengerBirthDate != "" || state.Step != "passenger_birth_date" {
+		t.Fatal("birth date advanced before confirmation")
+	}
+	callback("dob:" + state.BirthDateNonce + ":0")
+	message("2")
 	booking := row(`SELECT id::text FROM bookings WHERE tenant_id=$1`, tenant)
 	payment := row(`SELECT id::text FROM payments WHERE tenant_id=$1`, tenant)
 	if got := row(`SELECT price_minor::text||':'||seats::text||':'||source FROM bookings WHERE id=$1`, booking); got != "250000:2:telegram" {

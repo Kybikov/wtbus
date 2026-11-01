@@ -64,22 +64,25 @@ type botBinding struct {
 }
 
 type bookingState struct {
-	Step               string         `json:"step"`
-	Origin             string         `json:"origin,omitempty"`
-	Destination        string         `json:"destination,omitempty"`
-	Date               string         `json:"date,omitempty"`
-	CalendarMonth      string         `json:"calendarMonth,omitempty"`
-	PendingTripID      string         `json:"pendingTripId,omitempty"`
-	PendingCustomerID  string         `json:"pendingCustomerId,omitempty"`
-	PendingSeats       int16          `json:"pendingSeats,omitempty"`
-	PassengerName      string         `json:"passengerName,omitempty"`
-	PassengerPhone     string         `json:"passengerPhone,omitempty"`
-	PassengerBirthDate string         `json:"passengerBirthDate,omitempty"`
-	RequestedTime      string         `json:"requestedTime,omitempty"`
-	RequestComment     string         `json:"requestComment,omitempty"`
-	BookingFields      []bookingField `json:"bookingFields,omitempty"`
-	BookingFieldIndex  int            `json:"bookingFieldIndex,omitempty"`
-	CustomData         map[string]any `json:"customData,omitempty"`
+	PendingBirthDates   []string       `json:"pendingBirthDates,omitempty"`
+	BirthDateReturnStep string         `json:"birthDateReturnStep,omitempty"`
+	BirthDateNonce      string         `json:"birthDateNonce,omitempty"`
+	Step                string         `json:"step"`
+	Origin              string         `json:"origin,omitempty"`
+	Destination         string         `json:"destination,omitempty"`
+	Date                string         `json:"date,omitempty"`
+	CalendarMonth       string         `json:"calendarMonth,omitempty"`
+	PendingTripID       string         `json:"pendingTripId,omitempty"`
+	PendingCustomerID   string         `json:"pendingCustomerId,omitempty"`
+	PendingSeats        int16          `json:"pendingSeats,omitempty"`
+	PassengerName       string         `json:"passengerName,omitempty"`
+	PassengerPhone      string         `json:"passengerPhone,omitempty"`
+	PassengerBirthDate  string         `json:"passengerBirthDate,omitempty"`
+	RequestedTime       string         `json:"requestedTime,omitempty"`
+	RequestComment      string         `json:"requestComment,omitempty"`
+	BookingFields       []bookingField `json:"bookingFields,omitempty"`
+	BookingFieldIndex   int            `json:"bookingFieldIndex,omitempty"`
+	CustomData          map[string]any `json:"customData,omitempty"`
 }
 
 type bookingField struct {
@@ -853,13 +856,7 @@ func (app *app) handleMessage(message *tgbotapi.Message) {
 		app.sendWithMarkup(message.Chat.ID, "Номер пассажира сохранён.", tgbotapi.NewRemoveKeyboard(true))
 		app.askIndividualRequestBirthDate(message.Chat.ID, state)
 	case "request_passenger_birth_date":
-		birthDate, ok := parsePassengerBirthDate(text, app.timezone, time.Now())
-		if !ok {
-			app.send(message.Chat.ID, "Укажите корректную дату рождения в формате ДД.ММ.ГГГГ.")
-			return
-		}
-		state.PassengerBirthDate = birthDate
-		app.askIndividualRequestSeats(message.Chat.ID, state)
+		app.offerBirthDates(message.Chat.ID, state, passengerBirthDateCandidates(text, app.timezone, time.Now()))
 	case "request_seats":
 		seats, err := strconv.ParseInt(text, 10, 16)
 		if err != nil || seats < 1 || seats > 20 {
@@ -907,13 +904,7 @@ func (app *app) handleMessage(message *tgbotapi.Message) {
 		app.sendWithMarkup(message.Chat.ID, "Номер пассажира сохранён.", tgbotapi.NewRemoveKeyboard(true))
 		app.askPassengerBirthDate(message.Chat.ID, state)
 	case "passenger_birth_date":
-		birthDate, ok := parsePassengerBirthDate(text, app.timezone, time.Now())
-		if !ok {
-			app.send(message.Chat.ID, "Укажите корректную дату рождения в формате ДД.ММ.ГГГГ.")
-			return
-		}
-		state.PassengerBirthDate = birthDate
-		app.askSeats(message.Chat.ID, state)
+		app.offerBirthDates(message.Chat.ID, state, passengerBirthDateCandidates(text, app.timezone, time.Now()))
 	case "seats":
 		seats, err := strconv.ParseInt(text, 10, 16)
 		if err != nil || seats < 1 || seats > 20 {
@@ -1466,6 +1457,10 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 	}
 	chatID := callback.Message.Chat.ID
 	defer app.bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+	if strings.HasPrefix(callback.Data, "dob:") {
+		app.handleBirthDateCallback(chatID, callback.Data)
+		return
+	}
 	if strings.HasPrefix(callback.Data, "cal:") {
 		app.handleCalendarCallback(callback)
 		return
@@ -1595,13 +1590,15 @@ func (app *app) handleContact(message *tgbotapi.Message, state bookingState) {
 	if state.Step == "passenger_phone" {
 		state.PassengerPhone = phone
 		app.sendWithMarkup(message.Chat.ID, "Номер пассажира сохранён.", tgbotapi.NewRemoveKeyboard(true))
-		app.askPassengerBirthDate(message.Chat.ID, state)
+		state.Step = "passenger_birth_date"
+		app.askTelegramBirthDate(message.Chat.ID, state)
 		return
 	}
 	if state.Step == "request_passenger_phone" {
 		state.PassengerPhone = phone
 		app.sendWithMarkup(message.Chat.ID, "Номер пассажира сохранён.", tgbotapi.NewRemoveKeyboard(true))
-		app.askIndividualRequestBirthDate(message.Chat.ID, state)
+		state.Step = "request_passenger_birth_date"
+		app.askTelegramBirthDate(message.Chat.ID, state)
 		return
 	}
 	if state.PendingTripID == "" {
@@ -1640,6 +1637,9 @@ func (app *app) beginPassengerDetails(chatID int64, state bookingState) {
 	state.PassengerName = ""
 	state.PassengerPhone = ""
 	state.PassengerBirthDate = ""
+	state.PendingBirthDates = nil
+	state.BirthDateNonce = ""
+	state.BirthDateReturnStep = ""
 	state.PendingSeats = 0
 	app.saveState(chatID, state)
 	app.send(chatID, "На кого оформляем бронь? Укажите имя и фамилию пассажира.")
@@ -1670,7 +1670,14 @@ func (app *app) askIndividualRequestSeats(chatID int64, state bookingState) {
 }
 
 func parsePassengerBirthDate(value string, location *time.Location, now time.Time) (string, bool) {
-	birthDate, err := time.ParseInLocation("02.01.2006", strings.TrimSpace(value), location)
+	var birthDate time.Time
+	var err error
+	for _, layout := range []string{"02.01.2006", "02012006", "2.1.2006", "02/01/2006", "02-01-2006", "02 01 2006", "2006-01-02"} {
+		birthDate, err = time.ParseInLocation(layout, strings.TrimSpace(value), location)
+		if err == nil {
+			break
+		}
+	}
 	localNow := now.In(location)
 	today := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, location)
 	if err != nil || birthDate.After(today) || birthDate.Before(today.AddDate(-maximumPassengerAgeYears, 0, 0)) {

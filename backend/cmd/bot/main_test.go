@@ -228,7 +228,9 @@ func TestParsePassengerBirthDate(t *testing.T) {
 		{name: "maximum supported age", value: "29.08.1901", want: "1901-08-29", ok: true},
 		{name: "unrealistically old date", value: "28.08.1901", ok: false},
 		{name: "future date", value: "30.08.2026", ok: false},
-		{name: "invalid format", value: "1994-11-07", ok: false},
+		{name: "ISO date", value: "1994-11-07", want: "1994-11-07", ok: true},
+		{name: "compact date", value: "27122005", want: "2005-12-27", ok: true},
+		{name: "invalid day", value: "31022005", ok: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -404,6 +404,7 @@ body:has([data-public-booking]) {
   body:has(.app-shell-frame) {
     position: relative;
     width: 100%;
+    overflow-x: clip;
   }
   .app-shell-frame {
     height: var(--mobile-layout-height, var(--mobile-root-height));
@@ -457,18 +458,42 @@ body:has([data-public-booking]) {
     min-width: 0;
     max-width: 100%;
   }
+  [role="dialog"] form,
+  [role="dialog"] form fieldset,
+  [role="dialog"] form label {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+  }
+  [data-slot="dialog-content"] {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+  [data-slot="popover-content"] [data-slot="calendar"] {
+    --cell-size: min(2rem, calc((100vw - 3.5rem - 16px) / 7));
+    max-width: 100%;
+  }
   .workspace-content form.grid {
     grid-template-columns: minmax(0, 1fr);
   }
   input[type="datetime-local"],
   input[type="date"],
   input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-inline-size: 0;
     min-width: 0;
     max-width: 100%;
   }
   input::-webkit-date-and-time-value {
     min-width: 0;
     text-align: left;
+  }
+  input::-webkit-datetime-edit {
+    min-width: 0;
+    padding: 0;
   }
   .app-workspace:has(.mobile-collection-footer) .workspace-content {
     padding-bottom: 16px;

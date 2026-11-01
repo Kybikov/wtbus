@@ -24,6 +24,8 @@ func TestFlexibleTripRecurrence(t *testing.T) {
 		want                     []string
 	}{
 		{"every two weeks", "2026-11-02T09:00", "2026-11-30T00:00", "weekly", 2, 0, map[time.Weekday]struct{}{time.Monday: {}, time.Wednesday: {}}, []string{"11-02 09:00", "11-04 09:00", "11-16 09:00", "11-18 09:00", "11-30 09:00"}},
+		{"first departure anchors week windows", "2026-11-04T09:00", "2026-11-23T00:00", "weekly", 2, 0, map[time.Weekday]struct{}{time.Monday: {}}, []string{"11-04 09:00", "11-09 09:00", "11-23 09:00"}},
+		{"custom monthly day does not remove the first trip", "2027-01-20T09:00", "2027-03-15T00:00", "monthly", 1, 15, nil, []string{"01-20 09:00", "02-15 09:00", "03-15 09:00"}},
 		{"monthly short month", "2027-01-31T09:00", "2027-03-31T00:00", "monthly", 1, 31, nil, []string{"01-31 09:00", "02-28 09:00", "03-31 09:00"}},
 		{"every two months leap day", "2027-12-31T09:00", "2028-04-30T00:00", "monthly", 2, -1, nil, []string{"12-31 09:00", "02-29 09:00", "04-30 09:00"}},
 		{"daily across DST", "2027-03-27T09:00", "2027-03-29T00:00", "daily", 1, 0, nil, []string{"03-27 09:00", "03-28 09:00", "03-29 09:00"}},

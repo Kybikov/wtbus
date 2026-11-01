@@ -329,8 +329,8 @@ export function RouteCatalog() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name,
-          origin: (navigation.startLabel || "Точка отправления").slice(0, 120),
-          destination: (navigation.endLabel || "Точка прибытия").slice(0, 120),
+          origin: form.origin.trim(),
+          destination: form.destination.trim(),
           navigation: {
             start: navigation.start,
             end: navigation.end,
@@ -569,6 +569,25 @@ export function RouteCatalog() {
                 value={form.tariffMode}
               />
             </label>
+            {(
+              [
+                ["origin", "Город отправления"],
+                ["destination", "Город прибытия"],
+              ] as const
+            ).map(([key, label]) => (
+              <label
+                key={key}
+                className="grid min-w-0 gap-2 text-sm font-semibold"
+              >
+                {label}
+                <Input
+                  required
+                  maxLength={120}
+                  value={form[key]}
+                  onChange={(event) => updateForm(key, event.target.value)}
+                />
+              </label>
+            ))}
             <RouteNavigationDraft
               value={navigation}
               onChange={setNavigation}
