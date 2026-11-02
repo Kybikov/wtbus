@@ -244,6 +244,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers/export", operations(app.exportCustomers))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/customers", operations(app.requireActiveSubscription(app.createCustomer)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/customers/{customerID}", operations(app.requireActiveSubscription(app.updateCustomer)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers/import", operations(app.requireActiveSubscription(app.customerImportTemplate)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/customers/import", operations(app.requireActiveSubscription(app.importCustomers)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/custom-fields", operations(app.listCustomFields))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/custom-fields", managers(app.requireActiveSubscription(app.createCustomField)))
@@ -4413,7 +4414,7 @@ func importCustomerCustomData(row customerimport.Row, definitions []customFieldD
 			data[definition.Key] = value
 		case "number":
 			parsed, parseErr := strconv.ParseFloat(strings.ReplaceAll(value, ",", "."), 64)
-			if parseErr != nil {
+			if parseErr != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 				return nil, fmt.Errorf("поле %q должно быть числом", definition.Label)
 			}
 			data[definition.Key] = parsed
@@ -5016,130 +5017,6 @@ func (app *application) updateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": customer})
-}
-
-type importIssue struct {
-	Row     int    `json:"row"`
-	Message string `json:"message"`
-}
-type importResult struct {
-	Created int           `json:"created"`
-	Updated int           `json:"updated"`
-	Skipped int           `json:"skipped"`
-	Issues  []importIssue `json:"issues"`
-}
-
-const maxImportIssues = 100
-
-func (result *importResult) skip(row int, message string) {
-	result.Skipped++
-	if len(result.Issues) < maxImportIssues {
-		result.Issues = append(result.Issues, importIssue{Row: row, Message: message})
-	}
-}
-
-func (app *application) importCustomers(w http.ResponseWriter, r *http.Request) {
-	slug := strings.ToLower(r.PathValue("slug"))
-	tenant, ok := app.loadTenant(w, r, slug)
-	if !ok {
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file must be smaller than 10 MB"})
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "attach a CSV or XLSX file in field file"})
-		return
-	}
-	defer file.Close()
-	name := strings.ToLower(header.Filename)
-	var rows []customerimport.Row
-	if strings.HasSuffix(name, ".csv") {
-		rows, err = customerimport.ReadCSV(file)
-	} else if strings.HasSuffix(name, ".xlsx") {
-		rows, err = customerimport.ReadXLSX(file)
-	} else {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only .csv and .xlsx are supported"})
-		return
-	}
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	if len(rows) > 5000 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "import is limited to 5000 rows"})
-		return
-	}
-	customFields, err := app.loadCustomerImportFields(r.Context(), tenant.ID)
-	if err != nil {
-		app.log.Error("load customer import fields", "error", err, "tenant", slug)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not start import"})
-		return
-	}
-	tx, err := app.db.Begin(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not start import"})
-		return
-	}
-	defer tx.Rollback(r.Context())
-	result := importResult{Issues: []importIssue{}}
-	for _, row := range rows {
-		customData, customDataErr := importCustomerCustomData(row, customFields)
-		if customDataErr != nil {
-			result.skip(row.Number, customDataErr.Error())
-			continue
-		}
-		encodedCustomData, marshalErr := json.Marshal(customData)
-		if marshalErr != nil {
-			returnImportError(w, marshalErr)
-			return
-		}
-		phone := normalizePhone(row.Phone)
-		if phone == "" {
-			result.skip(row.Number, "Некорректный международный номер телефона")
-			continue
-		}
-		email := strings.TrimSpace(strings.ToLower(row.Email))
-		if email != "" {
-			parsed, parseErr := mail.ParseAddress(email)
-			if parseErr != nil || parsed.Address != email {
-				result.skip(row.Number, "Некорректный email")
-				continue
-			}
-		}
-		var telegramID *int64
-		if value := strings.TrimSpace(row.TelegramID); value != "" {
-			parsed, parseErr := strconv.ParseInt(value, 10, 64)
-			if parseErr != nil || parsed <= 0 {
-				result.skip(row.Number, "Некорректный Telegram ID")
-				continue
-			}
-			telegramID = &parsed
-		}
-		var inserted bool
-		err = tx.QueryRow(r.Context(), `INSERT INTO customers (tenant_id, full_name, phone_e164, email, telegram_id, notes, custom_data, imported_at) VALUES ($1,NULLIF($2,''),$3,NULLIF($4,''),$5,NULLIF($6,''),$7,now()) ON CONFLICT (tenant_id,phone_e164) DO UPDATE SET full_name=EXCLUDED.full_name,email=EXCLUDED.email,telegram_id=COALESCE(EXCLUDED.telegram_id,customers.telegram_id),notes=EXCLUDED.notes,custom_data=customers.custom_data || EXCLUDED.custom_data,imported_at=now(),updated_at=now() RETURNING (xmax = 0)`, tenant.ID, strings.TrimSpace(row.FullName), phone, email, telegramID, strings.TrimSpace(row.Notes), encodedCustomData).Scan(&inserted)
-		if err != nil {
-			returnImportError(w, err)
-			return
-		}
-		if inserted {
-			result.Created++
-		} else {
-			result.Updated++
-		}
-	}
-	if err := tx.Commit(r.Context()); err != nil {
-		returnImportError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func returnImportError(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not import customers"})
 }
 
 type createBookingRequest struct {

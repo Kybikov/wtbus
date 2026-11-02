@@ -245,10 +245,7 @@ export function MobileAccountMenu({
             }}
           >
             {pageMenu && (
-              <section
-                aria-label="Управление страницей"
-                className="space-y-3 rounded-2xl border border-border p-3"
-              >
+              <section aria-label="Управление страницей" className="space-y-3">
                 {pageMenu}
               </section>
             )}

@@ -9,7 +9,7 @@ import (
 
 // ReadXLSX reads the first worksheet. Its columns follow the same aliases as CSV.
 func ReadXLSX(reader io.Reader) ([]Row, error) {
-	book, err := excelize.OpenReader(reader)
+	book, err := excelize.OpenReader(reader, excelize.Options{UnzipSizeLimit: 32 << 20, UnzipXMLSizeLimit: 16 << 20})
 	if err != nil {
 		return nil, fmt.Errorf("open XLSX: %w", err)
 	}
@@ -24,6 +24,9 @@ func ReadXLSX(reader io.Reader) ([]Row, error) {
 	}
 	if len(records) == 0 {
 		return nil, fmt.Errorf("XLSX is empty")
+	}
+	if len(records) > 5001 {
+		return nil, fmt.Errorf("Импорт ограничен 5000 строками")
 	}
 	return rowsFromRecords(records[0], records[1:])
 }

@@ -1,5 +1,6 @@
 "use client"
 import * as React from "react"
+import { CustomerImportDialog } from "@/components/customer-import-dialog"
 import { usePathname, useRouter } from "next/navigation"
 import { Plus, Upload, Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -26,9 +27,7 @@ import { createTargets, type StaffRole } from "@/lib/admin-actions"
 import type { EntityExport } from "@/components/entity-export-context"
 
 export type HeaderDataActions = {
-  onImport: () => void
   onExport: () => void | Promise<void>
-  importing: boolean
   exporting: boolean
 }
 function download(blob: Blob, filename: string) {
@@ -58,8 +57,10 @@ export function UniversalHeaderActions({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const fileInput = React.useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = React.useState<"import" | "export" | null>(null)
+  const [importOpen, setImportOpen] = React.useState(false)
+  const canImport =
+    ready && ["developer", "owner", "admin", "dispatcher"].includes(role)
+  const [busy, setBusy] = React.useState<"export" | null>(null)
   const canOperate = ready && role !== "driver"
   React.useEffect(() => {
     if (!ready || !onCreate || createDisabled) return
@@ -81,51 +82,6 @@ export function UniversalHeaderActions({
     }, 0)
     return () => clearTimeout(timer)
   }, [ready, onCreate, createDisabled, pathname, role])
-  async function importCustomers(file: File) {
-    if (!canOperate || busy) return
-    setBusy("import")
-    try {
-      const body = new FormData()
-      body.set("file", file)
-      const response = await sessionFetch("/api/customers/import", {
-        method: "POST",
-        body,
-      })
-      const result = await response.json()
-      if (!response.ok)
-        throw new Error(result.error ?? "Не удалось импортировать клиентов.")
-      if (
-        !Number.isInteger(result.created) ||
-        !Number.isInteger(result.updated) ||
-        !Number.isInteger(result.skipped)
-      )
-        throw new Error("Некорректный ответ импорта.")
-      const issues = Array.isArray(result.issues)
-        ? result.issues.filter(
-            (issue: unknown): issue is { row: number; message: string } =>
-              typeof issue === "object" &&
-              issue !== null &&
-              "row" in issue &&
-              Number.isInteger(issue.row) &&
-              "message" in issue &&
-              typeof issue.message === "string"
-          )
-        : []
-      toast.success("Импорт завершён", {
-        description: `Создано: ${result.created}. Обновлено: ${result.updated}. Пропущено: ${result.skipped}.${issues.length ? ` Ошибок в строках: ${issues.length}.` : ""}`,
-      })
-      await onImported()
-    } catch (error) {
-      toast.error("Ошибка импорта", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "Не удалось импортировать клиентов.",
-      })
-    } finally {
-      setBusy(null)
-    }
-  }
   async function exportCustomers() {
     if (dataActions) {
       await dataActions.onExport()
@@ -153,6 +109,20 @@ export function UniversalHeaderActions({
       setBusy(null)
     }
   }
+  React.useEffect(() => {
+    const importData = () => {
+      if (canImport) setImportOpen(true)
+    }
+    const exportData = () => {
+      if (canOperate && !busy) void exportCustomers()
+    }
+    window.addEventListener("vivat:import-customers", importData)
+    window.addEventListener("vivat:export-customers", exportData)
+    return () => {
+      window.removeEventListener("vivat:import-customers", importData)
+      window.removeEventListener("vivat:export-customers", exportData)
+    }
+  })
   return (
     <>
       <DropdownMenu>
@@ -177,7 +147,7 @@ export function UniversalHeaderActions({
               />
             }
           >
-            {busy || dataActions?.importing || dataActions?.exporting ? (
+            {busy || dataActions?.exporting ? (
               <Loader2 className="size-4 motion-safe:animate-spin" />
             ) : (
               <Plus className="size-4" />
@@ -211,19 +181,17 @@ export function UniversalHeaderActions({
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            disabled={busy !== null || dataActions?.importing}
+            disabled={!canImport || busy !== null}
             disabledReason={
-              "Импорт или экспорт уже выполняется. Дождитесь завершения."
+              !canImport
+                ? !ready
+                  ? "Дождитесь загрузки аккаунта."
+                  : "Импорт доступен владельцу, администратору, диспетчеру и разработчику."
+                : "Экспорт уже выполняется. Дождитесь завершения."
             }
-            onClick={() =>
-              dataActions ? dataActions.onImport() : fileInput.current?.click()
-            }
+            onClick={() => setImportOpen(true)}
           >
-            {busy === "import" || dataActions?.importing ? (
-              <Loader2 className="size-4 motion-safe:animate-spin" />
-            ) : (
-              <Upload className="size-4" />
-            )}
+            <Upload className="size-4" />
             <span>
               Импорт данных
               <span className="block text-xs text-muted-foreground">
@@ -279,17 +247,10 @@ export function UniversalHeaderActions({
           </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
-      <input
-        ref={fileInput}
-        type="file"
-        className="hidden"
-        aria-label="Файл импорта клиентов"
-        accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.currentTarget.value = ""
-          if (file) void importCustomers(file)
-        }}
+      <CustomerImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={onImported}
       />
     </>
   )

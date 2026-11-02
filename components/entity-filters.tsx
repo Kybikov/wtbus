@@ -138,7 +138,7 @@ export function EntityFilters({
         }
       >
         <Filter />
-        <span className="sr-only sm:not-sr-only">Фильтры</span>
+        <span>Фильтры</span>
         {active > 0 && (
           <Badge variant="secondary" className="px-1.5 tabular-nums">
             {active}

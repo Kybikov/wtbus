@@ -664,15 +664,6 @@ export function AppShell({
           <h2 className="text-sm font-semibold">{pageTitle}</h2>
           {pageControls}
           {mobilePageMenu}
-          {(dataActions || viewExport) && (
-            <UniversalHeaderActions
-              role={brand.role}
-              ready={identityReady}
-              dataActions={dataActions}
-              viewExport={viewExport}
-              onImported={refreshPage}
-            />
-          )}
         </>
       ) : null,
     [

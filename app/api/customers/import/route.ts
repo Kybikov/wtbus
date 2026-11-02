@@ -4,6 +4,36 @@ import { apiFetch } from "@/lib/api-fetch"
 export const dynamic = "force-dynamic"
 const apiBaseURL = process.env.API_INTERNAL_URL ?? "http://localhost:8080"
 
+export async function GET() {
+  try {
+    const response = await apiFetch(
+      `${apiBaseURL}/api/v1/tenants/vivat-bus/customers/import`,
+      { cache: "no-store", signal: AbortSignal.timeout(20000) }
+    )
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      return NextResponse.json(
+        { error: data?.error ?? "Не удалось скачать шаблон." },
+        { status: response.status }
+      )
+    }
+    return new NextResponse(await response.arrayBuffer(), {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition":
+          "attachment; filename=vivat-customers-template.xlsx",
+        "Cache-Control": "no-store",
+      },
+    })
+  } catch {
+    return NextResponse.json(
+      { error: "Не удалось скачать шаблон. Повторите попытку." },
+      { status: 503 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   let form: FormData
   try {
@@ -27,6 +57,8 @@ export async function POST(request: NextRequest) {
     )
   const upstreamForm = new FormData()
   upstreamForm.set("file", file, file.name)
+  for (const key of ["mode", "duplicates", "token"])
+    upstreamForm.set(key, String(form.get(key) ?? ""))
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
   try {
@@ -50,7 +82,11 @@ export async function POST(request: NextRequest) {
           : "Не удалось импортировать клиентов."
       return NextResponse.json(
         { error },
-        { status: [400, 402].includes(upstream.status) ? upstream.status : 502 }
+        {
+          status: [400, 401, 402, 403, 409, 413].includes(upstream.status)
+            ? upstream.status
+            : 502,
+        }
       )
     }
     return NextResponse.json(body)

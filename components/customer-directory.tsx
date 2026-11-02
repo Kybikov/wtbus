@@ -154,15 +154,7 @@ export function CustomerDirectory() {
   const [form, setForm] = React.useState<CustomerForm>(emptyForm)
   const [formError, setFormError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
-  const importInput = React.useRef<HTMLInputElement>(null)
-  const [importing, setImporting] = React.useState(false)
   const [exporting, setExporting] = React.useState(false)
-  const [importResult, setImportResult] = React.useState<{
-    created: number
-    updated: number
-    skipped: number
-    issues: { row: number; message: string }[]
-  } | null>(null)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
 
   React.useEffect(() => {
@@ -329,52 +321,6 @@ export function CustomerDirectory() {
     }
   }
 
-  async function importFile(file: File) {
-    setImporting(true)
-    setError(null)
-    setImportResult(null)
-    try {
-      const body = new FormData()
-      body.set("file", file)
-      const response = await sessionFetch("/api/customers/import", {
-        method: "POST",
-        body,
-      })
-      const payload: unknown = await response.json()
-      if (
-        !response.ok ||
-        typeof payload !== "object" ||
-        payload === null ||
-        !("created" in payload)
-      )
-        throw new Error(
-          typeof payload === "object" &&
-            payload !== null &&
-            "error" in payload &&
-            typeof payload.error === "string"
-            ? payload.error
-            : "Не удалось импортировать клиентов."
-        )
-      setImportResult(
-        payload as {
-          created: number
-          updated: number
-          skipped: number
-          issues: { row: number; message: string }[]
-        }
-      )
-      await load()
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Не удалось импортировать клиентов."
-      )
-    } finally {
-      setImporting(false)
-    }
-  }
-
   async function exportCustomers() {
     setExporting(true)
     setError(null)
@@ -514,25 +460,12 @@ export function CustomerDirectory() {
           setOpen(true)
         }}
         dataActions={{
-          onImport: () => importInput.current?.click(),
           onExport: exportCustomers,
-          importing,
           exporting,
         }}
         pageDescription="Контакты, поездки и история обращений"
         pageTitle="Клиенты"
       >
-        <input
-          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) void importFile(file)
-            event.currentTarget.value = ""
-          }}
-          ref={importInput}
-          type="file"
-        />
         <div className="w-full min-w-0 space-y-5">
           {error ? (
             <div
@@ -540,23 +473,6 @@ export function CustomerDirectory() {
               role="alert"
             >
               {error}
-            </div>
-          ) : null}
-          {importResult ? (
-            <div className="rounded-2xl border border-primary/35 bg-primary/10 p-4 text-sm">
-              <p className="font-bold">
-                Импорт завершен: создано {importResult.created}, обновлено{" "}
-                {importResult.updated}, пропущено {importResult.skipped}.
-              </p>
-              {importResult.issues.length ? (
-                <ul className="mt-2 list-disc pl-5 text-muted-foreground">
-                  {importResult.issues.map((issue) => (
-                    <li key={`${issue.row}-${issue.message}`}>
-                      Строка {issue.row}: {issue.message}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
             </div>
           ) : null}
           <EntityDataView

@@ -24,6 +24,16 @@ func TestReadCSVHandlesBOMAndSemicolonHeaders(t *testing.T) {
 	}
 }
 
+func TestReadCSVShortRowsAndDuplicateHeaders(t *testing.T) {
+	rows, err := ReadCSV(strings.NewReader("ФИО,Email,Телефон\nShort\nGood,,+380500001001\n"))
+	if err != nil || len(rows) != 2 || rows[0].Phone != "" || rows[1].Number != 3 {
+		t.Fatalf("short rows: %+v %v", rows, err)
+	}
+	if _, err = ReadCSV(strings.NewReader("Телефон,Телефон\n+380500001001,+380500001002\n")); err == nil {
+		t.Fatal("duplicate columns must be rejected")
+	}
+}
+
 func TestReadXLSXUsesSameAliasesAndKeepsAllColumns(t *testing.T) {
 	book := excelize.NewFile()
 	defer func() { _ = book.Close() }()

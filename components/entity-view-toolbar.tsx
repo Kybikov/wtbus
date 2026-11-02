@@ -107,6 +107,7 @@ function ViewChip({
   dirty,
   onClick,
   menu,
+  vertical = false,
 }: {
   label: string
   mode: EntityViewMode
@@ -115,6 +116,7 @@ function ViewChip({
   dirty?: boolean
   onClick: () => void
   menu: React.ReactNode
+  vertical?: boolean
 }) {
   const Icon = modeIcons[mode]
   return (
@@ -128,7 +130,9 @@ function ViewChip({
             title={`${label} · ${entityModeLabels[mode]}${shared ? " · общий" : ""}`}
             className={cn(
               control,
-              "max-w-56",
+              vertical
+                ? "min-h-12 w-full max-w-none justify-start rounded-2xl border-0 bg-transparent px-3"
+                : "max-w-56",
               selected && "border-primary/50 bg-primary/15 text-foreground"
             )}
             onClick={onClick}
@@ -136,7 +140,9 @@ function ViewChip({
         }
       >
         <Icon />
-        <span className="truncate">{label}</span>
+        <span className={cn("truncate", vertical && "flex-1 text-left")}>
+          {label}
+        </span>
         {shared ? <Users className="text-muted-foreground" /> : null}
         {dirty ? (
           <span
@@ -185,7 +191,7 @@ function BoardSettings({
         render={<Button variant="outline" size="sm" className={control} />}
       >
         <KanbanSquare />
-        <span className="sr-only sm:not-sr-only">Столбцы</span>
+        <span className="not-sr-only">Столбцы</span>
       </PopoverTrigger>
       <PopoverContent
         align="end"
@@ -298,7 +304,7 @@ function ViewSorting({
         }
       >
         <ArrowDownUp />
-        <span className="sr-only sm:not-sr-only">Сортировка</span>
+        <span className="not-sr-only">Сортировка</span>
         {config.sort && <span className="size-1.5 rounded-full bg-primary" />}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 space-y-3 p-3">
@@ -768,18 +774,39 @@ export function EntityViewToolbar<T>({
     <>
       <div
         role="region"
-        className="workspace-panel flex min-h-[50px] flex-col gap-2 p-2"
+        className={
+          isMobile
+            ? "flex min-w-0 flex-col gap-3"
+            : "workspace-panel flex min-h-[50px] flex-col gap-2 p-2"
+        }
         aria-label="Виды и настройки отображения"
       >
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:flex-1 sm:flex-wrap">
+        <div
+          className={
+            isMobile
+              ? "flex w-full flex-col gap-2"
+              : "flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+          }
+        >
+          <div
+            className={
+              isMobile
+                ? "order-2 flex w-full min-w-0 flex-col items-stretch gap-1"
+                : "flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:flex-1 sm:flex-wrap"
+            }
+          >
             {extras}
             <div
               role="group"
               aria-label="Сохранённые виды"
-              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-initial sm:flex-wrap sm:overflow-visible sm:pb-0"
+              className={
+                isMobile
+                  ? "flex min-w-0 flex-col gap-1"
+                  : "flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-initial sm:flex-wrap sm:overflow-visible sm:pb-0"
+              }
             >
               <ViewChip
+                vertical={isMobile}
                 label="По умолчанию"
                 mode={active ? defaults.mode : config.mode}
                 selected={!active}
@@ -793,6 +820,7 @@ export function EntityViewToolbar<T>({
                   .map((view) => (
                     <ViewChip
                       key={view.id}
+                      vertical={isMobile}
                       label={view.name}
                       mode={view.id === active ? config.mode : view.config.mode}
                       selected={view.id === active}
@@ -804,10 +832,22 @@ export function EntityViewToolbar<T>({
                   ))
               )}
             </div>
+            {isMobile && config.mode === "kanban" && (
+              <BoardSettings
+                config={config}
+                groups={groups}
+                onChange={onChange}
+                onConfigureCard={onConfigureCard}
+              />
+            )}
             <Button
-              variant="outline"
+              variant={isMobile ? "ghost" : "outline"}
               size="sm"
-              className={control}
+              className={cn(
+                control,
+                isMobile &&
+                  "min-h-12 w-full justify-start rounded-2xl border-0 px-3"
+              )}
               disabled={!scope || busy}
               disabledReason={
                 busy
@@ -817,11 +857,17 @@ export function EntityViewToolbar<T>({
               onClick={() => open("create")}
             >
               <Plus />
-              <span className="sr-only sm:not-sr-only">Создать вид</span>
+              <span>Создать вид</span>
             </Button>
           </div>
-          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-            {selectedCount ? (
+          <div
+            className={
+              isMobile
+                ? "order-1 grid w-full min-w-0 grid-cols-4 gap-1 [&_.sr-only]:static [&_.sr-only]:size-auto [&_.sr-only]:overflow-visible [&_.sr-only]:whitespace-normal [&_.sr-only]:[clip:auto] [&_button]:text-[11px] [&>button]:h-auto [&>button]:min-h-14 [&>button]:min-w-0 [&>button]:flex-col [&>button]:gap-1 [&>button]:rounded-xl [&>button]:px-1"
+                : "flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
+            }
+          >
+            {selectedCount && !isMobile ? (
               <Popover>
                 <PopoverTrigger
                   render={
@@ -853,6 +899,45 @@ export function EntityViewToolbar<T>({
                 </PopoverContent>
               </Popover>
             ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" className={control} />
+                }
+              >
+                {React.createElement(modeIcons[config.mode], {
+                  className: "size-4",
+                })}
+                {isMobile ? "Вид" : entityModeLabels[config.mode]}
+                {!isMobile && <ChevronDown />}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Отображение</DropdownMenuLabel>
+                  {modes
+                    .filter(
+                      (mode) =>
+                        !isMobile || mode !== "list" || !modes.includes("table")
+                    )
+                    .map((mode) => (
+                      <DropdownMenuItem
+                        key={mode}
+                        onClick={() => onChange({ ...config, mode })}
+                      >
+                        {React.createElement(modeIcons[mode], {
+                          className: "size-4",
+                        })}
+                        {isMobile && mode === "table"
+                          ? "Список"
+                          : entityModeLabels[mode]}
+                        {mode === config.mode && (
+                          <Check className="ml-auto text-emerald-500!" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <ViewSorting
               columns={columns.filter((column) =>
                 config.columns.includes(column.id)
@@ -868,7 +953,7 @@ export function EntityViewToolbar<T>({
                   }
                 >
                   <Columns3 />
-                  <span className="sr-only sm:not-sr-only">Колонки</span>
+                  <span className="not-sr-only">Колонки</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="end"
@@ -900,7 +985,7 @@ export function EntityViewToolbar<T>({
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : config.mode === "kanban" ? (
+            ) : config.mode === "kanban" && !isMobile ? (
               <BoardSettings
                 config={config}
                 groups={groups}
@@ -917,50 +1002,9 @@ export function EntityViewToolbar<T>({
                 variant="outline"
               >
                 <Settings2 />
-                <span className="sr-only sm:not-sr-only">Карточка</span>
+                <span className="not-sr-only">Карточка</span>
               </Button>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="outline" size="sm" className={control} />
-                }
-              >
-                {React.createElement(modeIcons[config.mode], {
-                  className: "size-4",
-                })}
-                {isMobile && config.mode === "table"
-                  ? "Список"
-                  : entityModeLabels[config.mode]}
-                <ChevronDown />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Отображение</DropdownMenuLabel>
-                  {modes
-                    .filter(
-                      (mode) =>
-                        !isMobile || mode !== "list" || !modes.includes("table")
-                    )
-                    .map((mode) => (
-                      <DropdownMenuItem
-                        key={mode}
-                        onClick={() => onChange({ ...config, mode })}
-                      >
-                        {React.createElement(modeIcons[mode], {
-                          className: "size-4",
-                        })}
-                        {isMobile && mode === "table"
-                          ? "Список"
-                          : entityModeLabels[mode]}
-                        {mode === config.mode && (
-                          <Check className="ml-auto text-emerald-500!" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
             {queryFields.length > 0 && (
               <EntityFilters
                 fields={queryFields}

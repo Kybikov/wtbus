@@ -2,6 +2,8 @@
 import { motion, useReducedMotion } from "motion/react"
 import {
   Plus,
+  Upload,
+  Download,
   UserRound,
   Ticket,
   CalendarDays,
@@ -114,6 +116,48 @@ export function MobileCreateMenu({
                 </motion.li>
               )
             })}
+            {["developer", "owner", "admin", "dispatcher"].includes(role) && (
+              <motion.li
+                variants={{
+                  closed: { opacity: 0, y: reduce ? 0 : 12 },
+                  open: { opacity: 1, y: 0 },
+                }}
+                transition={spring}
+              >
+                <Button
+                  variant="secondary"
+                  className="h-12 gap-5 rounded-full border-0 px-5 font-semibold shadow-md"
+                  onClick={() => {
+                    onOpenChange(false)
+                    window.dispatchEvent(new Event("vivat:import-customers"))
+                  }}
+                >
+                  Импорт клиентов
+                  <Upload className="size-5" />
+                </Button>
+              </motion.li>
+            )}
+            {role !== "driver" && (
+              <motion.li
+                variants={{
+                  closed: { opacity: 0, y: reduce ? 0 : 12 },
+                  open: { opacity: 1, y: 0 },
+                }}
+                transition={spring}
+              >
+                <Button
+                  variant="secondary"
+                  className="h-12 gap-5 rounded-full border-0 px-5 font-semibold shadow-md"
+                  onClick={() => {
+                    onOpenChange(false)
+                    window.dispatchEvent(new Event("vivat:export-customers"))
+                  }}
+                >
+                  Экспорт клиентов
+                  <Download className="size-5" />
+                </Button>
+              </motion.li>
+            )}
           </motion.ul>
           <DialogClose
             render={
