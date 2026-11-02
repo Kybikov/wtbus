@@ -268,10 +268,12 @@ export function EntityCardSettings({
   const initial = value ?? defaultCardLayout(columns.map((column) => column.id))
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[min(90dvh,var(--mobile-viewport-height,90dvh))] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Настройка карточки</DialogTitle>
-          <DialogDescription className="sr-only">Выберите поля и расположение.</DialogDescription>
+          <DialogDescription className="sr-only">
+            Выберите поля и расположение.
+          </DialogDescription>
         </DialogHeader>
         {open ? (
           <CardSettingsForm

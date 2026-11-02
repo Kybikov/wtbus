@@ -21,13 +21,14 @@ import {
   ContextMenuLabel,
 } from "@/components/ui/context-menu"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { FieldSelect } from "@/components/ui/field-select"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { statusToneClass } from "@/lib/entity-columns"
 import {
   kanbanScrollSpeed,
+  nearestKanbanColumn,
   mergeCardOrder,
   placeKanbanCard,
   restoreKanbanCard,
@@ -191,6 +192,40 @@ export default function ReactBitsKanban<T>({
       .filter((group) => !columns.some((c) => c.id === group))
       .map((id) => ({ id, label: id })),
   ]
+  const selectedColumn = visibleColumns.some(
+    (column) => column.id === mobileColumn
+  )
+    ? mobileColumn
+    : (visibleColumns[0]?.id ?? "")
+  const activeColumnIndex = visibleColumns.findIndex(
+    (column) => column.id === selectedColumn
+  )
+  const selectedRef = React.useRef(selectedColumn)
+  React.useLayoutEffect(() => {
+    selectedRef.current = selectedColumn
+  }, [selectedColumn])
+  const chooseColumn = React.useCallback(
+    (id: string) => {
+      const rail = viewport.current,
+        element = colRefs.current.get(id)
+      if (rail && element)
+        rail.scrollTo({
+          left: Math.max(
+            0,
+            element.offsetLeft - (rail.clientWidth - element.offsetWidth) / 2
+          ),
+          behavior: reduce ? "instant" : "smooth",
+        })
+      setMobileColumn(id)
+    },
+    [reduce]
+  )
+  const columnIds = visibleColumns.map((column) => column.id).join("|")
+  React.useLayoutEffect(() => {
+    if (!isMobile) return
+    const frame = requestAnimationFrame(() => chooseColumn(selectedRef.current))
+    return () => cancelAnimationFrame(frame)
+  }, [isMobile, columnIds, chooseColumn])
   React.useLayoutEffect(() => {
     const measure = () => {
       const top = viewport.current?.getBoundingClientRect().top
@@ -200,7 +235,22 @@ export default function ReactBitsKanban<T>({
         window.innerHeight - 16,
         footerTop && footerTop > top ? footerTop - 12 : window.innerHeight - 16
       )
-      setAvailableHeight(Math.max(120, Math.floor(bottom - top)))
+      const rail = viewport.current
+      if (rail && isMobile) {
+        rail.style.setProperty(
+          "--kanban-column-width",
+          Math.max(160, rail.clientWidth - 32) + "px"
+        )
+        const element = colRefs.current.get(selectedRef.current)
+        if (element)
+          rail.scrollLeft = Math.max(
+            0,
+            element.offsetLeft - (rail.clientWidth - element.offsetWidth) / 2
+          )
+      }
+      setAvailableHeight(
+        Math.max(120, Math.floor(bottom - top - (isMobile ? 32 : 0)))
+      )
     }
     const observer = new ResizeObserver(measure)
     if (root.current?.parentElement?.parentElement)
@@ -213,7 +263,7 @@ export default function ReactBitsKanban<T>({
       cancelAnimationFrame(frame)
       window.removeEventListener("resize", measure)
     }
-  }, [footerElement])
+  }, [footerElement, isMobile])
   const movable = (item: T) =>
     Boolean(
       (onMove || onOrderChange) && canMove(item) && !pending.has(getId(item))
@@ -509,7 +559,10 @@ export default function ReactBitsKanban<T>({
       !document.querySelector('[data-slot="context-menu-content"][data-open]')
     ) {
       const item = itemById.get(d.id)
-      if (item) {
+      if (item && isMobile) {
+        if (at - d.startedAt >= 450) onSelect?.(item)
+        else onOpen?.(item)
+      } else if (item) {
         const previousTap = lastTap.current
         if (previousTap?.id === d.id && at - previousTap.at < 350) {
           lastTap.current = null
@@ -644,68 +697,51 @@ export default function ReactBitsKanban<T>({
         клавиатуры нажмите Alt и пробел, затем стрелки и Enter. Escape отменяет
         перемещение. На телефоне удерживайте карточку перед перетаскиванием.
       </p>
-      {isMobile && (
-        <Tabs
-          value={mobileColumn || visibleColumns[0]?.id}
-          onValueChange={(value) => {
-            const id = String(value),
-              rail = viewport.current,
-              element = colRefs.current.get(id)
-            if (rail && element)
-              rail.scrollTo({
-                left: element.offsetLeft,
-                behavior: reduce ? "instant" : "smooth",
-              })
-            setMobileColumn(id)
-          }}
-          className="mb-3"
-        >
-          <TabsList
-            aria-label="Статусы"
-            className="h-11! w-full [scrollbar-width:none] justify-start overflow-x-auto [&::-webkit-scrollbar]:hidden"
-          >
-            {visibleColumns.map((column) => (
-              <TabsTrigger
-                key={column.id}
-                value={column.id}
-                className="flex-none px-3"
-              >
-                {column.label}
-                <span className="text-xs text-muted-foreground">
-                  {groups.get(column.id)?.length ?? 0}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+      {isMobile && visibleColumns.length > 0 && (
+        <div className="mb-3 min-w-0">
+          <FieldSelect
+            aria-label="Статус колонки"
+            value={selectedColumn}
+            onValueChange={chooseColumn}
+            options={visibleColumns.map((column) => ({
+              value: column.id,
+              label:
+                column.label + " · " + (groups.get(column.id)?.length ?? 0),
+            }))}
+            triggerClassName="h-11 border-0 bg-transparent px-1 font-semibold"
+          />
+        </div>
       )}
       <div
         ref={viewport}
         onScroll={() => {
           const rail = viewport.current
           if (!isMobile || !rail) return
-          const nearest = visibleColumns.reduce(
-            (best, column) =>
-              Math.abs(
-                (colRefs.current.get(column.id)?.offsetLeft ?? 0) -
-                  rail.scrollLeft
-              ) <
-              Math.abs(
-                (colRefs.current.get(best.id)?.offsetLeft ?? 0) -
-                  rail.scrollLeft
-              )
-                ? column
-                : best,
-            visibleColumns[0]
+          const nearest = nearestKanbanColumn(
+            visibleColumns.flatMap((column) => {
+              const element = colRefs.current.get(column.id)
+              return element
+                ? [
+                    {
+                      id: column.id,
+                      left: element.offsetLeft,
+                      width: element.offsetWidth,
+                    },
+                  ]
+                : []
+            }),
+            rail.scrollLeft,
+            rail.clientWidth
           )
-          if (nearest) setMobileColumn(nearest.id)
+          if (nearest) setMobileColumn(nearest)
         }}
         className={cn(
-          "flex h-[clamp(22rem,calc(100dvh-16rem),64rem)] w-full items-start gap-3 overflow-x-auto overflow-y-hidden pb-2",
+          "relative flex h-[clamp(22rem,calc(100dvh-16rem),64rem)] w-full min-w-0 items-start gap-3 overflow-x-auto overflow-y-hidden pb-2",
           !dragId &&
             !touchScrolling &&
             "snap-x snap-mandatory md:snap-proximity",
-          isMobile && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          isMobile &&
+            "mobile-kanban-viewport [scroll-padding-inline:1rem] overscroll-x-contain px-4"
         )}
         data-kanban-viewport
         style={
@@ -740,9 +776,17 @@ export default function ReactBitsKanban<T>({
                   if (el) colRefs.current.set(column.id, el)
                   else colRefs.current.delete(column.id)
                 }}
+                style={
+                  isMobile
+                    ? {
+                        width: "var(--kanban-column-width, calc(100vw - 4rem))",
+                      }
+                    : undefined
+                }
                 className={cn(
                   "flex h-fit max-h-full w-full shrink-0 snap-start flex-col overflow-hidden rounded-[var(--rb-r-xl)] border transition-[border-color,box-shadow] data-[drop=allowed]:ring-2 data-[drop=allowed]:ring-primary/40 data-[drop=blocked]:ring-2 data-[drop=blocked]:ring-destructive/40 motion-reduce:transition-none md:w-[min(20rem,calc(100vw-3rem))]",
-                  columnTones[tone]
+                  columnTones[tone],
+                  isMobile && "h-full! snap-center"
                 )}
               >
                 <ContextMenu>
@@ -864,7 +908,7 @@ export default function ReactBitsKanban<T>({
                               "button,a,input,textarea,select,[role=checkbox],[data-no-drag]"
                             )
                           )
-                            onSelect?.(item)
+                            isMobile ? onOpen?.(item) : onSelect?.(item)
                         }}
                         className={cn(
                           "relative rounded-[var(--rb-r-lg)] border border-border/80 bg-card shadow-sm transition-[border-color,box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
@@ -922,6 +966,42 @@ export default function ReactBitsKanban<T>({
           })}
         </LayoutGroup>
       </div>
+      {isMobile && visibleColumns.length > 1 && (
+        <nav
+          aria-label="Колонки доски"
+          className="flex h-8 items-center justify-center gap-0"
+        >
+          {visibleColumns
+            .slice(
+              Math.max(
+                0,
+                Math.min(activeColumnIndex - 3, visibleColumns.length - 7)
+              ),
+              Math.max(
+                0,
+                Math.min(activeColumnIndex - 3, visibleColumns.length - 7)
+              ) + 7
+            )
+            .map((column) => (
+              <Button
+                key={column.id}
+                size="icon-sm"
+                variant="ghost"
+                className="size-8 rounded-full"
+                aria-label={"Колонка: " + column.label}
+                aria-current={column.id === selectedColumn ? "step" : undefined}
+                onClick={() => chooseColumn(column.id)}
+              >
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full bg-muted-foreground/35",
+                    column.id === selectedColumn && "size-2 bg-primary"
+                  )}
+                />
+              </Button>
+            ))}
+        </nav>
+      )}
       {mounted &&
         createPortal(
           <AnimatePresence>

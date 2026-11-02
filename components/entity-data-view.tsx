@@ -793,13 +793,7 @@ export function EntityDataView<T>({
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", stop)
   }
-  const activeCard =
-    cardLayout ??
-    defaultCardLayout(
-      (visibleColumns.length ? visibleColumns : columns).map(
-        (column) => column.id
-      )
-    )
+  const activeCard = cardLayout ?? defaultCardLayout(defaultColumns)
   const cardPadding =
     activeCard.size === "xs"
       ? "gap-1 p-2 text-xs"
@@ -869,16 +863,14 @@ export function EntityDataView<T>({
     </div>
   )
   const listCard = (item: T) => {
-    if (renderList && !cardLayout) return renderList(item)
-    const fields = cardLayout
-      ? activeCard.rows.flatMap((row) => row.fields)
-      : visibleColumns
-          .filter((column) => {
-            const text = column.text?.(item)
-            return text === undefined || (text.trim() !== "" && text !== "—")
-          })
-          .slice(0, 6)
-          .map((column) => column.id)
+    if (renderList) return renderList(item)
+    const fields = visibleColumns
+      .filter((column) => {
+        const text = column.text?.(item)
+        return text === undefined || (text.trim() !== "" && text !== "—")
+      })
+      .slice(0, 6)
+      .map((column) => column.id)
     const groups = recordListColumns(
       [...new Set(fields)].filter((id) => columnById.has(id))
     )
@@ -972,11 +964,7 @@ export function EntityDataView<T>({
       filterRequest={filterRequest}
       onFilterRequestHandled={() => setFilterRequest(null)}
       onConfigureCard={
-        (isMobile && mode === "table") ||
-        mode === "kanban" ||
-        mode === "list" ||
-        mode === "gallery" ||
-        mode === "calendar"
+        mode === "kanban" || mode === "gallery" || mode === "calendar"
           ? () => setCardSettingsOpen(true)
           : undefined
       }
@@ -1571,44 +1559,7 @@ export function EntityDataView<T>({
             }
             renderCard={(item) =>
               isMobile ? (
-                <div data-no-drag>
-                  <MobileRecordRow
-                    onDelete={
-                      deletion.available
-                        ? () => deletion.open(getId(item), getLabel(item))
-                        : undefined
-                    }
-                    content={listCard(item)}
-                    label={getLabel(item)}
-                    selected={selected.has(getId(item))}
-                    selecting={selectionOpen}
-                    selectable={isSelectable(item)}
-                    onSelect={() => {
-                      setSelecting(true)
-                      toggleOne(item, !selected.has(getId(item)))
-                    }}
-                    onOpen={
-                      detailEnabled
-                        ? () =>
-                            router.push(
-                              entityDetailHref(collection, getId(item))
-                            )
-                        : undefined
-                    }
-                    summary={visibleColumns
-                      .slice(0, 3)
-                      .filter(
-                        (column) =>
-                          (column.text?.(item) ?? column.value(item)) !==
-                          getLabel(item)
-                      )
-                      .map((column) => (
-                        <span className="max-w-full truncate" key={column.id}>
-                          {column.value(item)}
-                        </span>
-                      ))}
-                  />
-                </div>
+                card(item, selectionOpen)
               ) : (
                 <ContextMenu>
                   <ContextMenuTrigger render={<div />}>
@@ -1625,6 +1576,11 @@ export function EntityDataView<T>({
           />
         ) : mode === "calendar" && dateValue ? (
           <EntityCalendar
+            footerElement={footerContext.target}
+            getTone={(item) =>
+              kanbanGroups?.find((group) => group.id === groupOf(item))?.tone ??
+              "neutral"
+            }
             dateValue={dateValue}
             getId={getId}
             getLabel={getLabel}

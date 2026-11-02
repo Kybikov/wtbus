@@ -75,3 +75,19 @@ export function kanbanScrollSpeed(point: number, start: number, end: number) {
   if (point > end - edge) return Math.ceil(14 * (1 - (end - point) / edge))
   return 0
 }
+
+export function nearestKanbanColumn(
+  columns: { id: string; left: number; width: number }[],
+  scrollLeft: number,
+  viewportWidth: number
+) {
+  const center = scrollLeft + viewportWidth / 2
+  return (
+    columns.reduce<{ id: string; distance: number } | null>((best, column) => {
+      const distance = Math.abs(column.left + column.width / 2 - center)
+      return !best || distance < best.distance
+        ? { id: column.id, distance }
+        : best
+    }, null)?.id ?? ""
+  )
+}

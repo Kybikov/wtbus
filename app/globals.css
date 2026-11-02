@@ -236,6 +236,17 @@ body:has([data-public-booking]) {
   background: color-mix(in oklch, var(--muted-foreground), transparent 40%);
 }
 
+.mobile-kanban-viewport,
+.mobile-kanban-viewport [data-kanban-body] {
+  scrollbar-width: none !important;
+}
+.mobile-kanban-viewport::-webkit-scrollbar,
+.mobile-kanban-viewport [data-kanban-body]::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 .menu-surface {
   border: 1px solid var(--border);
   border-radius: var(--app-radius);

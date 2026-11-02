@@ -945,7 +945,7 @@ export function EntityViewToolbar<T>({
               config={config}
               onChange={onChange}
             />
-            {config.mode === "table" && !isMobile ? (
+            {config.mode === "table" || config.mode === "list" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -953,17 +953,23 @@ export function EntityViewToolbar<T>({
                   }
                 >
                   <Columns3 />
-                  <span className="not-sr-only">Колонки</span>
+                  <span className="not-sr-only">
+                    {isMobile || config.mode === "list" ? "Поля" : "Колонки"}
+                  </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="end"
                   className="max-h-80 overflow-y-auto"
                 >
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel>Видимые колонки</DropdownMenuLabel>
+                    <DropdownMenuLabel>
+                      {isMobile || config.mode === "list"
+                        ? "Поля списка"
+                        : "Видимые колонки"}
+                    </DropdownMenuLabel>
                     {columns.map((column) => (
                       <DropdownMenuCheckboxItem
-                        disabledReason="В таблице должна оставаться хотя бы одна видимая колонка."
+                        disabledReason="Должно оставаться хотя бы одно видимое поле."
                         key={column.id}
                         checked={config.columns.includes(column.id)}
                         disabled={

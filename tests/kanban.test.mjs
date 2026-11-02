@@ -6,7 +6,31 @@ import {
   placeKanbanCard,
   restoreKanbanCard,
   kanbanScrollSpeed,
+  nearestKanbanColumn,
 } from "../lib/kanban.ts"
+
+test("mobile column selection follows the centered column across widths and empty groups", () => {
+  const columns = [
+    { id: "new", left: 16, width: 326 },
+    { id: "awaiting", left: 354, width: 326 },
+    { id: "confirmed", left: 692, width: 326 },
+  ]
+  assert.equal(nearestKanbanColumn(columns, 0, 358), "new")
+  assert.equal(nearestKanbanColumn(columns, 338, 358), "awaiting")
+  assert.equal(nearestKanbanColumn(columns, 676, 358), "confirmed")
+  assert.equal(
+    nearestKanbanColumn(
+      [
+        { id: "one", left: 16, width: 288 },
+        { id: "two", left: 316, width: 288 },
+      ],
+      300,
+      320
+    ),
+    "two"
+  )
+  assert.equal(nearestKanbanColumn([], 0, 390), "")
+})
 import {
   canMoveTripStatus,
   canMoveBookingStatus,
