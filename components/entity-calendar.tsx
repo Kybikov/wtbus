@@ -71,11 +71,21 @@ export function EntityCalendar<T>({
   }, [])
   React.useLayoutEffect(() => {
     const measure = () => {
-      const top = root.current?.getBoundingClientRect().top
-      if (top === undefined) return
+      const element = root.current
+      if (!element) return
+      const viewport = element.closest<HTMLElement>(
+        '[data-slot="scroll-area-viewport"]'
+      )
+      const content = element.closest<HTMLElement>(".workspace-content")
+      const padding = content
+        ? parseFloat(getComputedStyle(content).paddingBottom)
+        : 12
+      const top =
+        element.getBoundingClientRect().top + (viewport?.scrollTop ?? 0)
       const foot = footerElement?.getBoundingClientRect().top
       const bottom = Math.min(
         window.innerHeight - 12,
+        viewport ? viewport.getBoundingClientRect().bottom - padding : Infinity,
         foot && foot > top ? foot - 12 : window.innerHeight - 12
       )
       setHeight(Math.max(300, Math.floor(bottom - top)))
