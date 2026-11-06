@@ -1,5 +1,7 @@
 export const activityActions: Record<string, string> = {
   "trip.early_departure_approved": "Разрешён ранний выезд",
+  "finance.staff_cash_received": "Владелец принял оплату",
+  "finance.deposit_own_cash": "Владелец передал наличные в кассу",
   "finance.receipt": "Поступление в кассу",
   "finance.expense": "Записан расход",
   "finance.accrual": "Начислена зарплата",

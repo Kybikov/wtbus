@@ -1213,7 +1213,27 @@ export function AppShell({
                 <NotificationsBell onUnreadChange={setUnread} />
               </div>
               <div className="mobile-page-actions flex shrink-0 items-center gap-1 md:hidden">
-                {pageActions}
+                {pageActions ? (
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <Button
+                          aria-label="Действия страницы"
+                          size="icon"
+                          variant="ghost"
+                        />
+                      }
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="end"
+                      className="gap-2 p-2 [&_[data-slot=button]]:w-full [&_[data-slot=button]]:justify-start"
+                    >
+                      {pageActions}
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
                 {onCreate && (
                   <Button
                     size="icon"

@@ -49,7 +49,7 @@ func calculatePayroll(gross int64, r payrollRates) (payrollAmounts, error) {
 }
 
 func (app *application) unlinkedDriverProfiles(ctx context.Context, tenantID string) ([]financeDriver, error) {
-	rows, err := app.db.Query(ctx, `SELECT id::text,full_name,phone_e164,is_active FROM drivers WHERE tenant_id=$1 AND membership_id IS NULL ORDER BY full_name`, tenantID)
+	rows, err := app.db.Query(ctx, `SELECT id::text,full_name,phone_e164,is_active FROM drivers WHERE tenant_id=$1 AND membership_id IS NULL AND is_active ORDER BY full_name`, tenantID)
 	if err != nil {
 		return nil, err
 	}

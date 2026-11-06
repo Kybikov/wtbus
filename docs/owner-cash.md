@@ -1,0 +1,11 @@
+# Owner cash collection
+
+The owner and developer can open **Оплаты рейса** on a trip or **Оплата брони** on a booking. A cash receipt is attributed to the signed-in membership, without requiring a driver profile or changing passenger attendance. Partial receipts are supported. The submitted amount is cumulative per booking, so retries or concurrent submissions of the same total cannot receive the money twice. Decreases, overpayments, bank-transfer bookings, foreign-company bookings and closed trips are rejected.
+
+The existing cash ledger now accepts either a driver or a staff custodian, never both. A tenant check prevents a custodian from another company. Owner cash remains separate from the assigned driver's wallet and salary. Driver manifests, booking payment state, trip completion checks, revenue and finance history read the same receipts, so the driver sees payment already collected by the owner.
+
+In **Финансы → Наличные у меня**, the owner enters the amount actually handed in and submits **Передать в кассу**. The transfer immediately reduces their cash on hand and increases company cash in one transaction. It has no pending handover and requires no cashier acceptance. A request identifier prevents duplicate transfers; another owner cannot replay that identifier as their own operation. Drivers retain the existing handover/acceptance process.
+
+Transfers are asset movements, not additional revenue. Every receipt and transfer retains actor attribution. Owners see their own balances; finance staff can see staff custody balances and all ledger entries. Currency balances remain separate. Migration 54 preserves existing driver entries and refuses rollback once staff cash history exists.
+
+`TestOwnerCashPostgres` exercises authenticated owner/developer/driver/accountant permissions, collection before boarding, partial and concurrent receipts, mixed owner/driver custody, full trip completion, immediate hand-in, retry and cross-owner protection, insufficient balance, bank intent and tenant boundaries. The existing accounting and early-departure regression suites remain applicable. Safari/WebKit checks exercise both collection entry points and immediate hand-in using disposable data, including 390 px and 320 px layouts.

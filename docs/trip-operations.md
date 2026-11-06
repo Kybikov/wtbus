@@ -2,6 +2,8 @@
 
 Trip stages describe actual operations: scheduled/assigned, boarding, in progress, completed or cancelled. Clock time never advances or replaces a stage. Delay is a read-only projection beside the stage, calculated from the server clock and scheduled departure/arrival. A delay badge appears from 15 minutes. Actual departure and arrival freeze their respective delay values. Historical completed trips without actual timestamps do not acquire invented delays.
 
+The trip detail displays this in a dedicated **Задержка** field; the trip list has a separate **Задержка** column. The value shows departure/arrival delay in minutes or **Без задержки**, independently of the stage selector.
+
 ## Boarding and departure
 
 - The assigned driver may start boarding early or late. The first passenger marked boarded also starts boarding. The first actual boarding timestamp is retained on retries; neither action records departure or starts GPS transmission.

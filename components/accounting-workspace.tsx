@@ -92,6 +92,15 @@ type Handover = {
   createdAt: string
 }
 type Snapshot = {
+  canCollectCash?: boolean
+  ownCash?: { currency: string; balanceMinor: number }[]
+  staffCash?: {
+    id: string
+    own: boolean
+    name: string
+    currency: string
+    balanceMinor: number
+  }[]
   currency?: string
   balances: Balance[]
   handovers: Handover[]
@@ -125,6 +134,7 @@ const kinds: Record<string, string> = {
   bank_debit: "Списание со счёта",
   booking_payment: "Оплата брони",
   driver_cash_received: "Наличные у водителя",
+  staff_cash_received: "Наличные у владельца",
   cash_handed_in: "Сдано в кассу",
   cash_income: "Доход в кассу",
   cash_funding: "Пополнение кассы",
@@ -352,7 +362,7 @@ export function AccountingWorkspace({
     setForm({
       driverId: balance?.driverId ?? snapshot?.driverId ?? "",
       amount:
-        next === "request_handover" && balance
+        (next === "request_handover" || next === "deposit_own_cash") && balance
           ? String(Math.max(balance.cashMinor - balance.pendingMinor, 0) / 100)
           : "",
       currency: balance?.currency ?? "UAH",
@@ -478,9 +488,7 @@ export function AccountingWorkspace({
         <div className="flex min-h-64 flex-col items-center justify-center gap-4 py-10 text-center">
           <UserRound className="size-9 text-muted-foreground" />
           <div className="max-w-sm space-y-2">
-            <h2 className="text-xl font-semibold">
-              Доступ к рейсам водителя
-            </h2>
+            <h2 className="text-xl font-semibold">Доступ к рейсам водителя</h2>
             <p className="text-sm text-muted-foreground">
               {manageDriverAccess
                 ? "Добавьте сотрудника с ролью «Водитель» в команде. Здесь будут его наличные и зарплата."
@@ -546,6 +554,72 @@ export function AccountingWorkspace({
                 {snapshot.bank.lastError}
               </p>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+      {!driver && snapshot?.canCollectCash ? (
+        <div className="rounded-xl border p-4">
+          <p className="text-sm font-medium">Наличные у меня</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {(snapshot.ownCash?.length
+              ? snapshot.ownCash
+              : [{ currency: snapshot.currency ?? "UAH", balanceMinor: 0 }]
+            ).map((balance) => (
+              <div
+                className="flex flex-wrap items-center gap-3"
+                key={balance.currency}
+              >
+                <span className="font-semibold tabular-nums">
+                  {money(balance.balanceMinor, balance.currency)}
+                </span>
+                <Button
+                  size="sm"
+                  disabled={busy || balance.balanceMinor <= 0}
+                  disabledReason={
+                    busy
+                      ? "Операция выполняется. Дождитесь результата."
+                      : "Сначала примите наличную оплату в бронировании или рейсе."
+                  }
+                  onClick={() => {
+                    open("deposit_own_cash")
+                    setForm((v) => ({
+                      ...v,
+                      driverId: "",
+                      currency: balance.currency,
+                      amount: String(balance.balanceMinor / 100),
+                    }))
+                  }}
+                >
+                  Передать в кассу
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {!driver &&
+      snapshot?.staffCash?.some(
+        (b) => b.balanceMinor !== 0 && (!snapshot.canCollectCash || !b.own)
+      ) ? (
+        <div className="rounded-xl border p-4">
+          <p className="text-sm font-medium">Наличные у владельцев</p>
+          <div className="mt-2 space-y-2">
+            {snapshot.staffCash
+              .filter(
+                (b) =>
+                  b.balanceMinor !== 0 && (!snapshot.canCollectCash || !b.own)
+              )
+              .map((b) => (
+                <div
+                  className="flex flex-wrap justify-between gap-2 text-sm"
+                  key={`${b.id}:${b.currency}`}
+                >
+                  <span>{b.name}</span>
+                  <span className="tabular-nums">
+                    {money(b.balanceMinor, b.currency)}
+                  </span>
+                </div>
+              ))}
           </div>
         </div>
       ) : null}
@@ -912,20 +986,23 @@ export function AccountingWorkspace({
                 payout: "Выплата зарплаты",
                 tax_payment: "Перечисление начислений",
                 request_handover: "Передача наличных",
+                deposit_own_cash: "Передать свои наличные в кассу",
               }[action] ?? "Операция"}
             </DialogTitle>
             <DialogDescription>
               {action === "payout"
                 ? "Запишите выплату, которую уже передали водителю."
-                : action === "request_handover"
-                  ? "Остаток уменьшится после подтверждения кассиром."
-                  : action === "receipt"
-                    ? "Наличные водителей принимайте в разделе «Передачи в кассу»."
-                    : action === "accrual"
-                      ? "Удержания рассчитаются по ставкам компании."
-                      : action === "tax_payment"
-                        ? "Запишите уже перечисленные удержания и начисления. Повторного расхода не будет."
-                        : "Укажите назначение и счёт списания."}
+                : action === "deposit_own_cash"
+                  ? "Деньги сразу зачислятся в кассу. Подтверждение кассира не требуется."
+                  : action === "request_handover"
+                    ? "Остаток уменьшится после подтверждения кассиром."
+                    : action === "receipt"
+                      ? "Наличные водителей принимайте в разделе «Передачи в кассу»."
+                      : action === "accrual"
+                        ? "Удержания рассчитаются по ставкам компании."
+                        : action === "tax_payment"
+                          ? "Запишите уже перечисленные удержания и начисления. Повторного расхода не будет."
+                          : "Укажите назначение и счёт списания."}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1061,7 +1138,10 @@ export function AccountingWorkspace({
               disabled={busy}
               disabledReason="Операция записывается. Дождитесь завершения."
             >
-              {busy ? <Clock3 /> : <Check />}Подтвердить
+              {busy ? <Clock3 /> : <Check />}
+              {action === "deposit_own_cash"
+                ? "Передать в кассу"
+                : "Подтвердить"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,5 +1,7 @@
 # Vivat Bus
 
+[Owner cash collection](docs/owner-cash.md) describes booking receipts held by an owner, immediate cash-office deposits and their separation from driver balances and salary.
+
 [Editing, shared themes and automatic currency rates](docs/interface-settings.md) describes blur-based saving, the UAH buy/sell view and report conversion.
 
 CRM notifications, background Web Push, staff Telegram delivery, profile settings and authenticated WebSocket updates are described in [notifications](docs/notifications.md), including migrations through 40, deployment configuration and verification.

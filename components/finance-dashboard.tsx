@@ -104,7 +104,7 @@ export function FinanceDashboard() {
             ["Полученная выручка", summary?.confirmedRevenueMinor],
             ["Расходы и начисления", summary?.operationalExpensesMinor],
             ["Результат за период", summary?.netProfitMinor],
-            ["На руках у водителей · сейчас", summary?.driverCashBalanceMinor],
+            ["Наличные на руках · сейчас", summary?.driverCashBalanceMinor],
           ].map(([label, value]) => (
             <section className="workspace-panel p-4" key={label}>
               <p className="text-xs text-muted-foreground">{label}</p>

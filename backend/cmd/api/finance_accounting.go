@@ -182,6 +182,22 @@ func (app *application) accountingSnapshot(w http.ResponseWriter, r *http.Reques
 	}
 	result := map[string]any{"balances": balances, "handovers": handovers, "driverId": driverID, "currency": tenant.BaseCurrency}
 	if driverID == "" {
+		actor, _ := identityFromContext(r.Context())
+		result["canCollectCash"] = canCollectOwnCash(actor)
+		var ownCash json.RawMessage
+		err = app.db.QueryRow(r.Context(), `SELECT coalesce(jsonb_agg(item),'[]') FROM (SELECT jsonb_build_object('currency',currency,'balanceMinor',sum(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END)::bigint) item FROM driver_cash_ledger WHERE tenant_id=$1 AND collector_membership_id=$2 GROUP BY currency ORDER BY currency)s`, tenant.ID, actor.MembershipID).Scan(&ownCash)
+		if err != nil {
+			app.financeFailure(w, err)
+			return
+		}
+		result["ownCash"] = ownCash
+		var custodians json.RawMessage
+		err = app.db.QueryRow(r.Context(), `SELECT coalesce(jsonb_agg(item),'[]') FROM (SELECT jsonb_build_object('id',m.id,'own',m.id=$2::uuid,'name',u.display_name,'currency',l.currency,'balanceMinor',sum(CASE WHEN l.kind='cash_collected' THEN l.amount_minor ELSE -l.amount_minor END)::bigint) item FROM driver_cash_ledger l JOIN memberships m ON m.id=l.collector_membership_id AND m.tenant_id=l.tenant_id JOIN users u ON u.id=m.user_id WHERE l.tenant_id=$1 GROUP BY m.id,u.display_name,l.currency ORDER BY u.display_name,l.currency)s`, tenant.ID, actor.MembershipID).Scan(&custodians)
+		if err != nil {
+			app.financeFailure(w, err)
+			return
+		}
+		result["staffCash"] = custodians
 		var allDrivers json.RawMessage
 		err = app.db.QueryRow(r.Context(), `SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'name',full_name,'connected',membership_id IS NOT NULL,'active',is_active) ORDER BY full_name),'[]') FROM drivers WHERE tenant_id=$1`, tenant.ID).Scan(&allDrivers)
 		if err != nil {
@@ -243,6 +259,10 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 	}
 	input.Description = strings.TrimSpace(input.Description)
 	input.Currency = normalizedFinanceCurrency(input.Currency, "UAH")
+	if input.Action == "deposit_own_cash" && (!canCollectOwnCash(actor) || input.DriverID != "") {
+		writeJSON(w, 403, map[string]string{"error": "Владелец может передать в кассу только свои наличные."})
+		return
+	}
 	own := strings.HasSuffix(r.URL.Path, "/driver/handovers")
 	if own {
 		id, err := app.ownFinanceDriver(r, tenant.ID)
@@ -279,8 +299,9 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 			var saved struct {
 				Input accountingOperation `json:"input"`
 				ID    string              `json:"id"`
+				Actor string              `json:"actor"`
 			}
-			if json.Unmarshal(previous, &saved) != nil || saved.Input != input {
+			if json.Unmarshal(previous, &saved) != nil || saved.Input != input || (input.Action == "deposit_own_cash" && saved.Actor != actor.MembershipID) {
 				writeJSON(w, 409, map[string]string{"error": "Эта операция уже записана с другими данными."})
 				return
 			}
@@ -414,6 +435,16 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 			if err == nil {
 				err = tx.QueryRow(r.Context(), `INSERT INTO driver_payroll_payouts(tenant_id,driver_id,amount_minor,currency,payment_source,description,actor_membership_id,request_id) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8) RETURNING id::text`, tenant.ID, input.DriverID, input.Amount, input.Currency, input.Source, input.Description, actor.MembershipID, input.RequestID).Scan(&id)
 			}
+		case "deposit_own_cash":
+			var available int64
+			err = tx.QueryRow(r.Context(), `SELECT coalesce(sum(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END),0) FROM driver_cash_ledger WHERE tenant_id=$1 AND collector_membership_id=$2 AND currency=$3`, tenant.ID, actor.MembershipID, input.Currency).Scan(&available)
+			if err == nil && input.Amount > available {
+				writeJSON(w, 409, map[string]string{"error": "Сумма превышает ваши наличные на руках."})
+				return
+			}
+			if err == nil {
+				err = tx.QueryRow(r.Context(), `INSERT INTO driver_cash_ledger(tenant_id,collector_membership_id,amount_minor,currency,kind,actor_membership_id,description,request_id) VALUES($1,$2,$3,$4,'collection',$2,$5,$6) RETURNING id::text`, tenant.ID, actor.MembershipID, input.Amount, input.Currency, input.Description, input.RequestID).Scan(&id)
+			}
 		case "request_handover":
 			if input.DriverID == "" {
 				writeJSON(w, 400, map[string]string{"error": "Выберите водителя."})
@@ -437,7 +468,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 		err = writeFinanceActivity(r.Context(), tx, actor, "finance."+input.Action, id, input)
 	}
 	if err == nil && !resolving {
-		payload, _ := json.Marshal(map[string]any{"input": input, "id": id})
+		payload, _ := json.Marshal(map[string]any{"input": input, "id": id, "actor": actor.MembershipID})
 		_, err = tx.Exec(r.Context(), `INSERT INTO finance_operation_requests(tenant_id,request_id,payload) VALUES($1,$2,$3)`, tenant.ID, input.RequestID, payload)
 	}
 	if err == nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -36,14 +37,23 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "Выберите пассажира и отметку посадки или укажите полученную сумму."})
 		return
 	}
-	driver, err := app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
+	ownerCash := strings.HasSuffix(r.URL.Path, "/finance/booking-cash")
+	if ownerCash && (!canCollectOwnCash(actor) || input.PassengerIndex != nil) {
+		writeJSON(w, 403, map[string]string{"error": "Принимать оплату в свою кассу может владелец компании."})
 		return
 	}
-	if err != nil {
-		app.publicFailure(w, err)
-		return
+	driver := ""
+	var err error
+	if !ownerCash {
+		driver, err = app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
+			return
+		}
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 	}
 	tx, err := app.db.Begin(r.Context())
 	if err != nil {
@@ -53,7 +63,13 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	// Match cash handover lock order; serialize receipt increments against completion.
 	var locked string
-	if err = tx.QueryRow(r.Context(), `SELECT id::text FROM drivers WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, company.ID, driver).Scan(&locked); err != nil {
+	if ownerCash {
+		if _, err = tx.Exec(r.Context(), `SELECT id FROM tenants WHERE id=$1 FOR UPDATE`, company.ID); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+	}
+	if err = tx.QueryRow(r.Context(), `SELECT id::text FROM drivers WHERE tenant_id=$1 AND id=(SELECT driver_id FROM trips WHERE tenant_id=$1 AND id=$2) FOR UPDATE`, company.ID, input.TripID).Scan(&locked); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		app.publicFailure(w, err)
 		return
 	}
@@ -62,7 +78,7 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var phase, tripStatus string
-	err = tx.QueryRow(r.Context(), `SELECT workflow_status_phase(tenant_id,'trips',status),status FROM trips WHERE tenant_id=$1 AND id=$2 AND driver_id=$3 FOR UPDATE`, company.ID, input.TripID, driver).Scan(&phase, &tripStatus)
+	err = tx.QueryRow(r.Context(), `SELECT workflow_status_phase(tenant_id,'trips',status),status FROM trips WHERE tenant_id=$1 AND id=$2 AND ($3='' OR driver_id=NULLIF($3,'')::uuid) FOR UPDATE`, company.ID, input.TripID, driver).Scan(&phase, &tripStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "Рейс вам не назначен."})
 		return
@@ -79,7 +95,7 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 	var price int64
 	var currency, bookingPhase string
 	var bank bool
-	err = tx.QueryRow(r.Context(), `SELECT seats,price_minor,currency,workflow_status_phase(tenant_id,'bookings',status),EXISTS(SELECT 1 FROM payments p WHERE p.tenant_id=b.tenant_id AND p.booking_id=b.id AND p.payment_method='bank_transfer') FROM bookings b WHERE tenant_id=$1 AND id=$2 AND trip_id=$3 FOR UPDATE`, company.ID, input.BookingID, input.TripID).Scan(&seats, &price, &currency, &bookingPhase, &bank)
+	err = tx.QueryRow(r.Context(), `SELECT seats,price_minor,currency,workflow_status_phase(tenant_id,'bookings',status),coalesce(custom_data->>'payment_method'='bank_transfer',false) OR EXISTS(SELECT 1 FROM payments p WHERE p.tenant_id=b.tenant_id AND p.booking_id=b.id AND p.payment_method='bank_transfer') FROM bookings b WHERE tenant_id=$1 AND id=$2 AND trip_id=$3 FOR UPDATE`, company.ID, input.BookingID, input.TripID).Scan(&seats, &price, &currency, &bookingPhase, &bank)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "Бронь не найдена в этом рейсе."})
 		return
@@ -151,21 +167,36 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 				boarded = true
 			}
 		}
-		if !boarded {
+		if !boarded && !ownerCash {
 			writeJSON(w, 409, map[string]string{"error": "Сначала отметьте пришедшего пассажира."})
 			return
 		}
 		if target > received {
 			var ledger string
-			err = tx.QueryRow(r.Context(), `INSERT INTO driver_cash_ledger(tenant_id,driver_id,trip_id,amount_minor,currency,kind,actor_membership_id,source_key) VALUES($1,$2,$3,$4,$5,'cash_collected',NULLIF($6,'')::uuid,$7)
- RETURNING id::text`, company.ID, driver, input.TripID, target-received, currency, actor.MembershipID, "booking-cash:"+input.BookingID+":"+strconv.FormatInt(target, 10)).Scan(&ledger)
+			collector := ""
+			if ownerCash {
+				collector = actor.MembershipID
+			}
+			err = tx.QueryRow(r.Context(), `INSERT INTO driver_cash_ledger(tenant_id,driver_id,trip_id,amount_minor,currency,kind,actor_membership_id,source_key,collector_membership_id) VALUES($1,NULLIF($2,'')::uuid,$3,$4,$5,'cash_collected',NULLIF($6,'')::uuid,$7,NULLIF($8,'')::uuid)
+ RETURNING id::text`, company.ID, driver, input.TripID, target-received, currency, actor.MembershipID, "booking-cash:"+input.BookingID+":"+strconv.FormatInt(target, 10), collector).Scan(&ledger)
 			if err != nil {
 				app.publicFailure(w, err)
 				return
 			}
-			if err = writeFinanceActivity(r.Context(), tx, actor, "finance.driver_cash_received", input.BookingID, map[string]any{"tripId": input.TripID, "driverId": driver, "amountMinor": target - received, "currency": currency}); err != nil {
+			cashAction := "finance.driver_cash_received"
+			if ownerCash {
+				cashAction = "finance.staff_cash_received"
+			}
+			if err = writeFinanceActivity(r.Context(), tx, actor, cashAction, input.BookingID, map[string]any{"tripId": input.TripID, "driverId": driver, "amountMinor": target - received, "currency": currency}); err != nil {
 				app.publicFailure(w, err)
 				return
+			}
+			if ownerCash {
+				_, err = tx.Exec(r.Context(), `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,$2,'human','finance.staff_cash_received','bookings',$3,jsonb_build_object('finance',jsonb_build_object('amountMinor',$4::bigint,'currency',$5::text),'tripId',$6::text))`, company.ID, actor.MembershipID, input.BookingID, target-received, currency, input.TripID)
+				if err != nil {
+					app.publicFailure(w, err)
+					return
+				}
 			}
 		}
 		received = target

@@ -205,6 +205,7 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	payload := map[string]any{"item": item, "related": related, "activity": events, "timezone": company.Timezone, "editRestriction": restriction}
+	payload["canCollectCash"] = canCollectOwnCash(actor)
 	if entity == "trips" {
 		operations, err := readTripOperations(r.Context(), app.db, company.ID, []string{id})
 		if err != nil {

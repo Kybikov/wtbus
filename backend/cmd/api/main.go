@@ -259,6 +259,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/report", finance(app.accountingReport))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/ledger", finance(app.accountingLedger))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/operations", finance(app.requireActiveSubscription(app.accountingOperation)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/booking-cash", app.requireRoles("owner")(app.driverPassengers))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/booking-cash", app.requireRoles("owner")(app.requireActiveSubscription(app.driverCheckin)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/review", finance(app.reviewFinanceEntry))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/settings", finance(app.accountingSettings))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/settings", finance(app.accountingSettings))

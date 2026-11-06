@@ -1,6 +1,26 @@
 import { Badge } from "@/components/ui/badge"
 import type { TripOperations } from "@/lib/trip-operations"
 
+export function TripDelaySummary({
+  operations,
+}: {
+  operations?: TripOperations
+}) {
+  if (!operations)
+    return <span className="text-muted-foreground">Нет данных</span>
+  if (!operations.departureDelayed && !operations.arrivalDelayed)
+    return (
+      <span className="text-emerald-700 dark:text-emerald-400">
+        Без задержки
+      </span>
+    )
+  return (
+    <span className="inline-flex flex-wrap gap-1.5">
+      <TripDelayBadge operations={operations} />
+    </span>
+  )
+}
+
 export function TripDelayBadge({
   operations,
 }: {

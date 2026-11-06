@@ -14,6 +14,7 @@ export function entityDetailHref(entity: EntityCollection, id: string) {
   return `/${entity}/${encodeURIComponent(id)}`
 }
 export const entityFieldLabels: Record<string, string> = {
+  trip_delay: "Задержка",
   first_name: "Имя",
   last_name: "Фамилия",
   phone: "Телефон",

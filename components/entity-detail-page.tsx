@@ -1,5 +1,6 @@
 "use client"
-import { TripDelayBadge } from "@/components/trip-delay-badge"
+import { TripDelaySummary } from "@/components/trip-delay-badge"
+import { OwnerBookingCash } from "@/components/owner-booking-cash"
 import { TripEarlyDeparture } from "@/components/trip-early-departure"
 import type { TripOperations } from "@/lib/trip-operations"
 import { TripLinkPicker } from "@/components/trip-link-picker"
@@ -55,6 +56,7 @@ import { formatEntityDate, statusToneClass } from "@/lib/entity-columns"
 import type { EntityCollection } from "@/lib/entity-views"
 
 type Detail = {
+  canCollectCash?: boolean
   operations?: TripOperations
   editRestriction?: string
   item: Record<string, unknown>
@@ -805,6 +807,8 @@ export function EntityDetailPage({
     )
   }
   function fieldValue(key: string, value: unknown): React.ReactNode {
+    if (key === "trip_delay")
+      return <TripDelaySummary operations={detail?.operations} />
     if (value === null || value === undefined || value === "")
       return <span className="text-muted-foreground">—</span>
     if (relationFields[key] && typeof value === "string")
@@ -958,6 +962,15 @@ export function EntityDetailPage({
       pageActions={
         detail ? (
           <>
+            {detail.canCollectCash &&
+            (entity === "trips" ||
+              (entity === "bookings" && detail.item.trip_id)) ? (
+              <OwnerBookingCash
+                tripId={entity === "trips" ? id : String(detail.item.trip_id)}
+                bookingId={entity === "bookings" ? id : undefined}
+                onUpdated={() => void load(true)}
+              />
+            ) : null}
             {entity === "trips" ? (
               <TripEarlyDeparture
                 tripId={id}
@@ -997,11 +1010,6 @@ export function EntityDetailPage({
       }
     >
       {deletion.dialog}
-      {entity === "trips" && detail ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <TripDelayBadge operations={detail.operations} />
-        </div>
-      ) : null}
       <AdminNotice message={resourceError} variant="error" />
       <AdminNotice
         message={detail ? error : null}
@@ -1074,7 +1082,11 @@ export function EntityDetailPage({
                   </dd>
                 </div>
               ) : null}
-              {Object.entries(detail.item)
+              {Object.entries(
+                entity === "trips"
+                  ? { ...detail.item, trip_delay: "" }
+                  : detail.item
+              )
                 .sort(([left], [right]) => {
                   const order = [
                     "record_number",
@@ -1083,6 +1095,7 @@ export function EntityDetailPage({
                     "full_name",
                     "display_name",
                     "status",
+                    "trip_delay",
                     "origin_name",
                     "destination_name",
                     "distance_km",

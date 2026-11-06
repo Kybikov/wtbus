@@ -35,14 +35,23 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 401, map[string]string{"error": "authentication is required"})
 		return
 	}
-	driverID, err := app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
+	ownerCash := strings.HasSuffix(r.URL.Path, "/finance/booking-cash")
+	if ownerCash && !canCollectOwnCash(actor) {
+		writeJSON(w, 403, map[string]string{"error": "Доступно владельцу компании."})
 		return
 	}
-	if err != nil {
-		app.publicFailure(w, err)
-		return
+	driverID := ""
+	var err error
+	if !ownerCash {
+		driverID, err = app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
+			return
+		}
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 	}
 	tripID := r.URL.Query().Get("tripId")
 	if !publicUUID.MatchString(tripID) {
@@ -50,7 +59,7 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var assigned bool
-	if err = app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND tenant_id=$2 AND driver_id=$3 AND workflow_status_phase(tenant_id,'trips',status) IN ('assigned','in_progress'))`, tripID, company.ID, driverID).Scan(&assigned); err != nil {
+	if err = app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND tenant_id=$2 AND ($3='' OR driver_id=NULLIF($3,'')::uuid) AND workflow_status_phase(tenant_id,'trips',status) IN ('planned','assigned','in_progress'))`, tripID, company.ID, driverID).Scan(&assigned); err != nil {
 		app.publicFailure(w, err)
 		return
 	}

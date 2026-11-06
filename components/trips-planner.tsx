@@ -1,4 +1,5 @@
 "use client"
+import { TripDelaySummary } from "@/components/trip-delay-badge"
 import Link from "next/link"
 import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
@@ -664,9 +665,18 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       "status",
       "Статус",
       (item) => item.status,
-      tripOptions,
-      (item) => item.operations
+      tripOptions
     ),
+    {
+      ...textColumn<CalendarTrip>("delay", "Задержка", (item) =>
+        item.operations?.departureDelayed || item.operations?.arrivalDelayed
+          ? `Выезд: ${item.operations.departureDelayMinutes} мин; прибытие: ${item.operations.arrivalDelayMinutes} мин`
+          : "Без задержки"
+      ),
+      value: (item: CalendarTrip) => (
+        <TripDelaySummary operations={item.operations} />
+      ),
+    },
     dateColumn<CalendarTrip>(
       "start",
       "Отправление",
