@@ -246,6 +246,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/bookings", operations(app.listBookings))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings", operations(app.requireActiveSubscription(app.createBooking)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/bookings/{bookingID}", operations(app.requireActiveSubscription(app.updateBooking)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.bookingPassengers))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.requireActiveSubscription(app.bookingPassengers)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.requireActiveSubscription(app.bookingPassengers)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings/{bookingID}/payment-confirmation", managers(app.requireActiveSubscription(app.confirmBookingPayment)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/individual-transfer-requests", operations(app.listIndividualTransferRequests))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/individual-transfer-requests/{requestID}", operations(app.requireActiveSubscription(app.updateIndividualTransferRequest)))
@@ -1592,6 +1595,7 @@ type tripResponse struct {
 	StartsAt        time.Time       `json:"startsAt"`
 	EndsAt          time.Time       `json:"endsAt"`
 	Capacity        int16           `json:"capacity"`
+	AvailableSeats  int             `json:"availableSeats"`
 	PriceMinor      int64           `json:"priceMinor"`
 	PricingMode     string          `json:"pricingMode"`
 	Currency        string          `json:"currency"`
@@ -1817,7 +1821,8 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		SELECT
 			t.id::text, t.kind::text, t.status::text, t.origin_name, t.destination_name,
 			t.starts_at, t.ends_at, t.capacity, t.price_minor, t.pricing_mode, t.currency, t.custom_data, t.route_id::text, t.vehicle_id::text, t.driver_id::text, COALESCE(t.notes, ''),
-			COALESCE(v.name, ''), COALESCE(d.full_name, ''), EXISTS(SELECT 1 FROM memberships m WHERE m.id=d.membership_id AND m.tenant_id=t.tenant_id AND m.is_active AND m.role::text IN ('driver','developer'))
+			COALESCE(v.name, ''), COALESCE(d.full_name, ''), EXISTS(SELECT 1 FROM memberships m WHERE m.id=d.membership_id AND m.tenant_id=t.tenant_id AND m.is_active AND m.role::text IN ('driver','developer')),
+			GREATEST(0,t.capacity-(SELECT COALESCE(SUM(b.seats),0) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now()))))
 		FROM trips t
 		JOIN tenants tenant ON tenant.id = t.tenant_id
 		LEFT JOIN vehicles v ON v.id = t.vehicle_id
@@ -1841,7 +1846,7 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(
 			&trip.ID, &trip.Kind, &trip.Status, &trip.Origin, &trip.Destination,
 			&trip.StartsAt, &trip.EndsAt, &trip.Capacity, &trip.PriceMinor, &trip.PricingMode, &trip.Currency,
-			&customData, &trip.RouteID, &trip.VehicleID, &trip.DriverID, &trip.Notes, &trip.Vehicle, &trip.Driver, &trip.DriverConnected,
+			&customData, &trip.RouteID, &trip.VehicleID, &trip.DriverID, &trip.Notes, &trip.Vehicle, &trip.Driver, &trip.DriverConnected, &trip.AvailableSeats,
 		); err != nil {
 			app.log.Error("scan trip", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load trips"})

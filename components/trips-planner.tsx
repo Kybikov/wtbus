@@ -59,6 +59,7 @@ type APITrip = {
   startsAt: string
   endsAt: string
   capacity: number
+  availableSeats: number
   priceMinor: number
   currency: string
   pricingMode: "per_passenger" | "per_booking"
@@ -667,6 +668,11 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       (item) => item.status,
       tripOptions
     ),
+    numberColumn<CalendarTrip>(
+      "availableSeats",
+      "Свободных мест",
+      (item) => item.availableSeats
+    ),
     {
       ...textColumn<CalendarTrip>("delay", "Задержка", (item) =>
         item.operations?.departureDelayed || item.operations?.arrivalDelayed
@@ -703,7 +709,11 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
         </span>
       ),
     },
-    numberColumn<CalendarTrip>("capacity", "Мест", (item) => item.capacity),
+    numberColumn<CalendarTrip>(
+      "capacity",
+      "Вместимость",
+      (item) => item.capacity
+    ),
     moneyColumn<CalendarTrip>(
       "price",
       "Цена",

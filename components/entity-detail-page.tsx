@@ -1,6 +1,7 @@
 "use client"
 import { TripDelaySummary } from "@/components/trip-delay-badge"
 import { OwnerBookingCash } from "@/components/owner-booking-cash"
+import { BookingPassengers } from "@/components/booking-passengers"
 import { TripEarlyDeparture } from "@/components/trip-early-departure"
 import type { TripOperations } from "@/lib/trip-operations"
 import { TripLinkPicker } from "@/components/trip-link-picker"
@@ -309,6 +310,7 @@ export function EntityDetailPage({
 }) {
   const requestController = React.useRef<AbortController | null>(null)
   const [detail, setDetail] = React.useState<Detail | null>(null)
+  const [addPassengerOpen, setAddPassengerOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const [resources, setResources] = React.useState<
     Record<string, { id: string; name: string; capacity?: number }[]>
@@ -523,12 +525,27 @@ export function EntityDetailPage({
     if (commit) autosave.commit(patch)
   }
   const item = detail?.item
+  const extraData = Object.fromEntries(
+    Object.entries((item?.custom_data as Record<string, unknown>) ?? {}).filter(
+      ([key]) =>
+        entity !== "bookings" ||
+        ![
+          "passengers",
+          "passenger_name",
+          "passenger_phone",
+          "passenger_birth_date",
+        ].includes(key)
+    )
+  )
   const title = item
     ? String(
         item.name ??
           item.full_name ??
           item.display_name ??
           item.passenger_name ??
+          (entity === "bookings"
+            ? (item.custom_data as Record<string, unknown>)?.passenger_name
+            : undefined) ??
           item.customer_name ??
           (item.origin_name
             ? `${item.origin_name} → ${item.destination_name}`
@@ -962,6 +979,15 @@ export function EntityDetailPage({
       pageActions={
         detail ? (
           <>
+            {entity === "bookings" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAddPassengerOpen(true)}
+              >
+                Добавить пассажира
+              </Button>
+            ) : null}
             {detail.canCollectCash &&
             (entity === "trips" ||
               (entity === "bookings" && detail.item.trip_id)) ? (
@@ -1200,13 +1226,24 @@ export function EntityDetailPage({
                     </dd>
                   </div>
                 ))}
-              {detail.item.custom_data &&
-              Object.keys(detail.item.custom_data as object).length ? (
+              {entity === "bookings" ? (
+                <div className="col-span-full">
+                  <dd>
+                    <BookingPassengers
+                      id={id}
+                      open={addPassengerOpen}
+                      onOpenChange={setAddPassengerOpen}
+                      onUpdated={() => void load(true)}
+                    />
+                  </dd>
+                </div>
+              ) : null}
+              {Object.keys(extraData).length ? (
                 <div className="grid min-w-0 gap-2 py-3 first:pt-0 last:pb-0">
                   <dt className="text-xs text-muted-foreground">
-                    Дополнительные данные и пассажиры
+                    Дополнительные данные
                   </dt>
-                  <dd>{fieldValue("custom_data", detail.item.custom_data)}</dd>
+                  <dd>{fieldValue("custom_data", extraData)}</dd>
                 </div>
               ) : null}
               {detail.item.last_location ? (

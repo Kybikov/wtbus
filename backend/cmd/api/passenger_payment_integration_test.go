@@ -41,7 +41,9 @@ func TestPassengerPaymentJourneyPostgres(t *testing.T) {
 	user := row(`INSERT INTO users(email,display_name) VALUES('passenger-driver@test.invalid','Driver QA') RETURNING id::text`)
 	member := row(`INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'driver') RETURNING id::text`, tenant, user)
 	driver := row(`INSERT INTO drivers(tenant_id,membership_id,full_name,phone_e164) VALUES($1,$2,'Driver QA','+380500004001') RETURNING id::text`, tenant, member)
+	vehicle := row(`INSERT INTO vehicles(tenant_id,name,registration_number,vehicle_class,capacity) VALUES($1,'Passenger QA bus','PASSENGER-QA','bus',8) RETURNING id::text`, tenant)
 	trip := row(`INSERT INTO trips(tenant_id,driver_id,kind,status,origin_name,destination_name,starts_at,ends_at,capacity,price_minor,currency) VALUES($1,$2,'regular','assigned','Kyiv','Lviv',now()+interval '1 day',now()+interval '1 day 8 hours',8,125000,'UAH') RETURNING id::text`, tenant, driver)
+	exec(`UPDATE trips SET vehicle_id=$2 WHERE id=$1`, trip, vehicle)
 	exec(`INSERT INTO tenant_payment_configs(tenant_id,provider,merchant_name,iban,edrpou,bank_name,is_enabled) VALUES($1,'internal','ФОП QA','UA599999990000000000000000001','0000000000','Test bank',true)`, tenant)
 	session, err := app.createSession(ctx, identity{UserID: user, MembershipID: member, TenantID: tenant, TenantSlug: "passenger-qa", Role: "driver"})
 	if err != nil {

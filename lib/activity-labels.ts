@@ -1,4 +1,6 @@
 export const activityActions: Record<string, string> = {
+  "booking.passenger_added": "Добавлен пассажир",
+  "booking.passenger_updated": "Изменены данные пассажира",
   "trip.early_departure_approved": "Разрешён ранний выезд",
   "finance.staff_cash_received": "Владелец принял оплату",
   "finance.deposit_own_cash": "Владелец передал наличные в кассу",
