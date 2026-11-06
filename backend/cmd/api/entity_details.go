@@ -194,8 +194,14 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 	}
 	if entity == "trips" && actor.Role != "developer" {
 		var fields map[string]any
-		if json.Unmarshal(item, &fields) == nil && fields["status"] != "new" && fields["status"] != "assigned" {
-			restriction = "Детали можно менять у нового или назначенного рейса."
+		if json.Unmarshal(item, &fields) == nil {
+			statusKey, _ := fields["status"].(string)
+			status, _, err := app.workflowStatus(r.Context(), company.ID, "trips", statusKey)
+			if err != nil {
+				app.publicFailure(w, err)
+				return
+			}
+			restriction = tripEditRestriction(actor.Role, status.Phase, status.Terminal)
 		}
 	}
 	writeJSON(w, 200, map[string]any{"item": item, "related": related, "activity": events, "timezone": company.Timezone, "editRestriction": restriction})

@@ -13,6 +13,14 @@ All mutable checks use disposable local PostgreSQL/Redis and authenticated API s
 7. Completion records actual arrival and creates one driver-pay accrual, with the trip's fixed gross pay and configured tax snapshot. Repeating completion does not duplicate salary.
 8. Driver cash handover requires cashier acceptance; salary payout is separate. Neither is a second revenue event. Balances remain separated by currency.
 
+## Editing assignments and seats
+
+Before departure, editing follows the trip's workflow phase (`planned` or `assigned`), including boarding, delayed and custom statuses. Terminal statuses and trips already in progress are read-only for ordinary staff; developer access remains available. The detail-page restriction and the update API use the same rule, checked again while the trip row is locked.
+
+An unchanged driver or vehicle link remains valid for editing the existing trip even if that profile has since been disabled. A replacement driver must have an active driver/developer membership in the same company; a replacement vehicle must be active. Updating seats never reactivates an account or changes the assigned driver. Seat limits are still enforced against actual bookings and vehicle capacity, with separate error messages showing the relevant numbers. Conflicting stored capacities require an explicit correction by staff, rather than guessing the vehicle's real seat count.
+
+`TestTripEditingDatabase` reproduces the delayed-trip plus button, correction of an over-capacity trip retaining an inactive driver, subsequent active-driver assignment, rejected inactive/foreign replacements, capacity errors, and closed/in-progress restrictions in an isolated database.
+
 ## GPS
 
 Progress is the projection of a fresh GPS position onto the saved road geometry, measured by road distance. Scheduled time does not move the car. Missing/old/inaccurate/off-road or ambiguous fixes do not invent a percentage. GPS permission and starting transmission remain explicit. Queued fixes survive temporary loss of network, are deduplicated and scoped to the same driver/trip. Completion drains queued points first.
