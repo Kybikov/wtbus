@@ -57,8 +57,12 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
-	var phase string
-	err = tx.QueryRow(r.Context(), `SELECT workflow_status_phase(tenant_id,'trips',status) FROM trips WHERE tenant_id=$1 AND id=$2 AND driver_id=$3 FOR UPDATE`, company.ID, input.TripID, driver).Scan(&phase)
+	if err = tx.QueryRow(r.Context(), `SELECT v.id::text FROM vehicles v WHERE v.tenant_id=$1 AND v.id=(SELECT vehicle_id FROM trips WHERE id=$2 AND tenant_id=$1) FOR UPDATE`, company.ID, input.TripID).Scan(&locked); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		app.publicFailure(w, err)
+		return
+	}
+	var phase, tripStatus string
+	err = tx.QueryRow(r.Context(), `SELECT workflow_status_phase(tenant_id,'trips',status),status FROM trips WHERE tenant_id=$1 AND id=$2 AND driver_id=$3 FOR UPDATE`, company.ID, input.TripID, driver).Scan(&phase, &tripStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "Рейс вам не назначен."})
 		return
@@ -173,12 +177,22 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		details, _ := json.Marshal(map[string]any{"tripId": input.TripID, "passengerIndex": *input.PassengerIndex, "boarding": input.Boarding})
 		_, err = tx.Exec(r.Context(), `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details) VALUES($1,NULLIF($2,'')::uuid,'human',$3,'bookings',$4,$5)`, company.ID, actor.MembershipID, action, input.BookingID, details)
 	}
-	if err == nil && input.PassengerIndex != nil && input.Boarding == "boarded" {
-		var previous string
+	if err == nil && input.PassengerIndex != nil && input.Boarding == "boarded" && (phase == "planned" || phase == "assigned") && tripStatus != "boarding" {
+		reason, checkErr := tripBoardingReadiness(r.Context(), tx, company.ID, input.TripID)
+		if checkErr != nil {
+			app.publicFailure(w, checkErr)
+			return
+		}
+		if reason != "" {
+			writeJSON(w, 409, map[string]string{"error": reason})
+			return
+		}
+		var next string
 		// A reservation or a payment is not evidence that boarding has started.
-		e := tx.QueryRow(r.Context(), `UPDATE trips SET status='boarding',updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status IN ('assigned','new') RETURNING CASE WHEN $3='planned' THEN 'new' ELSE 'assigned' END`, company.ID, input.TripID, phase).Scan(&previous)
+		e := tx.QueryRow(r.Context(), `UPDATE trips SET status='boarding',updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND status=$3 RETURNING status`, company.ID, input.TripID, tripStatus).Scan(&next)
 		if e == nil {
-			err = recordAutomaticStatus(r.Context(), tx, company.ID, "trips", input.TripID, previous, "boarding", actor.MembershipID)
+			err = recordAutomaticStatus(r.Context(), tx, company.ID, "trips", input.TripID, tripStatus, next, actor.MembershipID)
 		} else if !errors.Is(e, pgx.ErrNoRows) {
 			err = e
 		}

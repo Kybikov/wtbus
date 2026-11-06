@@ -1,4 +1,10 @@
 "use client"
+import { TripDelayBadge } from "@/components/trip-delay-badge"
+import {
+  earlyDepartureReason,
+  type TripOperations,
+} from "@/lib/trip-operations"
+import { valueLabels } from "@/lib/entity-details"
 import { AccountingWorkspace } from "@/components/accounting-workspace"
 import { useActionConfirmation } from "@/components/action-confirmation"
 
@@ -22,7 +28,8 @@ import { useDriverGPS } from "@/hooks/use-driver-gps"
 
 type FleetTrip = {
   id: string
-  status: "assigned" | "in_progress"
+  status: string
+  operations?: TripOperations
   origin: string
   destination: string
   startsAt: string
@@ -146,8 +153,17 @@ export function DriverLocationTracker() {
     .filter((vehicle) => vehicle.activeTrip)
     .sort(
       (a, b) =>
-        Number(b.activeTrip?.status === "in_progress") -
-          Number(a.activeTrip?.status === "in_progress") ||
+        Number(
+          (b.activeTrip?.statusPhase ?? b.activeTrip?.status) === "in_progress"
+        ) *
+          2 +
+          Number(b.activeTrip?.status === "boarding") -
+          (Number(
+            (a.activeTrip?.statusPhase ?? a.activeTrip?.status) ===
+              "in_progress"
+          ) *
+            2 +
+            Number(a.activeTrip?.status === "boarding")) ||
         Date.parse(a.activeTrip?.startsAt ?? "") -
           Date.parse(b.activeTrip?.startsAt ?? "")
     )[0]
@@ -216,18 +232,7 @@ export function DriverLocationTracker() {
       const payload: unknown = await response.json()
       if (!response.ok || !isFleetResponse(payload))
         throw new Error("Не удалось получить список автомобиля.")
-      setVehicles(
-        payload.items.map((vehicle) => ({
-          ...vehicle,
-          activeTrip: vehicle.activeTrip
-            ? {
-                ...vehicle.activeTrip,
-                status:
-                  vehicle.activeTrip.statusPhase ?? vehicle.activeTrip.status,
-              }
-            : undefined,
-        }))
-      )
+      setVehicles(payload.items)
       setTimezone(payload.timezone)
       setIdentity(session)
       setError(null)
@@ -306,7 +311,9 @@ export function DriverLocationTracker() {
     return () => controller.abort()
   }, [])
 
-  async function changeTripStatus(status: "in_progress" | "completed") {
+  async function changeTripStatus(
+    status: "boarding" | "in_progress" | "completed"
+  ) {
     const tripID = selectedVehicle?.activeTrip?.id
     if (!tripID || updatingTripStatus) return
     if (
@@ -335,6 +342,8 @@ export function DriverLocationTracker() {
           throw new Error(
             data.error ?? "Не удалось проверить посадку. Повторите попытку."
           )
+        const earlyReason = earlyDepartureReason(data.operations)
+        if (earlyReason) throw new Error(earlyReason)
         for (const booking of data.items as ManifestBooking[]) {
           // Unconfirmed bank bookings cannot board and are not no-shows.
           if (
@@ -362,6 +371,7 @@ export function DriverLocationTracker() {
       }
       const action = status === "in_progress" ? "начать" : "завершить"
       if (
+        status !== "boarding" &&
         !(await confirm({
           title: waiting.length
             ? "Подтвердить неявку и начать рейс?"
@@ -486,11 +496,20 @@ export function DriverLocationTracker() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   {selectedVehicle.name} · {selectedVehicle.registrationNumber}{" "}
                   ·{" "}
-                  {(selectedVehicle.activeTrip.statusPhase ??
-                    selectedVehicle.activeTrip.status) === "in_progress"
-                    ? "Рейс выполняется"
-                    : "Рейс назначен"}
+                  {valueLabels[selectedVehicle.activeTrip.status] ??
+                    "Рейс назначен"}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <TripDelayBadge
+                    operations={selectedVehicle.activeTrip.operations}
+                  />
+                  {selectedVehicle.activeTrip.operations
+                    ?.earlyDepartureApproved ? (
+                    <span className="text-xs text-emerald-600">
+                      Диспетчер разрешил ранний выезд
+                    </span>
+                  ) : null}
+                </div>
                 {selectedVehicle.activeTrip.actualStartedAt ? (
                   <p className="mt-2 text-xs text-muted-foreground">
                     Фактический выезд:{" "}
@@ -507,17 +526,30 @@ export function DriverLocationTracker() {
               <div className="lg:flex lg:items-center">
                 {(selectedVehicle.activeTrip.statusPhase ??
                   selectedVehicle.activeTrip.status) === "assigned" ? (
-                  <Button
-                    className="mt-4 w-full lg:mt-0 lg:w-auto lg:min-w-48"
-                    disabled={updatingTripStatus}
-                    disabledReason={
-                      "Статус рейса меняется. Дождитесь завершения."
-                    }
-                    onClick={() => void changeTripStatus("in_progress")}
-                    size="lg"
-                  >
-                    {updatingTripStatus ? "Начинаем рейс…" : "Начать рейс"}
-                  </Button>
+                  <div className="mt-4 grid gap-2 sm:flex lg:mt-0">
+                    {selectedVehicle.activeTrip.status !== "boarding" ? (
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        disabled={updatingTripStatus}
+                        disabledReason="Статус рейса меняется. Дождитесь завершения."
+                        onClick={() => void changeTripStatus("boarding")}
+                      >
+                        Начать посадку
+                      </Button>
+                    ) : null}
+                    <Button
+                      className="mt-4 w-full lg:mt-0 lg:w-auto lg:min-w-48"
+                      disabled={updatingTripStatus}
+                      disabledReason={
+                        "Статус рейса меняется. Дождитесь завершения."
+                      }
+                      onClick={() => void changeTripStatus("in_progress")}
+                      size="lg"
+                    >
+                      {updatingTripStatus ? "Начинаем рейс…" : "Начать рейс"}
+                    </Button>
+                  </div>
                 ) : (
                   <Button
                     className="mt-4 w-full lg:mt-0 lg:w-auto lg:min-w-48"

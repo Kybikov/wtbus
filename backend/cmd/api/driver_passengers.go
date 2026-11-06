@@ -95,5 +95,11 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	rows.Close()
+	operations, err := readTripOperations(r.Context(), app.db, company.ID, []string{tripID})
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "operations": operations[tripID]})
 }

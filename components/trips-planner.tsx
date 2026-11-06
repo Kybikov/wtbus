@@ -49,6 +49,7 @@ import { useWorkflowStatuses } from "@/components/route-status-field"
 import { canMoveTripStatus } from "@/lib/kanban-workflow"
 
 type APITrip = {
+  operations?: import("@/lib/trip-operations").TripOperations
   id: string
   kind: "regular" | "individual"
   status: string
@@ -663,7 +664,8 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
       "status",
       "Статус",
       (item) => item.status,
-      tripOptions
+      tripOptions,
+      (item) => item.operations
     ),
     dateColumn<CalendarTrip>(
       "start",

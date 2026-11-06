@@ -56,6 +56,8 @@ func TestTripEditingDatabase(t *testing.T) {
 		w := httptest.NewRecorder()
 		if method == "GET" {
 			app.entityDetails(w, r)
+		} else if method == "POST" {
+			app.createTrip(w, r)
 		} else {
 			app.updateTrip(w, r)
 		}
@@ -66,9 +68,9 @@ func TestTripEditingDatabase(t *testing.T) {
 		allowed      bool
 	}{
 		{"new", "owner", true}, {"assigned", "dispatcher", true},
-		{"boarding", "owner", true}, {"delayed", "owner", true},
+		{"boarding", "owner", true}, {"assigned", "owner", true},
 		{"qa_wait", "admin", true}, {"qa_closed", "owner", false},
-		{"in_progress", "owner", false}, {"in_progress_delayed", "owner", false},
+		{"in_progress", "owner", false},
 		{"completed", "owner", false}, {"cancelled", "dispatcher", false},
 		{"completed", "developer", true},
 	}
@@ -97,7 +99,7 @@ func TestTripEditingDatabase(t *testing.T) {
 			if tc.allowed && updated.Code != 200 || !tc.allowed && updated.Code != 409 {
 				t.Fatalf("update: %d %s", updated.Code, updated.Body)
 			}
-			if tc.status == "delayed" {
+			if tc.status == "boarding" {
 				delayedTrip, delayedInput = trip, input
 			}
 			if tc.status == "new" {
@@ -157,11 +159,53 @@ func TestTripEditingDatabase(t *testing.T) {
 		customer := row(`INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Capacity test','+102') RETURNING id::text`, tenant)
 		exec(`INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,currency) VALUES($1,$2,$3,'cash_on_boarding',2,'EUR')`, tenant, delayedTrip, customer)
 		seats = 1
-		if w := call("PUT", delayedTrip, input, "owner"); w.Code != 409 || !strings.Contains(w.Body.String(), "занято 2 мест") {
+		if w := call("PUT", delayedTrip, input, "owner"); w.Code != 409 || !strings.Contains(w.Body.String(), "Занято мест по бронированиям: 2") {
 			t.Fatalf("missing occupied seat explanation: %d %s", w.Code, w.Body)
 		}
 		if got := row(`SELECT capacity::text FROM trips WHERE id=$1`, delayedTrip); got != "7" {
 			t.Fatal("failed validation changed capacity")
+		}
+	})
+	t.Run("vehicle replacement inherits capacity and rejects undersized replacement atomically", func(t *testing.T) {
+		input := delayedInput
+		input.DriverID = driver
+		stale := int16(99)
+		input.Capacity = &stale
+		small := row(`INSERT INTO vehicles(tenant_id,name,registration_number,vehicle_class,capacity) VALUES($1,'Small car','CAP-SMALL','car',1) RETURNING id::text`, tenant)
+		large := row(`INSERT INTO vehicles(tenant_id,name,registration_number,vehicle_class,capacity) VALUES($1,'Large bus','CAP-LARGE','bus',12) RETURNING id::text`, tenant)
+		input.VehicleID = small
+		if w := call("PUT", delayedTrip, input, "owner"); w.Code != 409 {
+			t.Fatal("oversold replacement accepted", w.Code, w.Body)
+		}
+		if got := row(`SELECT vehicle_id::text||':'||capacity FROM trips WHERE id=$1`, delayedTrip); got != vehicle+":7" {
+			t.Fatal("failed replacement changed trip", got)
+		}
+		input.VehicleID = large
+		if w := call("PUT", delayedTrip, input, "owner"); w.Code != 200 {
+			t.Fatal(w.Code, w.Body)
+		}
+		if got := row(`SELECT capacity::text FROM trips WHERE id=$1`, delayedTrip); got != "12" {
+			t.Fatal("vehicle capacity was not inherited", got)
+		}
+		// Correct a legacy snapshot using the unchanged vehicle on the next save.
+		exec(`UPDATE trips SET capacity=13 WHERE id=$1`, delayedTrip)
+		stale = 13
+		if w := call("PUT", delayedTrip, input, "owner"); w.Code != 200 {
+			t.Fatal(w.Code, w.Body)
+		}
+		if got := row(`SELECT capacity::text FROM trips WHERE id=$1`, delayedTrip); got != "12" {
+			t.Fatal("legacy capacity not corrected")
+		}
+		exec(`UPDATE memberships SET is_active=true WHERE id=$1`, driverMember)
+		input.StartsAt = "2035-03-01T10:00"
+		input.EndsAt = "2035-03-01T12:00"
+		created := call("POST", "", input, "owner")
+		if created.Code != 201 {
+			t.Fatal(created.Code, created.Body)
+		}
+		var response struct{ Item tripResponse }
+		if err := json.Unmarshal(created.Body.Bytes(), &response); err != nil || response.Item.Capacity != 12 {
+			t.Fatal("creation default is not vehicle capacity", created.Body, err)
 		}
 	})
 }

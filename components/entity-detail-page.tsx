@@ -1,4 +1,7 @@
 "use client"
+import { TripDelayBadge } from "@/components/trip-delay-badge"
+import { TripEarlyDeparture } from "@/components/trip-early-departure"
+import type { TripOperations } from "@/lib/trip-operations"
 import { TripLinkPicker } from "@/components/trip-link-picker"
 import { CreateRouteFromTrip } from "@/components/create-route-from-trip"
 import { RouteNavigationEditor } from "@/components/route-navigation-editor"
@@ -52,6 +55,7 @@ import { formatEntityDate, statusToneClass } from "@/lib/entity-columns"
 import type { EntityCollection } from "@/lib/entity-views"
 
 type Detail = {
+  operations?: TripOperations
   editRestriction?: string
   item: Record<string, unknown>
   timezone: string
@@ -305,7 +309,7 @@ export function EntityDetailPage({
   const [detail, setDetail] = React.useState<Detail | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [resources, setResources] = React.useState<
-    Record<string, { id: string; name: string }[]>
+    Record<string, { id: string; name: string; capacity?: number }[]>
   >({})
   const [resourceError, setResourceError] = React.useState("")
   React.useEffect(() => {
@@ -501,6 +505,14 @@ export function EntityDetailPage({
   const changeField = (key: string, value: unknown, commit = true) => {
     if (!detail) return
     const patch: Record<string, unknown> = { [key]: value }
+    if (
+      entity === "trips" &&
+      key === "vehicle_id" &&
+      value !== detail.item.vehicle_id
+    ) {
+      const vehicle = resources.vehicles?.find((entry) => entry.id === value)
+      if (vehicle?.capacity) patch.capacity = vehicle.capacity
+    }
     if (entity === "trips" && key === "kind" && value === "individual")
       patch.route_id = null
     setDetail((current) =>
@@ -946,6 +958,15 @@ export function EntityDetailPage({
       pageActions={
         detail ? (
           <>
+            {entity === "trips" ? (
+              <TripEarlyDeparture
+                tripId={id}
+                operations={detail.operations}
+                busy={saveState === "saving"}
+                onUpdated={() => void load(true)}
+                onError={setError}
+              />
+            ) : null}
             {entity === "trips" && !detail.item.route_id ? (
               <CreateRouteFromTrip
                 tripId={id}
@@ -976,6 +997,11 @@ export function EntityDetailPage({
       }
     >
       {deletion.dialog}
+      {entity === "trips" && detail ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <TripDelayBadge operations={detail.operations} />
+        </div>
+      ) : null}
       <AdminNotice message={resourceError} variant="error" />
       <AdminNotice
         message={detail ? error : null}
@@ -1104,6 +1130,7 @@ export function EntityDetailPage({
                           detail.item.tariff_mode !== "per_km"))
                     )
                 )
+                .filter(([key]) => !key.startsWith("early_departure_"))
                 .map(([key, value]) => (
                   <div
                     key={key}

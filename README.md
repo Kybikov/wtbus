@@ -153,7 +153,7 @@ The current local API slice is tenant-aware and includes:
 - `POST /api/v1/tenants/vivat-bus/driver/cash-received`
 
 Trip creation uses the tenant's timezone, derives vehicle capacity and base currency from PostgreSQL, accepts a dispatcher-entered price per passenger or per booking, and rejects overlapping active assignments for either the vehicle or driver. Regular route templates can also carry a default price and pricing mode that are prefilled when the route is selected; the dispatcher can still change both for the individual departure. The final price is copied to every booking as a financial snapshot, so later changes to a route or trip do not rewrite historical revenue.
-Status updates allow only the dispatch workflow `new → assigned → in_progress → completed` or cancellation.
+Trip stages follow the dispatch workflow through assignment, boarding, departure and completion, or cancellation. Boarding may start early; early departure requires all passengers boarded or explicit dispatcher approval. Delay is displayed independently from stage. See [trip operations](docs/trip-operations.md) for capacity, approval and migration rules.
 
 The overview is a live tenant-scoped operational summary for the company’s local day: scheduled trips, booked passengers, active fleet, expected booking revenue, the next departures, and each active vehicle’s booked-seat load. It intentionally shows an empty state when there are no current-day trips instead of fabricated dashboard metrics.
 

@@ -29,7 +29,7 @@ func recordTripCreation(ctx context.Context, tx pgx.Tx, tenant, id string, actor
 	return err
 }
 
-func tripCreationAuditDone(r *http.Request) {
+func tripActionAuditDone(r *http.Request) {
 	if capture, ok := r.Context().Value(auditContextKey{}).(*auditCapture); ok {
 		capture.activityRecorded = true
 	}

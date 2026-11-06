@@ -1,4 +1,5 @@
 export const activityActions: Record<string, string> = {
+  "trip.early_departure_approved": "Разрешён ранний выезд",
   "finance.receipt": "Поступление в кассу",
   "finance.expense": "Записан расход",
   "finance.accrual": "Начислена зарплата",
@@ -56,6 +57,7 @@ export const activityEntities: Record<string, string> = {
   "entity-views": "Виды",
 }
 export const activityFields: Record<string, string> = {
+  actual_boarding_started_at: "Начало посадки",
   name: "Название",
   full_name: "Имя",
   fullName: "Имя",

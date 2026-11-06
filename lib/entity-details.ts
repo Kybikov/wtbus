@@ -45,6 +45,7 @@ export const entityFieldLabels: Record<string, string> = {
   starts_at: "Отправление",
   ends_at: "Прибытие / окончание",
   actual_started_at: "Фактический выезд",
+  actual_boarding_started_at: "Начало посадки",
   actual_completed_at: "Фактическое прибытие",
   cash_received_minor: "Получено наличными",
   boarding: "Посадка",

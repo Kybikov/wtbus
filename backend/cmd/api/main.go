@@ -125,8 +125,6 @@ func main() {
 	go func() { defer close(bankDone); app.bankWorker(signalContext) }()
 	currencyDone := make(chan struct{})
 	go func() { defer close(currencyDone); app.currencyWorker(signalContext) }()
-	progressDone := make(chan struct{})
-	go func() { defer close(progressDone); app.tripProgressWorker(signalContext) }()
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           app.routes(),
@@ -158,10 +156,6 @@ func main() {
 	}
 	select {
 	case <-bankDone:
-	case <-shutdownContext.Done():
-	}
-	select {
-	case <-progressDone:
 	case <-shutdownContext.Done():
 	}
 }
@@ -1587,37 +1581,39 @@ type tenant struct {
 }
 
 type tripResponse struct {
-	ID              string         `json:"id"`
-	Kind            string         `json:"kind"`
-	Status          string         `json:"status"`
-	Origin          string         `json:"origin"`
-	Destination     string         `json:"destination"`
-	StartsAt        time.Time      `json:"startsAt"`
-	EndsAt          time.Time      `json:"endsAt"`
-	Capacity        int16          `json:"capacity"`
-	PriceMinor      int64          `json:"priceMinor"`
-	PricingMode     string         `json:"pricingMode"`
-	Currency        string         `json:"currency"`
-	RouteID         *string        `json:"routeId,omitempty"`
-	VehicleID       *string        `json:"vehicleId,omitempty"`
-	DriverID        *string        `json:"driverId,omitempty"`
-	Notes           string         `json:"notes,omitempty"`
-	Vehicle         string         `json:"vehicle"`
-	Driver          string         `json:"driver"`
-	DriverConnected *bool          `json:"driverConnected,omitempty"`
-	CustomData      map[string]any `json:"customData,omitempty"`
+	Operations      *tripOperations `json:"operations,omitempty"`
+	ID              string          `json:"id"`
+	Kind            string          `json:"kind"`
+	Status          string          `json:"status"`
+	Origin          string          `json:"origin"`
+	Destination     string          `json:"destination"`
+	StartsAt        time.Time       `json:"startsAt"`
+	EndsAt          time.Time       `json:"endsAt"`
+	Capacity        int16           `json:"capacity"`
+	PriceMinor      int64           `json:"priceMinor"`
+	PricingMode     string          `json:"pricingMode"`
+	Currency        string          `json:"currency"`
+	RouteID         *string         `json:"routeId,omitempty"`
+	VehicleID       *string         `json:"vehicleId,omitempty"`
+	DriverID        *string         `json:"driverId,omitempty"`
+	Notes           string          `json:"notes,omitempty"`
+	Vehicle         string          `json:"vehicle"`
+	Driver          string          `json:"driver"`
+	DriverConnected *bool           `json:"driverConnected,omitempty"`
+	CustomData      map[string]any  `json:"customData,omitempty"`
 }
 
 type dashboardTripResponse struct {
-	ID          string    `json:"id"`
-	Origin      string    `json:"origin"`
-	Destination string    `json:"destination"`
-	StartsAt    time.Time `json:"startsAt"`
-	Status      string    `json:"status"`
-	Vehicle     string    `json:"vehicle"`
-	Driver      string    `json:"driver"`
-	Capacity    int16     `json:"capacity"`
-	BookedSeats int64     `json:"bookedSeats"`
+	Operations  *tripOperations `json:"operations,omitempty"`
+	ID          string          `json:"id"`
+	Origin      string          `json:"origin"`
+	Destination string          `json:"destination"`
+	StartsAt    time.Time       `json:"startsAt"`
+	Status      string          `json:"status"`
+	Vehicle     string          `json:"vehicle"`
+	Driver      string          `json:"driver"`
+	Capacity    int16           `json:"capacity"`
+	BookedSeats int64           `json:"bookedSeats"`
 }
 
 type dashboardVehicleResponse struct {
@@ -1769,6 +1765,19 @@ func (app *application) dashboardSummary(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	vehicles.Close()
+	ids := []string{}
+	for _, trip := range response.Trips {
+		ids = append(ids, trip.ID)
+	}
+	operations, err := readTripOperations(r.Context(), app.db, tenant.ID, ids)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	for i := range response.Trips {
+		response.Trips[i].Operations = operations[response.Trips[i].ID]
+	}
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -1850,6 +1859,19 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rows.Close()
+	tripIDs := make([]string, 0, len(trips))
+	for _, trip := range trips {
+		tripIDs = append(tripIDs, trip.ID)
+	}
+	operations, err := readTripOperations(r.Context(), app.db, tenant.ID, tripIDs)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	for i := range trips {
+		trips[i].Operations = operations[trips[i].ID]
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": trips, "timezone": tenant.Timezone})
 }
 
@@ -2495,16 +2517,17 @@ type fleetLocationResponse struct {
 }
 
 type fleetTripResponse struct {
-	ActualStartedAt   *time.Time   `json:"actualStartedAt,omitempty"`
-	ActualCompletedAt *time.Time   `json:"actualCompletedAt,omitempty"`
-	StatusPhase       string       `json:"statusPhase"`
-	Progress          roadProgress `json:"progress"`
-	ID                string       `json:"id"`
-	Status            string       `json:"status"`
-	Origin            string       `json:"origin"`
-	Destination       string       `json:"destination"`
-	StartsAt          time.Time    `json:"startsAt"`
-	EndsAt            time.Time    `json:"endsAt"`
+	Operations        *tripOperations `json:"operations,omitempty"`
+	ActualStartedAt   *time.Time      `json:"actualStartedAt,omitempty"`
+	ActualCompletedAt *time.Time      `json:"actualCompletedAt,omitempty"`
+	StatusPhase       string          `json:"statusPhase"`
+	Progress          roadProgress    `json:"progress"`
+	ID                string          `json:"id"`
+	Status            string          `json:"status"`
+	Origin            string          `json:"origin"`
+	Destination       string          `json:"destination"`
+	StartsAt          time.Time       `json:"startsAt"`
+	EndsAt            time.Time       `json:"endsAt"`
 }
 
 type fleetVehicleResponse struct {
@@ -2557,7 +2580,7 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 			WHERE t.tenant_id = $1 AND t.vehicle_id = v.id
 			  AND EXISTS (SELECT 1 FROM workflow_statuses ws WHERE ws.tenant_id=t.tenant_id AND ws.entity_type='trips' AND ws.key=t.status AND ws.semantic_phase IN ('assigned','in_progress'))
 			  AND ($2 = '' OR t.driver_id = NULLIF($2, '')::uuid)
-			ORDER BY CASE WHEN workflow_status_phase(t.tenant_id,'trips',t.status) = 'in_progress' THEN 0 ELSE 1 END, t.starts_at ASC
+			ORDER BY CASE WHEN workflow_status_phase(t.tenant_id,'trips',t.status) = 'in_progress' THEN 0 WHEN t.status='boarding' THEN 1 ELSE 2 END, t.starts_at ASC
 			LIMIT 1
 		) active_trip ON true
 		LEFT JOIN drivers active_driver ON active_driver.id = active_trip.driver_id
@@ -2629,6 +2652,23 @@ func (app *application) listFleet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rows.Close()
+	tripIDs := []string{}
+	for _, item := range items {
+		if item.ActiveTrip != nil {
+			tripIDs = append(tripIDs, item.ActiveTrip.ID)
+		}
+	}
+	operations, err := readTripOperations(r.Context(), app.db, tenant.ID, tripIDs)
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	for i := range items {
+		if items[i].ActiveTrip != nil {
+			items[i].ActiveTrip.Operations = operations[items[i].ActiveTrip.ID]
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "timezone": tenant.Timezone})
 }
 
@@ -3118,7 +3158,7 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tripCreationAuditDone(r)
+	tripActionAuditDone(r)
 	writeJSON(w, http.StatusCreated, tripScheduleResponse{
 		CreatedCount:  len(instances),
 		FirstStartsAt: instances[0].startsAt,
@@ -3309,7 +3349,7 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		app.publicFailure(w, err)
 		return
 	}
-	tripCreationAuditDone(r)
+	tripActionAuditDone(r)
 	writeJSON(w, http.StatusCreated, map[string]any{"item": trip, "timezone": tenant.Timezone})
 }
 
@@ -3438,10 +3478,16 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	capacity := vehicleCapacity
-	if input.Capacity != nil {
-		capacity = *input.Capacity
-	} else if oldVehicle == input.VehicleID {
+	if oldVehicle == input.VehicleID {
 		capacity = oldCapacity
+		if input.Capacity != nil {
+			capacity = *input.Capacity
+		}
+		// Repair an inherited over-capacity snapshot on the next save. Explicit
+		// changes still validate normally; occupied bookings are checked below.
+		if capacity == oldCapacity && oldCapacity > vehicleCapacity {
+			capacity = vehicleCapacity
+		}
 	}
 	if capacity < 1 {
 		writeJSON(w, 400, map[string]string{"error": "Укажите не меньше одного места."})
@@ -3476,7 +3522,7 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if int(capacity) < occupied {
-		writeJSON(w, 409, map[string]string{"error": fmt.Sprintf("В рейсе уже занято %d мест. Число мест в рейсе не может быть меньше количества занятых мест.", occupied)})
+		writeJSON(w, 409, map[string]string{"error": fmt.Sprintf("Занято мест по бронированиям: %d. Доступно в рейсе: %d. Выберите автомобиль большей вместимости или увеличьте число мест в пределах вместимости автомобиля.", occupied, capacity)})
 		return
 	}
 	tripDriverPayMinor = oldPay
@@ -3528,6 +3574,7 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 
 type changeTripStatusRequest struct {
 	Status string `json:"status"`
+	Action string `json:"action,omitempty"`
 }
 
 var allowedTripTransitions = map[string]map[string]bool{
@@ -3557,7 +3604,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	input.Status = strings.TrimSpace(input.Status)
-	if input.Status == "" {
+	if input.Status == "" && input.Action != "approve_early_departure" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status is required"})
 		return
 	}
@@ -3630,6 +3677,45 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		app.publicFailure(w, err)
 		return
 	}
+	if input.Action != "" {
+		if input.Action != "approve_early_departure" || input.Status != "" {
+			writeJSON(w, 400, map[string]string{"error": "Выберите одно действие с рейсом."})
+			return
+		}
+		if actor.Role != "owner" && actor.Role != "admin" && actor.Role != "dispatcher" && actor.Role != "developer" {
+			writeJSON(w, 403, map[string]string{"error": "Ранний выезд разрешает диспетчер, администратор или владелец компании."})
+			return
+		}
+		ops, err := readTripOperations(r.Context(), tx, tenant.ID, []string{tripID})
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		op := ops[tripID]
+		if op == nil || !op.BeforeDeparture || currentMeta.Terminal {
+			writeJSON(w, 409, map[string]string{"error": "Разрешение доступно до планового выезда, пока рейс ещё не начался."})
+			return
+		}
+		if !op.EarlyDepartureApproved {
+			_, err = tx.Exec(r.Context(), `UPDATE trips SET early_departure_approved_at=now(),early_departure_approved_by=$3,
+			 early_departure_approval_key=trip_departure_manifest_key(tenant_id,id) WHERE tenant_id=$1 AND id=$2`, tenant.ID, tripID, actor.MembershipID)
+			if err == nil {
+				_, err = tx.Exec(r.Context(), `INSERT INTO activity_events(tenant_id,actor_membership_id,actor_kind,action,entity_type,entity_id,details)
+			 VALUES($1,$2,'human','trip.early_departure_approved','trips',$3,jsonb_build_object('scheduledDeparture',$4::timestamptz,'activeSeats',$5::int))`, tenant.ID, actor.MembershipID, tripID, trip.StartsAt, op.ActiveSeats)
+			}
+			if err != nil {
+				app.publicFailure(w, err)
+				return
+			}
+		}
+		if err = tx.Commit(r.Context()); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		tripActionAuditDone(r)
+		writeJSON(w, 200, map[string]any{"item": trip, "timezone": tenant.Timezone})
+		return
+	}
 	nextMeta, nextExists, err := app.workflowStatus(r.Context(), tenant.ID, "trips", input.Status)
 	if err != nil {
 		app.publicFailure(w, err)
@@ -3639,8 +3725,8 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip status does not exist"})
 		return
 	}
-	if driverID != "" && nextMeta.Phase != "in_progress" && nextMeta.Phase != "completed" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "a driver can only start or complete an assigned trip"})
+	if driverID != "" && nextMeta.Phase != "in_progress" && nextMeta.Phase != "completed" && input.Status != "boarding" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Водителю доступны начало посадки, выезд и завершение своего рейса."})
 		return
 	}
 	// Retries must return the persisted trip without repeating side effects. In
@@ -3658,6 +3744,15 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if nextMeta.Phase == "in_progress" && currentMeta.Phase != "in_progress" {
+		ops, err := readTripOperations(r.Context(), tx, tenant.ID, []string{tripID})
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if op := ops[tripID]; op != nil && op.BeforeDeparture && !op.AllPassengersBoarded && !op.EarlyDepartureApproved {
+			writeJSON(w, 409, map[string]string{"error": "До времени отправления выехать можно, только если все пассажиры на месте или диспетчер разрешил ранний выезд."})
+			return
+		}
 		if driverID != "" {
 			var waiting bool
 			err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings b LEFT JOIN driver_booking_checkins c ON c.booking_id=b.id AND c.tenant_id=b.tenant_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' AND EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting') NOT IN ('boarded','absent')))`, tenant.ID, tripID).Scan(&waiting)
@@ -3670,14 +3765,15 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
-		var conflict bool
-		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips active JOIN trips selected ON selected.id=$2 AND selected.tenant_id=active.tenant_id WHERE active.tenant_id=$1 AND active.id<>selected.id AND workflow_status_phase(active.tenant_id,'trips',active.status)='in_progress' AND (active.driver_id=selected.driver_id OR active.vehicle_id=selected.vehicle_id))`, tenant.ID, tripID).Scan(&conflict)
+	}
+	if (nextMeta.Phase == "in_progress" && currentMeta.Phase != "in_progress") || input.Status == "boarding" {
+		reason, err := tripBoardingReadiness(r.Context(), tx, tenant.ID, tripID)
 		if err != nil {
 			app.publicFailure(w, err)
 			return
 		}
-		if conflict {
-			writeJSON(w, 409, map[string]string{"error": "Водитель или автомобиль ещё выполняет другой рейс. Сначала завершите его."})
+		if reason != "" {
+			writeJSON(w, 409, map[string]string{"error": reason})
 			return
 		}
 	}
@@ -3820,12 +3916,17 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	if err := recordAutomaticStatus(r.Context(), tx, tenant.ID, "trips", tripID, currentStatus, input.Status, actor.MembershipID); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		app.log.Error("commit trip status transaction", "error", err, "tenant", slug, "trip", tripID)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not change trip status"})
 		return
 	}
 
+	tripActionAuditDone(r)
 	writeJSON(w, http.StatusOK, map[string]any{"item": trip, "timezone": tenant.Timezone})
 }
 

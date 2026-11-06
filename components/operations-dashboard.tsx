@@ -18,10 +18,13 @@ import {
 } from "@hugeicons/core-free-icons"
 
 import { AppShell } from "@/components/app-shell"
+import { TripDelayBadge } from "@/components/trip-delay-badge"
+import type { TripOperations } from "@/lib/trip-operations"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 type DashboardTrip = {
+  operations?: TripOperations
   id: string
   origin: string
   destination: string
@@ -64,6 +67,7 @@ type FleetLocation = {
 }
 
 type FleetTrip = {
+  operations?: TripOperations
   progress?: {
     status: string
     percent?: number
@@ -112,6 +116,7 @@ const tripStatusMeta: Record<
   draft: { label: "Черновик", tone: "slate" },
   new: { label: "Новый", tone: "slate" },
   assigned: { label: "Назначен", tone: "violet" },
+  boarding: { label: "Посадка", tone: "gold" },
   in_progress: { label: "В пути", tone: "sky" },
   completed: { label: "Завершен", tone: "gold" },
 }
@@ -391,8 +396,13 @@ export function OperationsDashboard({
                         variant="secondary"
                         className="bg-sky-500/12 text-sky-600 dark:text-sky-400"
                       >
-                        {trip.status === "in_progress" ? "В пути" : "Назначен"}
+                        {trip.status === "in_progress"
+                          ? "В пути"
+                          : trip.status === "boarding"
+                            ? "Посадка"
+                            : "Назначен"}
                       </Badge>
+                      <TripDelayBadge operations={trip.operations} />
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {trip.origin} → {trip.destination}
@@ -565,6 +575,7 @@ export function OperationsDashboard({
                     )}
                   >
                     {meta.label}
+                    <TripDelayBadge operations={trip.operations} />
                   </span>
                 </div>
               )

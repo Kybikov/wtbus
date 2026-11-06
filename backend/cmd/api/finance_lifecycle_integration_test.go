@@ -169,6 +169,7 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 409)
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "absent", ExpectedBoarding: "waiting"}, 409)
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &secondIndex, Boarding: "absent", ExpectedBoarding: "waiting"}, 200)
+	call(dev, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Action: "approve_early_departure"}, 200)
 	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 200)
 	// A late passenger can still be checked in after the driver has departed.
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &secondIndex, Boarding: "boarded"}, 200)

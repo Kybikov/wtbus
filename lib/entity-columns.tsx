@@ -1,4 +1,6 @@
 import { Badge } from "@/components/ui/badge"
+import { TripDelayBadge } from "@/components/trip-delay-badge"
+import type { TripOperations } from "@/lib/trip-operations"
 import type { EntityColumn } from "@/components/entity-data-view"
 import type { EntityFilter } from "@/lib/entity-views"
 import type { MetricField } from "@/lib/entity-metrics"
@@ -85,7 +87,8 @@ export function statusColumn<T>(
   id: string,
   label: string,
   get: (item: T) => string,
-  options: StatusOption[]
+  options: StatusOption[],
+  getOperations?: (item: T) => TripOperations | undefined
 ): EntityColumn<T> {
   return {
     id,
@@ -93,9 +96,12 @@ export function statusColumn<T>(
     value: (item) => {
       const option = options.find((x) => x.value === get(item))
       return (
-        <Badge variant="secondary" className={statusToneClass(option?.tone)}>
-          {option?.label ?? get(item)}
-        </Badge>
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <Badge variant="secondary" className={statusToneClass(option?.tone)}>
+            {option?.label ?? get(item)}
+          </Badge>
+          <TripDelayBadge operations={getOperations?.(item)} />
+        </span>
       )
     },
     metric: { kind: "enum", getValue: get, options },

@@ -225,7 +225,7 @@ export function PublicBooking({ slug }: { slug: string }) {
           <>
             <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
               <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                Куди поїдемо?
+                Забронюйте трансфер
               </h1>
               <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
                 Оберіть рейс. Забронюйте місця.
@@ -263,7 +263,7 @@ export function PublicBooking({ slug }: { slug: string }) {
               <>
                 <form
                   onSubmit={search}
-                  aria-label="Пошук автобусних рейсів"
+                  aria-label="Пошук трансферів"
                   aria-busy={searching}
                   className="mb-8 rounded-[var(--rb-r-lg)] bg-primary p-5 text-primary-foreground sm:p-6"
                 >
