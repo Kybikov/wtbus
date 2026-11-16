@@ -35,9 +35,9 @@ export const mobileDestinations = [
   },
   {
     href: "/driver",
-    label: "Мой рейс",
+    label: "Мои рейсы",
     icon: "car",
-    roles: ["driver", "developer"] as StaffRole[],
+    roles: [...operations, "driver", "accountant"] as StaffRole[],
   },
   {
     href: "/notifications",

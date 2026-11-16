@@ -1,9 +1,5 @@
-import { DriverLocationTracker } from "@/components/driver-location-tracker"
-import { redirect } from "next/navigation"
-import { getSessionRole } from "@/lib/server-role"
+import { MyTripsWorkspace } from "@/components/my-trips-workspace"
 
-export default async function DriverPage() {
-  const role = await getSessionRole()
-  if (role && role !== "driver" && role !== "developer") redirect("/")
-  return <DriverLocationTracker />
+export default function DriverPage() {
+  return <MyTripsWorkspace />
 }

@@ -37,14 +37,13 @@ func lateMinutes(planned, actual time.Time) int {
 func tripBoardingReadiness(ctx context.Context, tx pgx.Tx, tenant, trip string) (string, error) {
 	var ready, conflict bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM trips t JOIN vehicles v ON v.id=t.vehicle_id AND v.tenant_id=t.tenant_id
-	 JOIN drivers d ON d.id=t.driver_id AND d.tenant_id=t.tenant_id JOIN memberships m ON m.id=d.membership_id AND m.tenant_id=d.tenant_id
-	 JOIN users u ON u.id=m.user_id
-	 WHERE t.id=$1 AND t.tenant_id=$2 AND v.is_active AND d.is_active AND m.is_active AND m.role::text IN ('driver','developer') AND NOT u.is_system)`, trip, tenant).Scan(&ready)
+	 JOIN drivers d ON d.id=t.driver_id AND d.tenant_id=t.tenant_id
+	 WHERE t.id=$1 AND t.tenant_id=$2 AND v.is_active AND d.is_active AND EXISTS(SELECT 1 FROM trip_crew c JOIN memberships m ON m.id=c.membership_id AND m.tenant_id=c.tenant_id JOIN users u ON u.id=m.user_id WHERE c.tenant_id=t.tenant_id AND c.trip_id=t.id AND c.is_active AND m.is_active AND NOT u.is_system AND (c.can_board OR c.can_manage)))`, trip, tenant).Scan(&ready)
 	if err != nil {
 		return "", err
 	}
 	if !ready {
-		return "Для посадки и выезда назначьте активный автомобиль и водителя с доступом в систему.", nil
+		return "Для посадки и выезда назначьте активный автомобиль, водителя и участника команды с правом посадки или управления рейсом.", nil
 	}
 	var capacity, occupied int
 	err = tx.QueryRow(ctx, `SELECT v.capacity,COALESCE((SELECT sum(b.seats) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id AND
@@ -66,7 +65,7 @@ func tripBoardingReadiness(ctx context.Context, tx pgx.Tx, tenant, trip string) 
 	if conflict {
 		return "Водитель или автомобиль занят посадкой или выполнением другого рейса. Сначала завершите его.", nil
 	}
-	return "", nil
+	return tripCrewReadiness(ctx, tx, tenant, trip)
 }
 
 // Used by the status command inside its locked transaction and by read models.

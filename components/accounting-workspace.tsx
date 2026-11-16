@@ -207,6 +207,7 @@ function ReviewEntry({ entry }: { entry: LedgerEntry }) {
 
 export function AccountingWorkspace({
   driver = false,
+  payrollOnly = false,
   from,
   to,
   refreshKey = 0,
@@ -214,6 +215,7 @@ export function AccountingWorkspace({
   manageDriverAccess = false,
 }: {
   driver?: boolean
+  payrollOnly?: boolean
   from?: string
   to?: string
   refreshKey?: number
@@ -232,7 +234,7 @@ export function AccountingWorkspace({
   }, [search])
   const [kind, setKind] = React.useState("all")
   const [currency, setCurrency] = React.useState("all")
-  const [tab, setTab] = React.useState("ledger")
+  const [tab, setTab] = React.useState(payrollOnly ? "drivers" : "ledger")
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [action, setAction] = React.useState("")
@@ -452,14 +454,14 @@ export function AccountingWorkspace({
           : "workspace-panel min-w-0 space-y-4 p-4 sm:p-5"
       }
     >
-      {!driver ? (
+      {!driver && !payrollOnly ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 font-semibold">
               <Wallet className="size-4 text-primary" />
               {title}
             </h2>
-            {!driver ? (
+            {!driver && !payrollOnly ? (
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={() => open("receipt")}>
                   <Plus />
@@ -508,7 +510,7 @@ export function AccountingWorkspace({
       {!snapshot && !error && !unlinked ? (
         <p className="text-sm text-muted-foreground">Загружаем остатки…</p>
       ) : null}
-      {!driver && snapshot ? (
+      {!driver && !payrollOnly && snapshot ? (
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border p-4">
             <p className="text-xs text-muted-foreground">
@@ -557,7 +559,7 @@ export function AccountingWorkspace({
           </div>
         </div>
       ) : null}
-      {!driver && snapshot?.canCollectCash ? (
+      {!driver && !payrollOnly && snapshot?.canCollectCash ? (
         <div className="rounded-xl border p-4">
           <p className="text-sm font-medium">Наличные у меня</p>
           <div className="mt-3 flex flex-wrap gap-3">
@@ -598,6 +600,7 @@ export function AccountingWorkspace({
         </div>
       ) : null}
       {!driver &&
+      !payrollOnly &&
       snapshot?.staffCash?.some(
         (b) => b.balanceMinor !== 0 && (!snapshot.canCollectCash || !b.own)
       ) ? (
@@ -632,15 +635,17 @@ export function AccountingWorkspace({
               "handovers",
               `Передачи в кассу${pending.length ? ` · ${pending.length}` : ""}`,
             ],
-          ].map(([id, label]) => (
-            <Button
-              key={id}
-              variant={tab === id ? "secondary" : "ghost"}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </Button>
-          ))}
+          ]
+            .filter(([id]) => !payrollOnly || id !== "ledger")
+            .map(([id, label]) => (
+              <Button
+                key={id}
+                variant={tab === id ? "secondary" : "ghost"}
+                onClick={() => setTab(id)}
+              >
+                {label}
+              </Button>
+            ))}
         </div>
       ) : null}
       {driver
@@ -682,17 +687,26 @@ export function AccountingWorkspace({
                 {[
                   ["Зарплата к выплате", balance.payableMinor],
                   ["Уже выплачено", balance.paidMinor],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between gap-3 py-3"
-                  >
-                    <dt className="text-muted-foreground">{label}</dt>
-                    <dd className="font-semibold tabular-nums">
-                      {money(Number(value), balance.currency)}
-                    </dd>
-                  </div>
-                ))}
+                ]
+                  .filter(
+                    ([label]) =>
+                      !payrollOnly ||
+                      ![
+                        "Наличные на руках",
+                        "Передано, ожидает кассира",
+                      ].includes(String(label))
+                  )
+                  .map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between gap-3 py-3"
+                    >
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="font-semibold tabular-nums">
+                        {money(Number(value), balance.currency)}
+                      </dd>
+                    </div>
+                  ))}
               </dl>
               <details className="text-sm">
                 <summary className="cursor-pointer py-2 text-muted-foreground">
@@ -703,17 +717,26 @@ export function AccountingWorkspace({
                     ["Начислено", balance.grossMinor],
                     ["Удержания", balance.withheldMinor],
                     ["Начисления компании", balance.employerMinor],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="flex items-center justify-between gap-3 py-3"
-                    >
-                      <dt>{label}</dt>
-                      <dd className="tabular-nums">
-                        {money(Number(value), balance.currency)}
-                      </dd>
-                    </div>
-                  ))}
+                  ]
+                    .filter(
+                      ([label]) =>
+                        !payrollOnly ||
+                        ![
+                          "Наличные на руках",
+                          "Передано, ожидает кассира",
+                        ].includes(String(label))
+                    )
+                    .map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="flex items-center justify-between gap-3 py-3"
+                      >
+                        <dt>{label}</dt>
+                        <dd className="tabular-nums">
+                          {money(Number(value), balance.currency)}
+                        </dd>
+                      </div>
+                    ))}
                 </dl>
               </details>
             </div>
@@ -749,28 +772,39 @@ export function AccountingWorkspace({
                   ["Начислено", balance.grossMinor],
                   ["Удержания", balance.withheldMinor],
                   ["Начисления компании", balance.employerMinor],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd className="mt-1 font-medium tabular-nums">
-                      {money(value as number, balance.currency)}
-                    </dd>
-                  </div>
-                ))}
+                ]
+                  .filter(
+                    ([label]) =>
+                      !payrollOnly ||
+                      ![
+                        "Наличные на руках",
+                        "Передано, ожидает кассира",
+                      ].includes(String(label))
+                  )
+                  .map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-xs text-muted-foreground">{label}</dt>
+                      <dd className="mt-1 font-medium tabular-nums">
+                        {money(value as number, balance.currency)}
+                      </dd>
+                    </div>
+                  ))}
               </dl>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  disabled={balance.cashMinor <= balance.pendingMinor || busy}
-                  disabledReason={
-                    busy
-                      ? "Операция выполняется."
-                      : "Свободных наличных нет. Дождитесь подтверждения кассира или получите оплату."
-                  }
-                  onClick={() => open("request_handover", balance)}
-                >
-                  Передать в кассу
-                </Button>
+                {!payrollOnly ? (
+                  <Button
+                    variant="secondary"
+                    disabled={balance.cashMinor <= balance.pendingMinor || busy}
+                    disabledReason={
+                      busy
+                        ? "Операция выполняется."
+                        : "Свободных наличных нет. Дождитесь подтверждения кассира или получите оплату."
+                    }
+                    onClick={() => open("request_handover", balance)}
+                  >
+                    Передать в кассу
+                  </Button>
+                ) : null}
                 {!driver ? (
                   <>
                     <Button
@@ -805,7 +839,7 @@ export function AccountingWorkspace({
               </div>
             </div>
           ))}
-          {!driver ? (
+          {!driver && !payrollOnly ? (
             <Button variant="outline" onClick={() => open("accrual")}>
               Начисление водителю
             </Button>
@@ -839,7 +873,7 @@ export function AccountingWorkspace({
               </div>
               {item.status === "pending" ? (
                 <div className="flex gap-2">
-                  {!driver ? (
+                  {!driver && !payrollOnly ? (
                     <Button
                       disabled={busy}
                       disabledReason="Операция выполняется."

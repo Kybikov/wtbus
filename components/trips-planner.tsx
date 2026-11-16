@@ -1,4 +1,5 @@
 "use client"
+import { useTripProfits, ProfitAmount } from "@/components/trip-money-summary"
 import { TripDelaySummary } from "@/components/trip-delay-badge"
 import Link from "next/link"
 import { Textarea } from "@/components/ui/textarea"
@@ -129,6 +130,7 @@ function routePrice(
 }
 
 type TripForm = {
+  currency: string
   kind: "regular" | "individual"
   routeId: string
   origin: string
@@ -349,6 +351,7 @@ function isCustomFieldCollection(
 
 function createEmptyTripForm(day: string): TripForm {
   return {
+    currency: "",
     kind: "regular",
     routeId: "",
     origin: "",
@@ -585,6 +588,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               driverId: route.defaultDriverId || "",
               origin: route.origin,
               destination: route.destination,
+              currency: route.currency,
               price: (route.defaultPriceMinor / 100).toFixed(2),
               pricingMode: route.defaultPricingMode,
             })
@@ -660,8 +664,20 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
               ? ("danger" as const)
               : ("info" as const),
       }))
+  const { items: tripProfits } = useTripProfits()
+  const profitsByTrip = new Map(tripProfits.map((item) => [item.tripId, item]))
   const columns = [
     textColumn<CalendarTrip>("name", "Рейс", (item) => item.title),
+    {
+      ...numberColumn<CalendarTrip>(
+        "netProfit",
+        "Чистая прибыль",
+        (item) => profitsByTrip.get(item.id)?.profitMinor ?? 0
+      ),
+      value: (item: CalendarTrip) => (
+        <ProfitAmount item={profitsByTrip.get(item.id)} />
+      ),
+    },
     statusColumn<CalendarTrip>(
       "status",
       "Статус",
@@ -784,6 +800,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
     const { repeatUntil, weekdays, frequency, interval, monthDay } = tripForm
     const tripPayload = {
       kind: tripForm.kind,
+      currency: tripForm.currency || resources.currency,
       routeId: tripForm.routeId,
       origin: tripForm.origin,
       destination: tripForm.destination,
@@ -1448,6 +1465,7 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                           return {
                             ...current,
                             routeId: value,
+                            currency: route?.currency ?? current.currency,
                             driverId:
                               route?.defaultDriverId || current.driverId,
                             origin: route?.origin ?? current.origin,
@@ -1596,10 +1614,24 @@ export function TripsPlanner({ createForRoute }: { createForRoute?: string }) {
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-semibold">
+                  Валюта рейса
+                  <FieldSelect
+                    aria-label="Валюта рейса"
+                    value={tripForm.currency || resources.currency}
+                    onValueChange={(currency) =>
+                      setTripForm((current) => ({ ...current, currency }))
+                    }
+                    options={["UAH", "PLN", "EUR", "USD"].map((value) => ({
+                      value,
+                      label: value,
+                    }))}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold">
                   {tripForm.pricingMode === "per_booking"
                     ? "Цена за всю бронь"
                     : "Цена за пассажира"}{" "}
-                  · {resources.currency}
+                  · {tripForm.currency || resources.currency}
                   <Input
                     className="h-11 rounded-xl border border-border bg-control px-3 text-sm tabular-nums transition-colors outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30"
                     disabled={isResourcesLoading}

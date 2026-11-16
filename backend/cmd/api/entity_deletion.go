@@ -44,6 +44,7 @@ func deletionSets(entity string) []deletionSet {
 		sets = append(sets, deletionSet{"individual_transfer_requests", "t.customer_id=$1::uuid", "requests", "Заявки клиента", "delete"})
 	case "trips":
 		bookings = "t.trip_id=$1::uuid"
+		sets = append(sets, deletionSet{"trip_crew", "t.trip_id=$1::uuid", "", "Назначения команды рейса", "delete"}, deletionSet{"crew_payroll_accruals", "t.trip_id=$1::uuid", "", "Начисления команды сохранятся в истории расчётов", "retain"}, deletionSet{"money_journal", "t.trip_id=$1::uuid", "", "Финансовая история рейса сохранится", "retain"})
 	case "bookings":
 		bookings = "t.id=$1::uuid"
 	case "routes":

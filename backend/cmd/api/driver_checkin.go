@@ -44,17 +44,33 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	driver := ""
 	var err error
+	if !ownerCash && !crewCompanyManager(actor) {
+		capability := "board"
+		if input.CashMinor != nil {
+			capability = "collect"
+		}
+		allowed, e := tripCrewCan(r.Context(), app.db, company.ID, input.TripID, actor.MembershipID, capability)
+		if e != nil {
+			app.publicFailure(w, e)
+			return
+		}
+		if !allowed {
+			writeJSON(w, 403, map[string]string{"error": "Нет права отмечать посадку или принимать оплату в этом рейсе."})
+			return
+		}
+	}
 	if !ownerCash {
 		driver, err = app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
-			return
+			driver = ""
+			err = nil
 		}
 		if err != nil {
 			app.publicFailure(w, err)
 			return
 		}
 	}
+
 	tx, err := app.db.Begin(r.Context())
 	if err != nil {
 		app.publicFailure(w, err)
@@ -63,9 +79,24 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	// Match cash handover lock order; serialize receipt increments against completion.
 	var locked string
-	if ownerCash {
+	{
 		if _, err = tx.Exec(r.Context(), `SELECT id FROM tenants WHERE id=$1 FOR UPDATE`, company.ID); err != nil {
 			app.publicFailure(w, err)
+			return
+		}
+	}
+	if !ownerCash && !crewCompanyManager(actor) {
+		capability := "board"
+		if input.CashMinor != nil {
+			capability = "collect"
+		}
+		allowed, e := tripCrewCan(r.Context(), tx, company.ID, input.TripID, actor.MembershipID, capability)
+		if e != nil {
+			app.publicFailure(w, e)
+			return
+		}
+		if !allowed {
+			writeJSON(w, 403, map[string]string{"error": "Права на рейс изменились. Обновите назначения."})
 			return
 		}
 	}
@@ -78,7 +109,7 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var phase, tripStatus string
-	err = tx.QueryRow(r.Context(), `SELECT workflow_status_phase(tenant_id,'trips',status),status FROM trips WHERE tenant_id=$1 AND id=$2 AND ($3='' OR driver_id=NULLIF($3,'')::uuid) FOR UPDATE`, company.ID, input.TripID, driver).Scan(&phase, &tripStatus)
+	err = tx.QueryRow(r.Context(), `SELECT workflow_status_phase(tenant_id,'trips',status),status FROM trips WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, company.ID, input.TripID).Scan(&phase, &tripStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "Рейс вам не назначен."})
 		return
@@ -173,9 +204,9 @@ func (app *application) driverCheckin(w http.ResponseWriter, r *http.Request) {
 		}
 		if target > received {
 			var ledger string
-			collector := ""
-			if ownerCash {
-				collector = actor.MembershipID
+			collector := actor.MembershipID
+			if driver != "" {
+				collector = ""
 			}
 			err = tx.QueryRow(r.Context(), `INSERT INTO driver_cash_ledger(tenant_id,driver_id,trip_id,amount_minor,currency,kind,actor_membership_id,source_key,collector_membership_id) VALUES($1,NULLIF($2,'')::uuid,$3,$4,$5,'cash_collected',NULLIF($6,'')::uuid,$7,NULLIF($8,'')::uuid)
  RETURNING id::text`, company.ID, driver, input.TripID, target-received, currency, actor.MembershipID, "booking-cash:"+input.BookingID+":"+strconv.FormatInt(target, 10), collector).Scan(&ledger)

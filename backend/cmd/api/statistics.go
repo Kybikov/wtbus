@@ -274,9 +274,9 @@ func (app *application) statistics(w http.ResponseWriter, r *http.Request) {
 		rows, err = tx.Query(r.Context(), `WITH entries AS (
  SELECT paid_at occurred_at,'bank' kind,'' category,amount_minor revenue,0::bigint expense,0::bigint refund FROM payments WHERE tenant_id=$1 AND currency=$4 AND paid_at>=$2 AND paid_at<$3 AND workflow_status_phase(tenant_id,'payments',status) IN ('paid','refunded')
  UNION ALL SELECT updated_at,'bank','',-amount_minor,0,amount_minor FROM payments WHERE tenant_id=$1 AND currency=$4 AND updated_at>=$2 AND updated_at<$3 AND workflow_status_phase(tenant_id,'payments',status)='refunded'
- UNION ALL SELECT occurred_at,'driver_cash','',amount_minor,0,0 FROM driver_cash_ledger WHERE tenant_id=$1 AND currency=$4 AND kind='cash_collected' AND occurred_at>=$2 AND occurred_at<$3
+ UNION ALL SELECT occurred_at,'driver_cash','',amount_minor,0,0 FROM driver_cash_ledger l WHERE tenant_id=$1 AND currency=$4 AND kind='cash_collected' AND occurred_at>=$2 AND occurred_at<$3 AND NOT EXISTS(SELECT 1 FROM money_journal j JOIN money_reversals v ON v.tenant_id=j.tenant_id AND v.journal_id=j.id WHERE j.tenant_id=l.tenant_id AND j.source_key='driver_cash_ledger:'||l.id::text)
  UNION ALL SELECT occurred_at,'cash','',amount_minor,0,0 FROM company_cash_receipts WHERE tenant_id=$1 AND currency=$4 AND kind='income' AND occurred_at>=$2 AND occurred_at<$3
- UNION ALL SELECT occurred_at,'expense',category,0,amount_minor,0 FROM operational_expenses WHERE tenant_id=$1 AND currency=$4 AND occurred_at>=$2 AND occurred_at<$3)
+ UNION ALL SELECT occurred_at,'expense',category,0,amount_minor,0 FROM operational_expenses e WHERE tenant_id=$1 AND currency=$4 AND occurred_at>=$2 AND occurred_at<$3 AND NOT EXISTS(SELECT 1 FROM money_journal j JOIN money_reversals v ON v.tenant_id=j.tenant_id AND v.journal_id=j.id WHERE j.tenant_id=e.tenant_id AND j.source_key='operational_expenses:'||e.id::text))
  SELECT (occurred_at AT TIME ZONE $5)::date::text,kind,category,sum(revenue)::bigint,sum(expense)::bigint,sum(refund)::bigint FROM entries GROUP BY 1,2,3`, company.ID, low, high, currency, company.Timezone)
 		if err != nil {
 			app.financeFailure(w, err)

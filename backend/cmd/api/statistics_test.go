@@ -118,6 +118,37 @@ func TestStatisticsPostgres(t *testing.T) {
 	if len(empty.Daily) != 3 || empty.Metrics.Bookings != 0 || empty.Finance.Totals.Revenue != 0 {
 		t.Fatal("empty DST dates not padded correctly")
 	}
+	// A native refund/cost correction must not leave the dashboard at the old totals.
+	correctionUser := row(`INSERT INTO users(email,display_name) VALUES('statistics-correction@test.invalid','Owner') RETURNING id::text`)
+	correctionMember := row(`INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'owner') RETURNING id::text`, tenant, correctionUser)
+	receiptID := row(`INSERT INTO driver_cash_ledger(tenant_id,driver_id,amount_minor,currency,kind,occurred_at) VALUES($1,$2,1000,'UAH','cash_collected','2026-10-25 12:00Z') RETURNING id::text`, tenant, driver)
+	costID := row(`INSERT INTO operational_expenses(tenant_id,category,amount_minor,currency,occurred_at) VALUES($1,'other',1000,'UAH','2026-10-25 12:00Z') RETURNING id::text`, tenant)
+	beforeCorrection := call("owner", "statistics-qa", query, 200)
+	if beforeCorrection.Finance.Totals.Revenue != 15000 || beforeCorrection.Finance.Totals.Expenses != 5000 {
+		t.Fatal("new native operations absent", beforeCorrection.Finance.Totals)
+	}
+	for _, source := range []string{"driver_cash_ledger:" + receiptID, "operational_expenses:" + costID} {
+		journal := row(`SELECT id::text FROM money_journal WHERE tenant_id=$1 AND source_key=$2`, tenant, source)
+		tx, e := db.Begin(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		_, e = tx.Exec(ctx, `SELECT id FROM tenants WHERE id=$1 FOR UPDATE`, tenant)
+		if e == nil {
+			_, e = app.moneyReverse(ctx, tx, identity{TenantID: tenant, MembershipID: correctionMember, Role: "owner"}, moneyCommand{ID: journal, RequestID: row(`SELECT gen_random_uuid()::text`), Description: "Test correction"}, time.Now())
+		}
+		if e != nil {
+			tx.Rollback(ctx)
+			t.Fatal(e)
+		}
+		if e = tx.Commit(ctx); e != nil {
+			t.Fatal(e)
+		}
+	}
+	afterCorrection := call("owner", "statistics-qa", query, 200)
+	if afterCorrection.Finance.Totals.Revenue != 14000 || afterCorrection.Finance.Totals.Expenses != 4000 {
+		t.Fatal("reversed operations counted again", afterCorrection.Finance.Totals)
+	}
 	call("driver", "statistics-qa", query, 403)
 	call("developer", "statistics-other", query, 403)
 	call("developer", "statistics-qa", "?currency=XXX", 400)

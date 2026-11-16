@@ -1,6 +1,8 @@
 "use client"
 import { TripDelaySummary } from "@/components/trip-delay-badge"
-import { OwnerBookingCash } from "@/components/owner-booking-cash"
+import { BookingPayments } from "@/components/booking-payments"
+import { TripCrewEditor } from "@/components/trip-crew-editor"
+import { TripMoneySummary } from "@/components/trip-money-summary"
 import { BookingPassengers } from "@/components/booking-passengers"
 import { TripEarlyDeparture } from "@/components/trip-early-departure"
 import type { TripOperations } from "@/lib/trip-operations"
@@ -649,6 +651,8 @@ export function EntityDetailPage({
                   { value: "UAH", label: "UAH" },
                   { value: "PLN", label: "PLN" },
                   { value: "USD", label: "USD" },
+                  { value: "PLN", label: "PLN" },
+                  { value: "USD", label: "USD" },
                 ]
               : [
                     "vehicle_id",
@@ -815,6 +819,8 @@ export function EntityDetailPage({
             options={[
               { value: "EUR", label: "EUR" },
               { value: "UAH", label: "UAH" },
+              { value: "PLN", label: "PLN" },
+              { value: "USD", label: "USD" },
             ]}
             triggerClassName="h-10 w-24 rounded-l-none border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
             value={String(detail.item.currency ?? "EUR")}
@@ -988,14 +994,16 @@ export function EntityDetailPage({
                 Добавить пассажира
               </Button>
             ) : null}
-            {detail.canCollectCash &&
-            (entity === "trips" ||
-              (entity === "bookings" && detail.item.trip_id)) ? (
-              <OwnerBookingCash
+            {entity === "trips" ||
+            (entity === "bookings" && detail.item.trip_id) ? (
+              <BookingPayments
                 tripId={entity === "trips" ? id : String(detail.item.trip_id)}
                 bookingId={entity === "bookings" ? id : undefined}
                 onUpdated={() => void load(true)}
               />
+            ) : null}
+            {entity === "trips" ? (
+              <TripMoneySummary tripId={id} compact />
             ) : null}
             {entity === "trips" ? (
               <TripEarlyDeparture
@@ -1272,30 +1280,35 @@ export function EntityDetailPage({
             </dl>
           }
           related={
-            <EntityRelatedRecords
-              ownerEntity={entity}
-              records={relations}
-              linkAction={
-                entity === "trips" ? (
-                  <TripLinkPicker
-                    item={detail.item}
-                    resources={resources}
-                    onChoose={changeField}
-                    disabledReason={detail.editRestriction}
-                    resourceError={resourceError}
-                  />
-                ) : undefined
-              }
-              createHref={
-                entity === "routes"
-                  ? `/trips?createForRoute=${encodeURIComponent(id)}`
-                  : undefined
-              }
-              createStatus={String(detail.item.status ?? "")}
-              createAvailable={detail.item.is_active === true}
-              createBusy={saveState === "saving"}
-              timezone={detail.timezone}
-            />
+            <>
+              {entity === "trips" ? (
+                <TripCrewEditor tripId={id} onUpdated={() => void load(true)} />
+              ) : null}
+              <EntityRelatedRecords
+                ownerEntity={entity}
+                records={relations}
+                linkAction={
+                  entity === "trips" ? (
+                    <TripLinkPicker
+                      item={detail.item}
+                      resources={resources}
+                      onChoose={changeField}
+                      disabledReason={detail.editRestriction}
+                      resourceError={resourceError}
+                    />
+                  ) : undefined
+                }
+                createHref={
+                  entity === "routes"
+                    ? `/trips?createForRoute=${encodeURIComponent(id)}`
+                    : undefined
+                }
+                createStatus={String(detail.item.status ?? "")}
+                createAvailable={detail.item.is_active === true}
+                createBusy={saveState === "saving"}
+                timezone={detail.timezone}
+              />
+            </>
           }
           activity={
             <EntityActivityTimeline

@@ -30,7 +30,7 @@ const removable = new Set<EntityCollection | "company">([
 ])
 type Preview = {
   token: string
-  effects: { label: string; count: number; operation: "delete" | "unlink" }[]
+  effects: { label: string; count: number; operation: "delete" | "unlink" | "retain" }[]
 }
 
 export function useRecordDeletion(

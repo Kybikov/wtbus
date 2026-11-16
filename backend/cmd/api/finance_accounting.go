@@ -19,14 +19,7 @@ func (app *application) financeFailure(w http.ResponseWriter, err error) {
 
 // Cash is an asset, separate from earned revenue and payroll accruals.
 func companyCash(ctx context.Context, tx pgx.Tx, tenantID, currency string) (int64, error) {
-	var balance int64
-	err := tx.QueryRow(ctx, `SELECT
- coalesce((SELECT sum(amount_minor) FROM company_cash_receipts WHERE tenant_id=$1 AND currency=$2),0)
- +coalesce((SELECT sum(amount_minor) FROM driver_cash_ledger WHERE tenant_id=$1 AND currency=$2 AND kind='collection'),0)
- -coalesce((SELECT sum(amount_minor) FROM operational_expenses WHERE tenant_id=$1 AND currency=$2 AND payment_source='cash'),0)
- -coalesce((SELECT sum(amount_minor) FROM driver_payroll_payouts WHERE tenant_id=$1 AND currency=$2 AND payment_source='cash'),0)
- -coalesce((SELECT sum(amount_minor) FROM finance_tax_payments WHERE tenant_id=$1 AND currency=$2 AND payment_source='cash'),0)`, tenantID, currency).Scan(&balance)
-	return balance, err
+	return moneyAccountBalance(ctx, tx, tenantID, "company", tenantID, currency)
 }
 
 type accountingSettings struct {
@@ -301,7 +294,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 				ID    string              `json:"id"`
 				Actor string              `json:"actor"`
 			}
-			if json.Unmarshal(previous, &saved) != nil || saved.Input != input || (input.Action == "deposit_own_cash" && saved.Actor != actor.MembershipID) {
+			if json.Unmarshal(previous, &saved) != nil || saved.Input != input || saved.Actor != actor.MembershipID {
 				writeJSON(w, 409, map[string]string{"error": "Эта операция уже записана с другими данными."})
 				return
 			}
@@ -342,7 +335,8 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 		_, err = tx.Exec(r.Context(), `SELECT id FROM drivers WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenant.ID, driver)
 		if err == nil && target == "accepted" {
 			var available int64
-			err = tx.QueryRow(r.Context(), `SELECT coalesce(sum(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END),0) FROM driver_cash_ledger WHERE tenant_id=$1 AND driver_id=$2 AND currency=$3`, tenant.ID, driver, currency).Scan(&available)
+			available, err = moneyDriverAvailable(r.Context(), tx, tenant.ID, driver, currency)
+			available += amount // this pending request already reserves its own amount
 			if err == nil && amount > available {
 				writeJSON(w, 409, map[string]string{"error": "У водителя недостаточно наличных. Проверьте остаток."})
 				return
@@ -372,7 +366,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		if input.Source == "cash" && (input.Action == "payout" || input.Action == "expense" || input.Action == "tax_payment") {
-			available, e := companyCash(r.Context(), tx, tenant.ID, input.Currency)
+			available, e := moneyAccountAvailable(r.Context(), tx, tenant.ID, "company", tenant.ID, input.Currency)
 			if e != nil {
 				app.financeFailure(w, e)
 				return
@@ -437,7 +431,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 			}
 		case "deposit_own_cash":
 			var available int64
-			err = tx.QueryRow(r.Context(), `SELECT coalesce(sum(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END),0) FROM driver_cash_ledger WHERE tenant_id=$1 AND collector_membership_id=$2 AND currency=$3`, tenant.ID, actor.MembershipID, input.Currency).Scan(&available)
+			available, err = moneyAccountAvailable(r.Context(), tx, tenant.ID, "member", actor.MembershipID, input.Currency)
 			if err == nil && input.Amount > available {
 				writeJSON(w, 409, map[string]string{"error": "Сумма превышает ваши наличные на руках."})
 				return
@@ -451,7 +445,7 @@ func (app *application) accountingOperation(w http.ResponseWriter, r *http.Reque
 				return
 			}
 			var available int64
-			err = tx.QueryRow(r.Context(), `SELECT coalesce((SELECT sum(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END) FROM driver_cash_ledger WHERE tenant_id=$1 AND driver_id=$2 AND currency=$3),0)-coalesce((SELECT sum(amount_minor) FROM driver_cash_handovers WHERE tenant_id=$1 AND driver_id=$2 AND currency=$3 AND status='pending'),0)`, tenant.ID, input.DriverID, input.Currency).Scan(&available)
+			available, err = moneyDriverAvailable(r.Context(), tx, tenant.ID, input.DriverID, input.Currency)
 			if err == nil && input.Amount > available {
 				writeJSON(w, 409, map[string]string{"error": "Сумма превышает свободный остаток водителя. Проверьте ожидающие передачи."})
 				return

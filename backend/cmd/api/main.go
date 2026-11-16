@@ -200,7 +200,16 @@ func (app *application) routes() http.Handler {
 	}
 	finance := app.requireRoles("owner", "admin", "accountant")
 	drivers := app.requireRoles("driver")
-	tripOperators := app.requireRoles("owner", "admin", "dispatcher", "driver")
+	tripOperators := staff
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/workspace", staff(app.moneyWorkspace))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/workspace", staff(app.requireActiveSubscription(app.moneyWorkspace)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/booking-payments", staff(app.bookingPayments))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/trips", staff(app.tripMoney))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips/{tripID}/crew", staff(app.tripCrew))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/crew", staff(app.requireActiveSubscription(app.tripCrew)))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/me/trips", staff(app.myCrewTrips))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/crew-payroll", staff(app.crewPayroll))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/crew-payroll", staff(app.requireActiveSubscription(app.crewPayroll)))
 	mux.HandleFunc("GET /api/v1/me/preferences", staff(app.getUserPreferences))
 	mux.HandleFunc("PATCH /api/v1/me/preferences", staff(app.updateUserPreferences))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips", operations(app.listTrips))
@@ -230,7 +239,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/availability-blocks", operations(app.listAvailabilityBlocks))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/availability-blocks", operations(app.requireActiveSubscription(app.createAvailabilityBlock)))
 	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/availability-blocks/{blockID}", operations(app.requireActiveSubscription(app.deleteAvailabilityBlock)))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/fleet", tripOperators(app.listFleet))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/fleet", app.requireRoles("owner", "admin", "dispatcher", "driver")(app.listFleet))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/fleet", managers(app.requireActiveSubscription(app.createVehicle)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/fleet/{vehicleID}", managers(app.requireActiveSubscription(app.updateVehicle)))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers", operations(app.listCustomers))
@@ -254,8 +263,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/individual-transfer-requests/{requestID}", operations(app.requireActiveSubscription(app.updateIndividualTransferRequest)))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/gps-points", tripOperators(app.recordGPSPoint))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/cash-summary", drivers(app.driverCashSummary))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", drivers(app.driverPassengers))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/checkin", drivers(app.driverCheckin))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", staff(app.driverPassengers))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/checkin", staff(app.driverCheckin))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/cash-received", drivers(app.confirmDriverCashReceived))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/summary", finance(app.financeSummary))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/accounting", finance(app.accountingSnapshot))
@@ -3023,6 +3032,13 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 	if input.PricingMode == "" {
 		input.PricingMode = defaultPricingMode
 	}
+	if input.Currency != "" {
+		tripCurrency = strings.ToUpper(strings.TrimSpace(input.Currency))
+	}
+	if !validBookingCurrency(tripCurrency) {
+		writeJSON(w, 400, map[string]string{"error": "Выберите валюту UAH, PLN, EUR или USD."})
+		return
+	}
 	input.PricingMode = normalizePricingMode(input.PricingMode)
 	if len([]rune(input.Origin)) > 120 || len([]rune(input.Destination)) > 120 || len([]rune(input.Notes)) > 2000 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip notes are too long"})
@@ -3222,6 +3238,13 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(input.PricingMode) == "" {
 			input.PricingMode = defaultPricingMode
 		}
+	}
+	if input.Currency != "" {
+		tripCurrency = strings.ToUpper(strings.TrimSpace(input.Currency))
+	}
+	if !validBookingCurrency(tripCurrency) {
+		writeJSON(w, 400, map[string]string{"error": "Выберите валюту UAH, PLN, EUR или USD."})
+		return
 	}
 	input.PricingMode = normalizePricingMode(input.PricingMode)
 	if len([]rune(input.Origin)) > 120 || len([]rune(input.Destination)) > 120 || len([]rune(input.Notes)) > 2000 {
@@ -3616,17 +3639,16 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	actor, _ := identityFromContext(r.Context())
-	driverID := ""
-	if actor, authenticated := identityFromContext(r.Context()); authenticated && actor.Role == "driver" {
-		var err error
-		driverID, err = app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
+	driverID := "" // authorization follows the crew assignment, not the driver's company role.
+	crewOperator := !crewCompanyManager(actor)
+	if crewOperator {
+		allowed, e := tripCrewCan(r.Context(), app.db, tenant.ID, tripID, actor.MembershipID, "manage")
+		if e != nil {
+			app.publicFailure(w, e)
 			return
 		}
-		if err != nil {
-			app.log.Error("load driver profile", "error", err, "tenant", slug)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not change trip status"})
+		if !allowed {
+			writeJSON(w, 403, map[string]string{"error": "У вас нет права управлять этим рейсом."})
 			return
 		}
 	}
@@ -3639,6 +3661,21 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 	}
 	defer tx.Rollback(r.Context())
 
+	if _, err = tx.Exec(r.Context(), `SELECT id FROM tenants WHERE id=$1 FOR UPDATE`, tenant.ID); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	if crewOperator {
+		allowed, e := tripCrewCan(r.Context(), tx, tenant.ID, tripID, actor.MembershipID, "manage")
+		if e != nil {
+			app.publicFailure(w, e)
+			return
+		}
+		if !allowed {
+			writeJSON(w, 403, map[string]string{"error": "Право управления рейсом изменилось. Обновите назначения."})
+			return
+		}
+	}
 	// Serialize actual departures with receipts/handovers and other starts by this driver.
 	var resource string
 	err = tx.QueryRow(r.Context(), `SELECT d.id::text FROM drivers d WHERE d.tenant_id=$1 AND d.id=(SELECT driver_id FROM trips WHERE id=$2 AND tenant_id=$1) FOR UPDATE`, tenant.ID, tripID).Scan(&resource)
@@ -3732,7 +3769,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip status does not exist"})
 		return
 	}
-	if driverID != "" && nextMeta.Phase != "in_progress" && nextMeta.Phase != "completed" && input.Status != "boarding" {
+	if crewOperator && nextMeta.Phase != "in_progress" && nextMeta.Phase != "completed" && input.Status != "boarding" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Водителю доступны начало посадки, выезд и завершение своего рейса."})
 		return
 	}
@@ -3760,7 +3797,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, 409, map[string]string{"error": "До времени отправления выехать можно, только если все пассажиры на месте или диспетчер разрешил ранний выезд."})
 			return
 		}
-		if driverID != "" {
+		{
 			var waiting bool
 			err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings b LEFT JOIN driver_booking_checkins c ON c.booking_id=b.id AND c.tenant_id=b.tenant_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' AND EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting') NOT IN ('boarded','absent')))`, tenant.ID, tripID).Scan(&waiting)
 			if err != nil {
@@ -3808,31 +3845,8 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			app.publicFailure(w, err)
 			return
 		}
-		var cashDue, cashCollected int64
-		if err := tx.QueryRow(r.Context(), `
-			SELECT
-				COALESCE((
-					SELECT SUM(price_minor) FROM bookings booking
-					WHERE booking.tenant_id = $1 AND booking.trip_id = $2
-					  AND workflow_status_phase(booking.tenant_id,'bookings',booking.status) = 'confirmed'
-					  AND NOT EXISTS (
-						SELECT 1 FROM payments payment
-						WHERE payment.tenant_id=booking.tenant_id AND payment.booking_id=booking.id AND payment.payment_method='bank_transfer'
-					  )
-				), 0),
-				COALESCE((
-					SELECT SUM(amount_minor) FROM driver_cash_ledger
-					WHERE tenant_id = $1 AND trip_id = $2 AND kind = 'cash_collected'
-				), 0)
-		`, tenant.ID, tripID).Scan(&cashDue, &cashCollected); err != nil {
-			app.log.Error("load trip cash receipt", "error", err, "tenant", slug, "trip", tripID)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not verify trip cash receipt"})
-			return
-		}
-		if cashDue != cashCollected {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "cash payment must be confirmed by the driver before completing this trip"})
-			return
-		}
+		// Completing transport does not forgive an outstanding booking debt.
+
 	}
 
 	err = tx.QueryRow(r.Context(), `
@@ -3903,25 +3917,37 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not complete trip bookings"})
 			return
 		}
-		if _, err := tx.Exec(r.Context(), `
+		customCrewPay, payErr := tripCrewOwnsPrimaryPayroll(r.Context(), tx, tenant.ID, trip.ID)
+		if payErr != nil {
+			app.publicFailure(w, payErr)
+			return
+		}
+		if !customCrewPay {
+			if _, err := tx.Exec(r.Context(), `
 			INSERT INTO operational_expenses(tenant_id,trip_id,category,amount_minor,currency,description,occurred_at,actor_membership_id)
 			SELECT tenant_id,id,'driver_pay',driver_pay_minor,currency,'Зарплата водителя за рейс',now(),NULLIF($3,'')::uuid
 			FROM trips WHERE id=$1 AND tenant_id=$2 AND driver_pay_minor>0
 			ON CONFLICT (tenant_id,trip_id) WHERE category='driver_pay' AND trip_id IS NOT NULL DO NOTHING
 		`, trip.ID, tenant.ID, actor.MembershipID); err != nil {
-			app.log.Error("record trip driver pay", "error", err, "tenant", slug, "trip", tripID)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record driver pay"})
+				app.log.Error("record trip driver pay", "error", err, "tenant", slug, "trip", tripID)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record driver pay"})
+				return
+			}
+			var expenseID string
+			payrollErr := tx.QueryRow(r.Context(), "SELECT id::text FROM operational_expenses WHERE tenant_id=$1 AND trip_id=$2 AND category='driver_pay'", tenant.ID, trip.ID).Scan(&expenseID)
+			if payrollErr == nil {
+				payrollErr = app.ensurePayrollAccrual(r.Context(), tx, tenant.ID, expenseID)
+			}
+			if payrollErr != nil && !errors.Is(payrollErr, pgx.ErrNoRows) {
+				app.publicFailure(w, payrollErr)
+				return
+			}
+		}
+		if err := app.accrueTripCrewPay(r.Context(), tx, tenant.ID, trip.ID, actor); err != nil {
+			app.publicFailure(w, err)
 			return
 		}
-		var expenseID string
-		payrollErr := tx.QueryRow(r.Context(), "SELECT id::text FROM operational_expenses WHERE tenant_id=$1 AND trip_id=$2 AND category='driver_pay'", tenant.ID, trip.ID).Scan(&expenseID)
-		if payrollErr == nil {
-			payrollErr = app.ensurePayrollAccrual(r.Context(), tx, tenant.ID, expenseID)
-		}
-		if payrollErr != nil && !errors.Is(payrollErr, pgx.ErrNoRows) {
-			app.publicFailure(w, payrollErr)
-			return
-		}
+
 	}
 	if err := recordAutomaticStatus(r.Context(), tx, tenant.ID, "trips", tripID, currentStatus, input.Status, actor.MembershipID); err != nil {
 		app.publicFailure(w, err)
@@ -5958,13 +5984,23 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle and valid coordinates are required"})
 		return
 	}
+	tx, err := app.db.Begin(r.Context())
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err = tx.Exec(r.Context(), `SELECT id FROM tenants WHERE id=$1 FOR UPDATE`, tenant.ID); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
 	actor, _ := identityFromContext(r.Context())
 	if input.MembershipID != "" && input.MembershipID != actor.MembershipID {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "GPS membership no longer matches the session"})
 		return
 	}
 	var vehicleExists bool
-	if err := app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM vehicles WHERE id=$1 AND tenant_id=$2 AND is_active)`, input.VehicleID, tenant.ID).Scan(&vehicleExists); err != nil {
+	if err := tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM vehicles WHERE id=$1 AND tenant_id=$2 AND is_active)`, input.VehicleID, tenant.ID).Scan(&vehicleExists); err != nil {
 		app.log.Error("check GPS vehicle", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not check GPS vehicle; retry later"})
 		return
@@ -5973,39 +6009,27 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle is unavailable"})
 		return
 	}
-	driverID := ""
-	if actor, authenticated := identityFromContext(r.Context()); authenticated && actor.Role == "driver" {
-		var err error
-		driverID, err = app.activeDriverID(r.Context(), tenant.ID, actor.MembershipID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
-			return
-		}
-		if err != nil {
-			app.log.Error("load driver profile", "error", err, "tenant", slug)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record location"})
-			return
-		}
-		if strings.TrimSpace(input.TripID) == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a driver must transmit GPS for an assigned trip"})
-			return
-		}
+	if input.TripID == "" && !crewCompanyManager(actor) {
+		writeJSON(w, 400, map[string]string{"error": "Выберите назначенный рейс для передачи GPS."})
+		return
 	}
 	if input.TripID != "" {
-		var tripExists bool
-		if err := app.db.QueryRow(r.Context(), `
-			SELECT EXISTS(
-				SELECT 1 FROM trips
-				WHERE id=$1 AND tenant_id=$2 AND vehicle_id=$3
-				  AND (NULLIF($4, '')::uuid IS NULL OR (driver_id = NULLIF($4, '')::uuid AND workflow_status_phase(tenant_id,'trips',status) IN ('assigned','in_progress')))
-			)
-		`, input.TripID, tenant.ID, input.VehicleID, driverID).Scan(&tripExists); err != nil {
-			app.log.Error("check GPS trip", "error", err)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not check GPS trip; retry later"})
+		allowed, e := tripCrewCan(r.Context(), tx, tenant.ID, input.TripID, actor.MembershipID, "gps")
+		if e != nil {
+			app.publicFailure(w, e)
 			return
 		}
-		if !tripExists {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trip is unavailable for this vehicle"})
+		if !allowed {
+			writeJSON(w, 403, map[string]string{"error": "GPS передаёт назначенный ответственный участник команды."})
+			return
+		}
+		var exists bool
+		if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE tenant_id=$1 AND id=$2 AND vehicle_id=$3 AND workflow_status_phase(tenant_id,'trips',status) IN ('planned','assigned','in_progress'))`, tenant.ID, input.TripID, input.VehicleID).Scan(&exists); e != nil {
+			app.publicFailure(w, e)
+			return
+		}
+		if !exists {
+			writeJSON(w, 409, map[string]string{"error": "Рейс завершён или автомобиль изменён. Обновите список рейсов."})
 			return
 		}
 	}
@@ -6018,7 +6042,7 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var id int64
-	err := app.db.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		INSERT INTO gps_points (tenant_id,vehicle_id,trip_id,recorded_at,latitude,longitude,accuracy_meters,client_point_id,membership_id)
 		VALUES ($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid)
 		ON CONFLICT (tenant_id, client_point_id) WHERE client_point_id IS NOT NULL
@@ -6038,6 +6062,10 @@ func (app *application) recordGPSPoint(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.log.Error("record gps", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record location"})
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "recordedAt": recordedAt})
@@ -6868,6 +6896,10 @@ func (app *application) recordDriverCash(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if _, err = tx.Exec(r.Context(), `SELECT id FROM tenants WHERE id=$1 FOR UPDATE`, tenant.ID); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
 	var driverExists bool
 	if err := tx.QueryRow(r.Context(), `SELECT is_active FROM drivers WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, input.DriverID, tenant.ID).Scan(&driverExists); err != nil || (!driverExists && input.Kind != "collection") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver is unavailable"})
@@ -6882,14 +6914,12 @@ func (app *application) recordDriverCash(w http.ResponseWriter, r *http.Request)
 	}
 	if input.Kind == "collection" {
 		var availableMinor int64
-		if err := tx.QueryRow(r.Context(), `
-			SELECT COALESCE(SUM(CASE WHEN kind='cash_collected' THEN amount_minor ELSE -amount_minor END),0)
-			FROM driver_cash_ledger WHERE tenant_id=$1 AND driver_id=$2 AND currency=$3
-		`, tenant.ID, input.DriverID, input.Currency).Scan(&availableMinor); err != nil {
-			app.log.Error("load driver cash balance", "error", err, "tenant", slug, "driver", input.DriverID)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record cash operation"})
+		availableMinor, err = moneyDriverAvailable(r.Context(), tx, tenant.ID, input.DriverID, input.Currency)
+		if err != nil {
+			app.publicFailure(w, err)
 			return
 		}
+
 		if input.AmountMinor > availableMinor {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "cash hand-in exceeds the driver's available balance"})
 			return

@@ -129,6 +129,9 @@ func (app *application) loadMonobankRates(ctx context.Context, fetch bool) ([]mo
 	return items, true, err
 }
 func (app *application) storeMonobankRates(ctx context.Context, tenantID, base string, items []monobankRate) error {
+	if err := app.storeMoneyRateHistory(ctx, tenantID, items); err != nil {
+		return err
+	}
 	valid := make([]monobankRate, 0)
 	codes := map[string]int{"EUR": 978, "USD": 840, "PLN": 985}
 	for _, q := range monobankQuotes(items) {

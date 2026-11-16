@@ -200,7 +200,11 @@ function BoardingSelect({
                 {option.label}
               </Button>
             ))}
-            <Button nativeButton={false} render={<a href={`tel:${booking.phone}`} />} variant="ghost">
+            <Button
+              nativeButton={false}
+              render={<a href={`tel:${booking.phone}`} />}
+              variant="ghost"
+            >
               Позвонить · {booking.phone}
             </Button>
           </div>
@@ -212,9 +216,13 @@ function BoardingSelect({
 export function DriverPassengerManifest({
   tripId,
   onChange,
+  canBoard = true,
+  payments = true,
 }: {
   tripId: string
   onChange?: () => void
+  canBoard?: boolean
+  payments?: boolean
 }) {
   const [items, setItems] = React.useState<ManifestBooking[] | null>(null)
   const [error, setError] = React.useState("")
@@ -336,6 +344,7 @@ export function DriverPassengerManifest({
                 ? booking.amountMinor
                 : (booking.cashMinor ?? 0)
             const canReceive =
+              payments &&
               booking.paymentMethod === "cash_on_boarding" &&
               received < booking.amountMinor
             const hasBoarded = Object.values(booking.boarding ?? {}).includes(
@@ -354,6 +363,17 @@ export function DriverPassengerManifest({
                       : booking.seats === 1
                         ? booking.name
                         : `${booking.name} · пассажир ${index + 1}`
+                    if (!canBoard)
+                      return (
+                        <p key={index} className="py-2 text-sm">
+                          {name} ·{" "}
+                          {booking.boarding?.[String(index)] === "boarded"
+                            ? "Пришёл"
+                            : booking.boarding?.[String(index)] === "absent"
+                              ? "Не пришёл"
+                              : "Ожидаем"}
+                        </p>
+                      )
                     return (
                       <BoardingSelect
                         key={index}

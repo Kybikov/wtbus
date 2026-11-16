@@ -211,8 +211,8 @@ const navigation: NavigationItem[] = [
   {
     href: "/driver",
     icon: Car01Icon,
-    label: "Мой рейс",
-    roles: ["driver", "developer"],
+    label: "Мои рейсы",
+    roles: ["owner", "admin", "dispatcher", "accountant", "driver", "developer"],
   },
 ]
 const defaultShellBrand: ShellBrand = {

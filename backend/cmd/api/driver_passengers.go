@@ -2,11 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 )
 
 type driverManifestBooking struct {
@@ -40,32 +37,31 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 403, map[string]string{"error": "Доступно владельцу компании."})
 		return
 	}
-	driverID := ""
 	var err error
-	if !ownerCash {
-		driverID, err = app.activeDriverID(r.Context(), company.ID, actor.MembershipID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, 403, map[string]string{"error": "Доступ к рейсам водителя ещё не настроен."})
-			return
-		}
-		if err != nil {
-			app.publicFailure(w, err)
-			return
-		}
-	}
 	tripID := r.URL.Query().Get("tripId")
 	if !publicUUID.MatchString(tripID) {
 		writeJSON(w, 400, map[string]string{"error": "trip is required"})
 		return
 	}
-	var assigned bool
-	if err = app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND tenant_id=$2 AND ($3='' OR driver_id=NULLIF($3,'')::uuid) AND workflow_status_phase(tenant_id,'trips',status) IN ('planned','assigned','in_progress'))`, tripID, company.ID, driverID).Scan(&assigned); err != nil {
+	var tripExists bool
+	if err = app.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM trips WHERE tenant_id=$1 AND id=$2)`, company.ID, tripID).Scan(&tripExists); err != nil {
 		app.publicFailure(w, err)
 		return
 	}
-	if !assigned {
-		writeJSON(w, 403, map[string]string{"error": "trip is not assigned to this driver"})
+	if !tripExists {
+		writeJSON(w, 403, map[string]string{"error": "Рейс недоступен в этой компании."})
 		return
+	}
+	if !ownerCash && !crewCompanyManager(actor) {
+		allowed, e := tripCrewCan(r.Context(), app.db, company.ID, tripID, actor.MembershipID, "read")
+		if e != nil {
+			app.publicFailure(w, e)
+			return
+		}
+		if !allowed {
+			writeJSON(w, 403, map[string]string{"error": "Вы не назначены в команду этого рейса."})
+			return
+		}
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT b.id::text,COALESCE(b.custom_data->>'passenger_name',c.full_name,''),COALESCE(b.custom_data->>'passenger_phone',c.phone_e164),b.seats,COALESCE(b.custom_data->'passengers','[]'::jsonb),
  CASE WHEN p.payment_method='bank_transfer' OR b.custom_data->>'payment_method'='bank_transfer' THEN 'bank_transfer'
@@ -76,7 +72,7 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
  FROM bookings b JOIN customers c ON c.id=b.customer_id AND c.tenant_id=b.tenant_id
  LEFT JOIN driver_booking_checkins checkin ON checkin.booking_id=b.id AND checkin.tenant_id=b.tenant_id
  LEFT JOIN LATERAL (SELECT payment_method,status FROM payments WHERE tenant_id=b.tenant_id AND booking_id=b.id ORDER BY created_at DESC,id DESC LIMIT 1) p ON true
- WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY b.created_at`, company.ID, tripID)
+ WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY b.created_at`, company.ID, tripID)
 	if err != nil {
 		app.publicFailure(w, err)
 		return

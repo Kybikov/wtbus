@@ -125,7 +125,7 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	cash := int64(50000)
 	check := driverCheckinRequest{TripID: trip, BookingID: passengerBooking, CashMinor: &cash}
 	call(driver, "POST", company+"/driver/checkin", check, 409)
-	call(other, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "boarded"}, 404)
+	call(other, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "boarded"}, 403)
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "boarded"}, 200)
 	if got := row(`SELECT status FROM trips WHERE id=$1`, trip); got != "boarding" {
 		t.Fatalf("first arrival must start boarding: %s", got)
@@ -165,7 +165,7 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	cash = 200000
 
 	call(driver, "POST", company+"/driver/cash-received", confirmDriverCashReceivedRequest{TripID: trip}, 409)
-	call(other, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 404)
+	call(other, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 403)
 	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "in_progress"}, 409)
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &zeroIndex, Boarding: "absent", ExpectedBoarding: "waiting"}, 409)
 	call(driver, "POST", company+"/driver/checkin", driverCheckinRequest{TripID: trip, BookingID: passengerBooking, PassengerIndex: &secondIndex, Boarding: "absent", ExpectedBoarding: "waiting"}, 200)
@@ -183,7 +183,7 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 			t.Fatalf("partial payment absent from booking list: %+v", booking)
 		}
 	}
-	// Partial receipt prevents completion. An unresolved second passenger also blocks it.
+	// Unresolved attendance blocks completion; financial debt is tracked separately.
 	call(driver, "POST", company+"/driver/cash-received", confirmDriverCashReceivedRequest{TripID: trip}, 409)
 	call(driver, "PATCH", company+"/trips/"+trip, changeTripStatusRequest{Status: "completed"}, 409)
 	// Simultaneous retries must create only one top-up receipt.

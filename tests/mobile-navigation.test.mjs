@@ -58,9 +58,10 @@ test("saved dock shortcuts retain order and reject duplicates, invalid entries a
 })
 test("dispatcher mobile search cannot suggest management or finance pages", () => {
   const pages = mobileNavigation("dispatcher").map((item) => item.href)
-  for (const href of ["/finance", "/settings", "/team", "/driver"])
+  for (const href of ["/finance", "/settings", "/team"])
     assert.equal(pages.includes(href), false)
   for (const href of [
+    "/driver",
     "/routes",
     "/trips",
     "/bookings",

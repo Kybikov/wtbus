@@ -56,6 +56,9 @@ func companyCleanupSets() []deletionSet {
 	for _, entry := range entries {
 		sets = append(sets, deletionSet{entry.table, "$1::uuid=$2::uuid", entry.entity, entry.label, "delete"})
 	}
+	for _, item := range []struct{ table, label string }{{"money_journal", "Финансовая история и остатки сохранятся"}, {"money_transfers", "Передачи денег сохранятся"}, {"crew_payroll_accruals", "Расчёты с командой сохранятся"}} {
+		sets = append(sets, deletionSet{item.table, "$1::uuid=$2::uuid", "", item.label, "retain"})
+	}
 	return sets
 }
 
@@ -113,6 +116,9 @@ func (app *application) companyCleanup(w http.ResponseWriter, r *http.Request, t
 		return
 	}
 	for _, set := range companyCleanupSets() {
+		if set.operation == "retain" {
+			continue
+		}
 		if err = app.deleteRecordSet(r.Context(), tx, set, tenant, tenant, actor); err != nil {
 			app.deletionFailure(w, err)
 			return
