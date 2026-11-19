@@ -156,7 +156,7 @@ function CrewRow({
           })
         }
       />
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-x-4 gap-y-1">
         {(
           [
             ["canDrive", "Управление автомобилем"],
@@ -170,27 +170,31 @@ function CrewRow({
             (key === "canDrive" || key === "canGPS") && draft.role !== "driver"
           const gpsBlocked = key === "canGPS" && !draft.canDrive
           return (
-            <DeliverySwitch
-              key={key}
-              label={label}
-              checked={draft[key]}
-              disabled={!canEdit || roleBlocked || gpsBlocked}
-              disabledReason={
-                !canEdit
-                  ? reason
-                  : roleBlocked
-                    ? "Выберите роль водителя."
-                    : gpsBlocked
-                      ? "Разрешите управление автомобилем этому водителю."
-                      : undefined
-              }
-              onChange={(checked) =>
-                change({
-                  [key]: checked,
-                  ...(key === "canDrive" && !checked ? { canGPS: false } : {}),
-                })
-              }
-            />
+            <div key={key} className="flex items-center justify-between gap-3">
+              <span className="text-sm">{label}</span>
+              <DeliverySwitch
+                label={label}
+                checked={draft[key]}
+                disabled={!canEdit || roleBlocked || gpsBlocked}
+                disabledReason={
+                  !canEdit
+                    ? reason
+                    : roleBlocked
+                      ? "Выберите роль водителя."
+                      : gpsBlocked
+                        ? "Разрешите управление автомобилем этому водителю."
+                        : undefined
+                }
+                onChange={(checked) =>
+                  change({
+                    [key]: checked,
+                    ...(key === "canDrive" && !checked
+                      ? { canGPS: false }
+                      : {}),
+                  })
+                }
+              />
+            </div>
           )
         })}
       </div>
@@ -214,7 +218,7 @@ function CrewRow({
                   toast.error("Укажите неотрицательную сумму оплаты.")
                   return
                 }
-                change({ payMinor: value })
+                if (value !== draft.payMinor) change({ payMinor: value })
               }}
             />
           </label>
@@ -281,7 +285,10 @@ function TripCrewWorkspace({
       !data.items.some((item) => item.membershipId === member.membershipId)
   )
   return (
-    <section className="min-w-0 space-y-3" aria-label="Команда рейса">
+    <section
+      className="min-w-0 space-y-3 px-3 sm:px-4"
+      aria-label="Команда рейса"
+    >
       <h3 className="font-semibold">Команда рейса</h3>
       {error && (
         <p role="alert" className="text-sm text-destructive">

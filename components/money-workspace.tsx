@@ -56,7 +56,7 @@ const categoryNames: Record<string, string> = {
   fuel: "Топливо",
   tolls: "Дороги и парковка",
   wash: "Мойка",
-  maintenance: "Обслуживание",
+  amortization: "Обслуживание",
   supplies: "Хозяйственные расходы",
   staff_pay: "Оплата персоналу",
   other: "Прочее",
@@ -119,7 +119,7 @@ function CommandDialog({
   tripId?: string
 }) {
   const spendable = data.wallets.filter(
-    (wallet) => canSpend(wallet, data) && wallet.ownerType !== "system"
+    (wallet) => canSpend(wallet, data) && wallet.availableMinor > 0
   )
   const eligible =
     command.action === "deposit"
@@ -134,7 +134,7 @@ function CommandDialog({
   const [targetAmount, setTargetAmount] = React.useState("")
   const [currency, setCurrency] = React.useState("EUR")
   const [targetCurrency, setTargetCurrency] = React.useState("UAH")
-  const [targetKind, setTargetKind] = React.useState("company")
+  const [recipientKind, setRecipientKind] = React.useState("company")
   const [targetMember, setTargetMember] = React.useState("")
   const [selectedTrip, setSelectedTrip] = React.useState(tripId ?? "")
   const [category, setCategory] = React.useState("other")
@@ -146,6 +146,8 @@ function CommandDialog({
   const identity = React.useRef<MoneyRequestIdentity | null>(null)
   const occurred = React.useRef({ day, at: moneyOperationTimestamp(day) })
   const account = eligible.find((wallet) => wallet.accountId === accountId)
+  const fromCompany = account?.ownerType === "company"
+  const targetKind = fromCompany ? "member" : recipientKind
   const minor = parseMoneyInput(amount),
     targetMinor = parseMoneyInput(targetAmount)
   const needsWallet = command.action !== "rate" && command.action !== "reverse"
@@ -251,7 +253,7 @@ function CommandDialog({
       }}
     >
       <DialogContent className="max-h-[min(85dvh,var(--mobile-viewport-height,85dvh))] min-w-0 overflow-y-auto">
-        <DialogHeader>
+        <DialogHeader className="pr-10">
           <DialogTitle>{titles[command.action]}</DialogTitle>
           <DialogDescription>
             {command.action === "transfer"
@@ -357,9 +359,11 @@ function CommandDialog({
                 Кому передаёте
                 <FieldSelect
                   value={targetKind}
-                  onValueChange={setTargetKind}
+                  onValueChange={setRecipientKind}
                   options={[
-                    { value: "company", label: "В кассу компании" },
+                    ...(fromCompany
+                      ? []
+                      : [{ value: "company", label: "В кассу компании" }]),
                     { value: "member", label: "Сотруднику" },
                   ]}
                 />
@@ -467,9 +471,16 @@ function CommandDialog({
   )
 }
 
-export function MoneyWorkspace({ tripId }: { tripId?: string }) {
+export function MoneyWorkspace({
+  tripId,
+  showTripReports = true,
+}: {
+  tripId?: string
+  showTripReports?: boolean
+}) {
   const [data, setData] = React.useState<MoneyWorkspaceData | null>(null)
   const [profits, setProfits] = React.useState<TripProfit[]>([])
+  const [reportError, setReportError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState("")
   const [command, setCommand] = React.useState<Command | null>(null)
@@ -492,22 +503,41 @@ export function MoneyWorkspace({ tripId }: { tripId?: string }) {
     setLoading(true)
     setError("")
     try {
-      const [workspace, report] = await Promise.all([
-        request<MoneyWorkspaceData>(),
-        request<{ items: TripProfit[] }>(
-          "profits",
-          undefined,
-          tripId ? { tripId } : undefined
-        ),
-      ])
-      setData(workspace)
-      setProfits(report.items ?? [])
+      setData(await request<MoneyWorkspaceData>())
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось загрузить кассы.")
     } finally {
       setLoading(false)
     }
-  }, [tripId])
+  }, [])
+  React.useEffect(() => {
+    if (!showTripReports) return
+    let current = true
+    void request<{ items: TripProfit[] }>(
+      "profits",
+      undefined,
+      tripId ? { tripId } : undefined
+    ).then(
+      (report) => {
+        if (current) {
+          setProfits(report.items ?? [])
+          setReportError("")
+        }
+      },
+      (error: unknown) => {
+        if (current) {
+          setReportError(
+            error instanceof Error
+              ? error.message
+              : "Не удалось загрузить результаты рейсов."
+          )
+        }
+      }
+    )
+    return () => {
+      current = false
+    }
+  }, [data, showTripReports, tripId])
   React.useEffect(() => {
     const frame = requestAnimationFrame(() => void load())
     return () => cancelAnimationFrame(frame)
@@ -589,13 +619,18 @@ export function MoneyWorkspace({ tripId }: { tripId?: string }) {
       .filter((wallet) => wallet.currency === code)
       .reduce((sum, wallet) => sum + wallet.availableMinor, 0),
   }))
-  const hasWallet = wallets.some((wallet) => canSpend(wallet, data))
+  const hasWallet = wallets.some(
+    (wallet) => canSpend(wallet, data) && wallet.availableMinor > 0
+  )
+  const canDeposit = mine.some(
+    (wallet) => wallet.ownerType === "member" && wallet.availableMinor > 0
+  )
   const pendingReason = busy
     ? "Дождитесь результата текущей операции."
     : loading
       ? "Дождитесь обновления касс."
       : !hasWallet
-        ? "У вас нет доступной кассы для этой операции."
+        ? "В доступных вам кассах нет свободных средств."
         : ""
   const empty = (text: string) => (
     <p className="py-6 text-center text-sm text-muted-foreground">{text}</p>
@@ -642,10 +677,10 @@ export function MoneyWorkspace({ tripId }: { tripId?: string }) {
             <Button
               size="sm"
               variant="outline"
-              disabled={!!pendingReason || !mine.length}
+              disabled={!!pendingReason || !canDeposit}
               disabledReason={
                 pendingReason ||
-                "На руках пока нет средств для внесения в кассу."
+                "На руках нет свободных средств для внесения в кассу."
               }
               onClick={() => setCommand({ action: "deposit" })}
             >
@@ -780,7 +815,9 @@ export function MoneyWorkspace({ tripId }: { tripId?: string }) {
           <TabsTrigger value="receipts">Оплаты</TabsTrigger>
           <TabsTrigger value="expenses">Расходы</TabsTrigger>
           <TabsTrigger value="wallets">Все кассы</TabsTrigger>
-          <TabsTrigger value="trips">Рейсы</TabsTrigger>
+          {showTripReports ? (
+            <TabsTrigger value="trips">Рейсы</TabsTrigger>
+          ) : null}
         </TabsList>
         <TabsContent value="transfers">
           <div className="surface-card min-w-0 p-3 sm:p-4">
@@ -1060,68 +1097,75 @@ export function MoneyWorkspace({ tripId }: { tripId?: string }) {
             {!wallets.length ? empty("Кассы пока пусты.") : null}
           </div>
         </TabsContent>
-        <TabsContent value="trips">
-          <div className="surface-card min-w-0 divide-y p-3 sm:p-4">
-            {profits
-              .filter(
+        {showTripReports ? (
+          <TabsContent value="trips">
+            {reportError ? (
+              <p role="alert" className="pb-3 text-sm text-destructive">
+                {reportError}
+              </p>
+            ) : null}
+            <div className="surface-card min-w-0 divide-y p-3 sm:p-4">
+              {profits
+                .filter(
+                  (row) =>
+                    (!trip || row.tripId === trip) &&
+                    (!currency || row.currency === currency)
+                )
+                .map((row) => (
+                  <article
+                    key={row.tripId}
+                    className="grid min-w-0 gap-3 py-3 first:pt-0 lg:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,.6fr))]"
+                  >
+                    <Link
+                      href={`/trips/${encodeURIComponent(row.tripId)}`}
+                      className="font-medium hover:text-primary"
+                    >
+                      {data.trips.find((item) => item.id === row.tripId)
+                        ?.label ?? "Рейс"}
+                    </Link>
+                    <div className="text-sm">
+                      <p className="text-xs text-muted-foreground">Получено</p>
+                      {row.rateMissing
+                        ? "—"
+                        : formatMoney(row.revenueMinor, row.currency)}
+                    </div>
+                    <div className="text-sm">
+                      <p className="text-xs text-muted-foreground">Расходы</p>
+                      {row.rateMissing
+                        ? "—"
+                        : formatMoney(row.expenseMinor, row.currency)}
+                    </div>
+                    <div className="text-sm">
+                      <p className="text-xs text-muted-foreground">Результат</p>
+                      <strong
+                        className={
+                          row.rateMissing
+                            ? "text-muted-foreground"
+                            : row.profitMinor < 0
+                              ? "text-destructive"
+                              : "text-emerald-600 dark:text-emerald-400"
+                        }
+                      >
+                        {row.rateMissing
+                          ? "Нужен курс за дату"
+                          : formatMoney(row.profitMinor, row.currency)}
+                      </strong>
+                      <p className="text-xs text-muted-foreground">
+                        Долг {formatMoney(row.outstandingMinor, row.currency)}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              {!profits.some(
                 (row) =>
                   (!trip || row.tripId === trip) &&
                   (!currency || row.currency === currency)
               )
-              .map((row) => (
-                <article
-                  key={row.tripId}
-                  className="grid min-w-0 gap-3 py-3 first:pt-0 lg:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,.6fr))]"
-                >
-                  <Link
-                    href={`/trips/${encodeURIComponent(row.tripId)}`}
-                    className="font-medium hover:text-primary"
-                  >
-                    {data.trips.find((item) => item.id === row.tripId)?.label ??
-                      "Рейс"}
-                  </Link>
-                  <div className="text-sm">
-                    <p className="text-xs text-muted-foreground">Получено</p>
-                    {row.rateMissing
-                      ? "—"
-                      : formatMoney(row.revenueMinor, row.currency)}
-                  </div>
-                  <div className="text-sm">
-                    <p className="text-xs text-muted-foreground">Расходы</p>
-                    {row.rateMissing
-                      ? "—"
-                      : formatMoney(row.expenseMinor, row.currency)}
-                  </div>
-                  <div className="text-sm">
-                    <p className="text-xs text-muted-foreground">Результат</p>
-                    <strong
-                      className={
-                        row.rateMissing
-                          ? "text-muted-foreground"
-                          : row.profitMinor < 0
-                            ? "text-destructive"
-                            : "text-emerald-600 dark:text-emerald-400"
-                      }
-                    >
-                      {row.rateMissing
-                        ? "Нужен курс за дату"
-                        : formatMoney(row.profitMinor, row.currency)}
-                    </strong>
-                    <p className="text-xs text-muted-foreground">
-                      Долг {formatMoney(row.outstandingMinor, row.currency)}
-                    </p>
-                  </div>
-                </article>
-              ))}
-            {!profits.some(
-              (row) =>
-                (!trip || row.tripId === trip) &&
-                (!currency || row.currency === currency)
-            )
-              ? empty("Рейсов по выбранным фильтрам нет.")
-              : null}
-          </div>
-        </TabsContent>
+                ? empty("Рейсов по выбранным фильтрам нет.")
+                : null}
+            </div>
+          </TabsContent>
+        ) : null}
       </Tabs>
       {command ? (
         <CommandDialog
@@ -1142,7 +1186,7 @@ export function MoneyWorkspace({ tripId }: { tripId?: string }) {
         }}
       >
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="pr-10">
             <DialogTitle>{resolution?.title}</DialogTitle>
             <DialogDescription>
               {resolution?.action === "accept"

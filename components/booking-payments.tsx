@@ -429,7 +429,7 @@ export function BookingPayments({
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[min(85dvh,var(--mobile-viewport-height,85dvh))] min-w-0 overflow-y-auto">
-          <DialogHeader>
+          <DialogHeader className="pr-10">
             <DialogTitle>
               {bookingId ? "Оплата брони" : "Оплаты рейса"}
             </DialogTitle>

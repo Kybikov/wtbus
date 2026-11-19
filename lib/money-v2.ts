@@ -121,7 +121,7 @@ export function parseMoneyInput(text: string): number | null {
 export function parsePositiveRate(
   text: string
 ): { units: bigint; scale: bigint } | null {
-  const match = /^(\d{1,12})(?:[.,](\d{1,10}))?$/.exec(text.trim())
+  const match = /^(\d{1,12})(?:[.,](\d{1,12}))?$/.exec(text.trim())
   if (!match) return null
   const fraction = match[2] ?? ""
   const scale = BigInt(10) ** BigInt(fraction.length)
@@ -159,7 +159,9 @@ export function datedMoneyRate(
   const source = find(from),
     target = find(to)
   if (!source || !target) return null
-  const precision = BigInt(10) ** BigInt(10)
+  // Match the precision used by the server when it applies the rate.
+  const scale = 12
+  const precision = BigInt(10) ** BigInt(scale)
   const denominator = source.scale * target.units
   const units =
     (source.units * target.scale * precision + denominator / BigInt(2)) /
@@ -167,7 +169,7 @@ export function datedMoneyRate(
   if (units === BigInt(0)) return null
   const whole = units / precision
   const fraction = String(units % precision)
-    .padStart(10, "0")
+    .padStart(scale, "0")
     .replace(/0+$/, "")
   return String(whole) + (fraction ? "." + fraction : "")
 }

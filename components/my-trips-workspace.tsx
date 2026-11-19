@@ -50,7 +50,11 @@ async function request(url: string, body?: object) {
     )
   return data
 }
-export function MyTripsWorkspace() {
+export function MyTripsWorkspace({
+  initialTab = "passengers",
+}: {
+  initialTab?: "passengers" | "money"
+}) {
   const confirm = useActionConfirmation()
   const [trips, setTrips] = React.useState<CrewTrip[]>([])
   const [selected, setSelected] = React.useState("")
@@ -255,7 +259,7 @@ export function MyTripsWorkspace() {
             ) : null}
           </section>
         ) : null}
-        <Tabs defaultValue="passengers">
+        <Tabs defaultValue={initialTab}>
           <TabsList className="w-full">
             <TabsTrigger value="passengers">Пассажиры</TabsTrigger>
             <TabsTrigger value="money">Касса</TabsTrigger>
@@ -282,7 +286,7 @@ export function MyTripsWorkspace() {
             ) : null}
           </TabsContent>
           <TabsContent value="money" className="min-w-0 pt-4">
-            <MoneyWorkspace />
+            <MoneyWorkspace showTripReports={false} />
           </TabsContent>
           <TabsContent value="gps" className="space-y-3 pt-4">
             {trip?.canGPS && !terminal ? (

@@ -44,3 +44,7 @@ Research used primary sources in TigerBeetle, Formance Ledger and ERPNext; links
 - Added a statistics regression proving reversed native receipts and corrected expenses do not remain in received-money/expense totals. Dashboard trip results now use dated report valuations rather than today's exchange table.
 - Browser/phone visual acceptance: NOT RUN successfully, for the specific tooling failure described above. This is the only remaining acceptance gate; responsive source review is not substituted for a screenshot.
 - No production database migration or external money movement was performed. Commit/push delivers source; apply migrations 55 then 56 with the matching API/web release.
+
+## Browser verification (2026-11-19)
+
+Safari WebKit at 320 and 390 px and desktop width was checked against a disposable company. The owner edited a booking passenger, accepted partial cash in UAH against an EUR fare using the dated rate, recorded a maintenance expense, deposited personal cash and requested a handover. The driver opened the cash tab and accepted the handover. The test confirmed the resulting balances and reservation. The crew panel showed the capability labels, moved GPS responsibility to the second driver and did not write a salary override when the owner tabbed through an unchanged field. These checks cover the tested workflows and layouts on disposable data.

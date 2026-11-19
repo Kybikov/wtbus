@@ -37,18 +37,21 @@ test("historical rate selection never silently falls back to another day", () =>
     {
       date: "2026-11-01",
       currency: "EUR",
-      rateToUAH: "55",
+      rateToUAH: "55.000000000000",
       source: "Monobank",
     },
     {
       date: "2026-11-01",
       currency: "USD",
-      rateToUAH: "44",
+      rateToUAH: "44.000000000000",
       source: "Monobank",
     },
   ]
   assert.equal(datedMoneyRate("USD", "EUR", "2026-11-01", rates), "0.8")
   assert.equal(datedMoneyRate("EUR", "UAH", "2026-11-01", rates), "55")
+  const uahToEur = datedMoneyRate("UAH", "EUR", "2026-11-01", rates)
+  assert.equal(uahToEur, "0.018181818182")
+  assert.equal(allocatedMinor(440000, uahToEur), 8000)
   assert.equal(datedMoneyRate("EUR", "UAH", "2026-11-02", rates), null)
   assert.equal(datedMoneyRate("PLN", "PLN", "2026-11-02", rates), "1")
 })

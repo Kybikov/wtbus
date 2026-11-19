@@ -341,7 +341,12 @@ func (app *application) moneyExecute(ctx context.Context, tx pgx.Tx, a identity,
 		err = tx.QueryRow(ctx, `INSERT INTO money_transfers(tenant_id,account_id,recipient_account_id,currency,amount_minor,requested_by,description,trip_id,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,$9) RETURNING id::text`, a.TenantID, account, target, in.Currency, in.Amount, a.MembershipID, in.Description, in.TripID, at).Scan(&id)
 		if err == nil {
 			body := fmt.Sprintf("Ожидает подтверждения: %d,%02d %s.", in.Amount/100, in.Amount%100, in.Currency)
-			_, err = tx.Exec(ctx, `INSERT INTO app_notifications(membership_id,category,title,body,url,event_type) SELECT m.id,'payments','Передача денег', $3,'/finance','paymentChanged' FROM memberships m LEFT JOIN notification_preferences p ON p.membership_id=m.id WHERE m.tenant_id=$1 AND m.is_active AND (($2='member' AND m.id=$4::uuid) OR ($2='company' AND m.role::text IN ('owner','developer'))) AND coalesce((p.categories->>'payments')::boolean,true)`, a.TenantID, dest.Kind, body, dest.Owner)
+			_, err = tx.Exec(ctx, `INSERT INTO app_notifications(membership_id,category,title,body,url,event_type)
+ SELECT m.id,'payments','Передача денег',$3,
+ CASE WHEN m.role::text IN ('owner','admin','developer','accountant') THEN '/finance' ELSE '/driver?tab=money' END,
+ 'paymentChanged' FROM memberships m LEFT JOIN notification_preferences p ON p.membership_id=m.id
+ WHERE m.tenant_id=$1 AND m.is_active AND (($2='member' AND m.id=$4::uuid) OR ($2='company' AND m.role::text IN ('owner','developer')))
+ AND coalesce((p.categories->>'payments')::boolean,true)`, a.TenantID, dest.Kind, body, dest.Owner)
 		}
 		return id, err
 	}

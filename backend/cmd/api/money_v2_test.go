@@ -120,6 +120,9 @@ func TestMoneyV2Postgres(t *testing.T) {
 		t.Fatal("own cash wallet missing")
 	}
 	transfer := op(moneyCommand{Action: "transfer", AccountID: account, TargetMembershipID: otherMember, Amount: 400000, Currency: "UAH"}, actor, 200)
+	if url := row(`SELECT url FROM app_notifications WHERE membership_id=$1 AND title='Передача денег' ORDER BY created_at DESC LIMIT 1`, otherMember); url != "/driver?tab=money" {
+		t.Fatalf("transfer notification must open the driver's cash tab, got %s", url)
+	}
 	op(moneyCommand{Action: "expense", AccountID: account, Amount: 50000, Currency: "UAH", Category: "fuel", TripID: trip}, actor, 409)
 	op(moneyCommand{Action: "accept", ID: transfer}, actor, 403)
 	op(moneyCommand{Action: "accept", ID: transfer}, staff, 200)
@@ -132,7 +135,7 @@ func TestMoneyV2Postgres(t *testing.T) {
 	staffTransfer := op(moneyCommand{Action: "transfer", AccountID: staffWallet, TargetMembershipID: member, Amount: 5000, Currency: "UAH"}, staff, 200)
 	op(moneyCommand{Action: "accept", ID: staffTransfer}, actor, 200)
 	op(moneyCommand{Action: "exchange", AccountID: account, Amount: 10000, Currency: "UAH", TargetCurrency: "EUR", TargetAmount: 200}, actor, 200)
-	expense := op(moneyCommand{Action: "expense", AccountID: account, Amount: 10000, Currency: "UAH", Category: "fuel", TripID: trip}, actor, 200)
+	expense := op(moneyCommand{Action: "expense", AccountID: account, Amount: 10000, Currency: "UAH", Category: "amortization", TripID: trip}, actor, 200)
 	op(moneyCommand{Action: "reverse", ID: expense, Description: "Expense correction"}, actor, 200)
 	op(moneyCommand{Action: "reverse", ID: expense, Description: "Repeated correction"}, actor, 409)
 	call("GET", "/finance/booking-payments?bookingId="+booking, nil, actor, app.bookingPayments, 200)
