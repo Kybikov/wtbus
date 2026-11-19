@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { ArrowRight, GripVertical, MapPin, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ApplyRouteItinerary } from "@/components/apply-route-itinerary"
 import { RoutePlacePicker } from "@/components/route-place-picker"
 import type { RoadPoint } from "@/components/route-navigation-editor"
 import { FieldSelect } from "@/components/ui/field-select"
@@ -567,6 +568,21 @@ function Editor({ id, entity }: { id: string; entity: "routes" | "trips" }) {
             )
           })}
         </div>
+      ) : null}
+      {entity === "routes" ? (
+        <ApplyRouteItinerary
+          url={url}
+          templateVersion={details.version}
+          disabledReason={
+            pending
+              ? "Дождитесь сохранения остановок и цен."
+              : error
+                ? "Исправьте ошибку сохранения остановок."
+                : !stops.length
+                  ? "Добавьте остановку в маршрут."
+                  : undefined
+          }
+        />
       ) : null}
       {pending ? (
         <p role="status" className="text-xs text-muted-foreground">
