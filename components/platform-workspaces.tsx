@@ -50,7 +50,11 @@ type Event = {
   nextThrough: string | null
 }
 type Access = { status: string; through: string | null }
-type Details = Access & { payments: Payment[]; events: Event[] }
+type Details = Access & {
+  payments: Payment[]
+  events: Event[]
+  ownerEmail: string
+}
 
 const url = "/api/platform/workspaces"
 const statuses: Record<string, string> = {
@@ -89,6 +93,7 @@ async function request<T>(address: string, options?: RequestInit): Promise<T> {
     cache: "no-store",
     ...options,
   })
+  if (response.status === 204) return undefined as T
   const data = await response.json()
   if (!response.ok) throw Error(data.error || "Не удалось выполнить действие.")
   return data
@@ -162,9 +167,17 @@ function TrendChart({
   )
 }
 
-export function PlatformWorkspaces() {
+export function PlatformWorkspaces({
+  initialSlug,
+  newOwner,
+  openCreate,
+}: {
+  initialSlug?: string
+  newOwner?: { name: string; email: string }
+  openCreate?: boolean
+}) {
   const [overview, setOverview] = React.useState<Overview>()
-  const [selected, setSelected] = React.useState("")
+  const [selected, setSelected] = React.useState(initialSlug ?? "")
   const [details, setDetails] = React.useState<{
     slug: string
     data: Details
@@ -175,7 +188,9 @@ export function PlatformWorkspaces() {
   const [statusBusy, setStatusBusy] = React.useState(false)
   const [switching, setSwitching] = React.useState(false)
   const [dateRevision, setDateRevision] = React.useState(0)
-  const [dialog, setDialog] = React.useState<"create" | "payment" | null>(null)
+  const [dialog, setDialog] = React.useState<
+    "create" | "payment" | "owner" | null
+  >(openCreate ? "create" : null)
   const [dialogError, setDialogError] = React.useState("")
   const [saving, setSaving] = React.useState(false)
   const current =
@@ -252,7 +267,7 @@ export function PlatformWorkspaces() {
     }
   }
 
-  function openDialog(mode: "create" | "payment") {
+  function openDialog(mode: "create" | "payment" | "owner") {
     setDialogError("")
     setDialog(mode)
   }
@@ -261,28 +276,34 @@ export function PlatformWorkspaces() {
     event.preventDefault()
     if (saving || !dialog) return
     const fields = Object.fromEntries(new FormData(event.currentTarget))
-    const endpoint = dialog === "create" ? url : `${address}&payment=1`
+    const endpoint = dialog === "create" ? url : `${address}&${dialog}=1`
     const payload =
       dialog === "create"
         ? { ...fields, baseCurrency: "UAH", subscriptionStatus: "trial" }
-        : {
-            paidOn: fields.paidOn,
-            reference: fields.reference,
-            amountMinor: Math.round(Number(fields.amount) * 100),
-          }
+        : dialog === "owner"
+          ? { email: fields.ownerEmail }
+          : {
+              paidOn: fields.paidOn,
+              reference: fields.reference,
+              amountMinor: Math.round(Number(fields.amount) * 100),
+            }
     setSaving(true)
     setDialogError("")
     try {
-      const result = await request<{ slug?: string }>(endpoint, {
-        method: "POST",
+      const result = await request<{ slug?: string } | undefined>(endpoint, {
+        method: dialog === "owner" ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
-      if (result.slug) setSelected(result.slug)
+      if (result?.slug) setSelected(result.slug)
       setRevision((value) => value + 1)
       setDialog(null)
       toast.success(
-        dialog === "create" ? "Рабочее пространство создано" : "Оплата учтена"
+        dialog === "create"
+          ? "Рабочее пространство создано"
+          : dialog === "owner"
+            ? "Владелец назначен"
+            : "Оплата учтена"
       )
     } catch (reason) {
       setDialogError(errorText(reason))
@@ -411,7 +432,10 @@ export function PlatformWorkspaces() {
 
       {current ? (
         <>
-          <section className="workspace-panel grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+          <section
+            id="workspace"
+            className="workspace-panel grid gap-4 p-4 sm:grid-cols-2 sm:p-5"
+          >
             <header className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">
               <div className="min-w-0">
                 <h2 className="text-base font-semibold break-words">
@@ -485,6 +509,24 @@ export function PlatformWorkspaces() {
                 }}
               />
             </label>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border px-3 py-2 sm:col-span-2">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">
+                  Владелец и плательщик
+                </p>
+                <p className="text-sm break-all">
+                  {detail?.ownerEmail ||
+                    (detail ? "Не назначен" : "Загружаем…")}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => openDialog("owner")}
+              >
+                Назначить владельца
+              </Button>
+            </div>
             <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground sm:col-span-2">
               <div className="flex gap-1">
                 <dt>Сотрудники</dt>
@@ -627,11 +669,15 @@ export function PlatformWorkspaces() {
             <DialogTitle>
               {dialog === "create"
                 ? "Новое рабочее пространство"
-                : "Учесть оплату"}
+                : dialog === "owner"
+                  ? "Назначить владельца"
+                  : "Учесть оплату"}
             </DialogTitle>
             <DialogDescription>
               {dialog === "create"
-                ? "Компания начнёт с пробного периода."
+                ? newOwner
+                  ? `Новая компания для ${newOwner.name}`
+                  : "Укажите владельца и дату доступа."
                 : current?.name}
             </DialogDescription>
           </DialogHeader>
@@ -668,23 +714,48 @@ export function PlatformWorkspaces() {
                 </label>
                 <label className="grid gap-1">
                   Имя владельца
-                  <Input required minLength={2} name="ownerDisplayName" />
+                  <Input
+                    required
+                    minLength={2}
+                    name="ownerDisplayName"
+                    defaultValue={newOwner?.name}
+                    readOnly={!!newOwner}
+                  />
                 </label>
                 <label className="grid gap-1">
                   Email владельца
-                  <Input required name="ownerEmail" type="email" />
-                </label>
-                <label className="grid gap-1">
-                  Пароль для нового аккаунта
                   <Input
-                    name="ownerPassword"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={72}
+                    required
+                    name="ownerEmail"
+                    type="email"
+                    defaultValue={newOwner?.email}
+                    readOnly={!!newOwner}
                   />
                 </label>
+                {!newOwner && (
+                  <label className="grid gap-1">
+                    Пароль для нового аккаунта
+                    <Input
+                      name="ownerPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={12}
+                      maxLength={72}
+                    />
+                  </label>
+                )}
               </>
+            ) : dialog === "owner" ? (
+              <label className="grid gap-1 text-sm">
+                Email существующего аккаунта
+                <Input
+                  name="ownerEmail"
+                  required
+                  type="email"
+                  maxLength={254}
+                  defaultValue={detail?.ownerEmail}
+                />
+              </label>
             ) : (
               <>
                 <label className="grid gap-1">
@@ -724,7 +795,9 @@ export function PlatformWorkspaces() {
                   ? "Сохраняем…"
                   : dialog === "create"
                     ? "Создать компанию"
-                    : "Учесть оплату"}
+                    : dialog === "owner"
+                      ? "Назначить"
+                      : "Учесть оплату"}
               </Button>
             </DialogFooter>
           </form>

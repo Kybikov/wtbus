@@ -3,6 +3,7 @@ import { HoldActionButton } from "@/components/ui/hold-action-button"
 
 import * as React from "react"
 import { Settings2 } from "lucide-react"
+import { TeamInvitations } from "@/components/team-invitations"
 import { TemporaryPasswordField } from "@/components/temporary-password-field"
 import { AdminNotice } from "@/components/admin-notice"
 
@@ -52,6 +53,7 @@ type TeamMember = {
 }
 
 type Me = {
+  workspaceReadOnly?: boolean
   membershipId: string
   role: Role
   displayName: string
@@ -622,6 +624,15 @@ export function TeamManager() {
             </Button>
           </div>
         ) : null}
+        {me && ["owner", "admin", "developer"].includes(me.role) && (
+          <div className="flex justify-end">
+            <TeamInvitations
+              roles={roles}
+              drivers={unlinked}
+              readOnly={me.workspaceReadOnly}
+            />
+          </div>
+        )}
         <EntityDataView
           collection="team"
           filters={[

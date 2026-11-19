@@ -10,7 +10,7 @@ import { pushStateChanged } from "@/lib/push-device"
 export function DeviceNotificationMonitor() {
   const pathname = usePathname()
   const publicPage =
-    pathname === "/login" ||
+    ["/login", "/invite"].includes(pathname) ||
     pathname.startsWith("/offline") ||
     isPublicBookingPath(pathname)
   React.useEffect(() => {

@@ -197,7 +197,12 @@ func (app *application) platformWorkspace(w http.ResponseWriter, r *http.Request
 		app.publicFailure(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"payments": payments, "events": events, "status": company.ConfiguredSubscriptionStatus, "effectiveStatus": company.SubscriptionStatus, "through": company.SubscriptionThrough})
+	var ownerEmail string
+	if err := app.db.QueryRow(ctx, `SELECT COALESCE(u.email,'') FROM tenants t LEFT JOIN users u ON u.id=t.billing_owner_id WHERE t.id=$1`, company.ID).Scan(&ownerEmail); err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"payments": payments, "events": events, "status": company.ConfiguredSubscriptionStatus, "effectiveStatus": company.SubscriptionStatus, "through": company.SubscriptionThrough, "ownerEmail": ownerEmail})
 }
 
 func (app *application) platformWorkspacePayment(w http.ResponseWriter, r *http.Request) {

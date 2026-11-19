@@ -69,7 +69,7 @@ export async function sessionFetch(
       "/api/auth/select-company",
       "/api/auth/logout",
     ].includes(url.pathname) &&
-    window.location.pathname !== "/login"
+    !["/login", "/invite"].includes(window.location.pathname)
   ) {
     redirecting = true
     window.location.replace(

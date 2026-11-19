@@ -121,6 +121,9 @@ test("API session loss redirects once without swallowing responses or confusing 
   location.pathname = "/login"
   await sessionFetch("/api/auth/me")
   assert.deepEqual(redirects, [])
+  location.pathname = "/invite"
+  await sessionFetch("/api/preferences")
+  assert.deepEqual(redirects, [])
   location.pathname = "/driver"
   expectedInit = {
     method: "POST",

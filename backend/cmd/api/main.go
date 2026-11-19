@@ -170,6 +170,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/me", app.me)
 	mux.HandleFunc("GET /api/v1/auth/workspaces", app.workspaces)
 	mux.HandleFunc("POST /api/v1/auth/workspaces", app.workspaces)
+	mux.HandleFunc("POST /api/v1/auth/invitations/preview", app.redeemWorkspaceInvitation)
+	mux.HandleFunc("POST /api/v1/auth/invitations/accept", app.redeemWorkspaceInvitation)
 	mux.HandleFunc("GET /api/v1/platform/plan", app.requirePlatformAdmin(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"monthlyMinor": workspaceMonthlyMinor, "currency": "UAH"})
 	}))
@@ -178,6 +180,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/platform/workspaces/{slug}", app.requirePlatformAdmin(app.platformWorkspace))
 	mux.HandleFunc("PATCH /api/v1/platform/workspaces/{slug}", app.requirePlatformAdmin(app.platformWorkspace))
 	mux.HandleFunc("POST /api/v1/platform/workspaces/{slug}/payments", app.requirePlatformAdmin(app.platformWorkspacePayment))
+	mux.HandleFunc("PATCH /api/v1/platform/workspaces/{slug}/owner", app.requirePlatformAdmin(app.setPlatformWorkspaceOwner))
+	mux.HandleFunc("GET /api/v1/platform/clients", app.requirePlatformAdmin(app.platformClients))
+	mux.HandleFunc("PATCH /api/v1/platform/clients/{owner}", app.requirePlatformAdmin(app.updatePlatformClient))
 	mux.HandleFunc("PATCH /api/v1/auth/me", app.updateProfile)
 	mux.HandleFunc("POST /api/v1/auth/logout", app.logout)
 	mux.HandleFunc("GET /api/v1/public/{slug}/catalog", app.publicCatalog)
@@ -308,6 +313,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/integration-secrets/test", owners(app.testIntegration))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.updateIntegrationSecrets))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/activity", managers(app.activityHistory))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/team/invitations", managers(app.workspaceInvitations))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/team/invitations", managers(app.workspaceInvitations))
+	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/team/invitations/{id}", managers(app.workspaceInvitations))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.createTeamMember))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/team/{membershipID}", managers(app.updateTeamMember))
@@ -4262,6 +4270,10 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 	if _, err := tx.Exec(r.Context(), `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'owner')`, tenantID, userID); err != nil {
 		app.log.Error("create tenant owner membership", "error", err, "tenant", input.Slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not provision tenant"})
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `UPDATE tenants SET billing_owner_id=$2 WHERE id=$1`, tenantID, userID); err != nil {
+		app.publicFailure(w, err)
 		return
 	}
 	if actor.PlatformAdmin && actor.UserID != userID {

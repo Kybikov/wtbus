@@ -161,6 +161,34 @@ func TestPlatformWorkspacesAndOwnerPermissions(t *testing.T) {
 		t.Fatalf("last day of access must be inclusive: %s", result)
 	}
 
+	const clients = "/platform/clients"
+	call("GET", clients, owner, nil, 403, nil)
+	readClient := func() platformClient {
+		t.Helper()
+		var result struct{ Items []platformClient }
+		call("GET", clients, admin, nil, 200, &result)
+		if len(result.Items) != 1 {
+			t.Fatalf("unexpected clients %+v", result.Items)
+		}
+		return result.Items[0]
+	}
+	client := readClient()
+	if client.MonthlyMinor != 300000 || client.Due == nil || client.Name != "QA account" {
+		t.Fatalf("wrong initial billing %+v", client)
+	}
+	call("PATCH", clients+"/"+client.ID, admin, map[string]any{"discountMinor": 100000, "discountMinimum": 2, "due": "2099-10-01"}, 204, nil)
+	if result := readClient(); result.MonthlyMinor != 300000 || result.DiscountMinor != 100000 || result.Due == nil || *result.Due != "2099-10-01" {
+		t.Fatalf("single company billed incorrectly %+v", result)
+	}
+	call("PATCH", platform+"/aa-platform-qa/owner", admin, map[string]string{"email": "owner@workspace.invalid"}, 204, nil)
+	if result := readClient(); result.MonthlyMinor != 500000 || result.Members != 2 {
+		t.Fatalf("expected 5000 UAH for two companies and two unique users, got %+v", result)
+	}
+	call("PATCH", clients+"/"+client.ID, admin, map[string]string{"due": ""}, 204, nil)
+	if result := readClient(); result.DueOverride != nil || result.Due == nil {
+		t.Fatalf("automatic due date not restored %+v", result)
+	}
+
 	unassigned := row(`INSERT INTO tenants(slug,name,subscription_status) VALUES('no-admin-member','Support QA','active') RETURNING id::text`)
 	support := map[string]any{"slug": "no-admin-member", "support": true}
 	call("POST", "/auth/workspaces", tenantDev, support, 403, nil)

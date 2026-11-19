@@ -8,7 +8,7 @@ import { isPublicBookingPath } from "@/lib/public-booking"
 export function SessionMonitor() {
   const pathname = usePathname()
   const publicPage =
-    pathname === "/login" ||
+    ["/login", "/invite"].includes(pathname) ||
     pathname.startsWith("/offline") ||
     isPublicBookingPath(pathname)
   useEffect(() => {

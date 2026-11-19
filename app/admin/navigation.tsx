@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 
 const pages = [
   { href: "/admin", label: "Компании" },
+  { href: "/admin/clients", label: "Клиенты" },
   { href: "/admin/plans", label: "Тарифы" },
 ]
 

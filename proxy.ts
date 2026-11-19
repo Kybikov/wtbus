@@ -6,7 +6,7 @@ import { isPublicBookingPath } from "@/lib/public-booking"
 
 export async function proxy(request: NextRequest) {
   if (
-    request.nextUrl.pathname === "/login" ||
+    ["/login", "/invite"].includes(request.nextUrl.pathname) ||
     isPublicBookingPath(request.nextUrl.pathname)
   ) {
     return NextResponse.next()

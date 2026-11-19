@@ -174,6 +174,7 @@ export function InterfacePreferencesProvider({
   const path = usePathname()
   if (
     path === "/login" ||
+    path === "/invite" ||
     path === "/offline" ||
     path === "/book" ||
     path.startsWith("/book/")

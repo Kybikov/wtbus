@@ -7,7 +7,9 @@ async function proxy(request: NextRequest) {
   const headers = { "Cache-Control": "private, no-store" }
   const slug = request.nextUrl.searchParams.get("slug")
   const payment = request.nextUrl.searchParams.get("payment") === "1"
+  const owner = request.nextUrl.searchParams.get("owner") === "1"
   const valid =
+    (!owner || (request.method === "PATCH" && !payment)) &&
     (!slug || /^[a-z0-9-]{3,63}$/.test(slug)) &&
     (request.method === "GET"
       ? !payment
@@ -30,7 +32,7 @@ async function proxy(request: NextRequest) {
 
   try {
     const upstream = await apiFetch(
-      `${process.env.API_INTERNAL_URL ?? "http://localhost:8080"}/api/v1/platform/workspaces${slug ? "/" + slug : ""}${payment ? "/payments" : ""}`,
+      `${process.env.API_INTERNAL_URL ?? "http://localhost:8080"}/api/v1/platform/workspaces${slug ? "/" + slug : ""}${payment ? "/payments" : owner ? "/owner" : ""}`,
       {
         method: request.method,
         cache: "no-store",
