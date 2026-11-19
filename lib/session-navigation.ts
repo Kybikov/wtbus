@@ -22,6 +22,22 @@ export function loginPath(returnPath: string): string {
 
 let redirecting = false
 
+export async function openWorkspace(slug: string, support = false) {
+  const response = await sessionFetch("/api/auth/workspaces", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug, support }),
+  })
+  if (!response.ok) throw Error((await response.json()).error)
+  try {
+    localStorage.removeItem("vivat-ui-preferences")
+    localStorage.setItem("vivat:workspace-change", crypto.randomUUID())
+  } catch {
+    // The new session cookie already selects the workspace.
+  }
+  window.location.replace("/")
+}
+
 /** Preserve the response (including GPS retry semantics) while handling session loss. */
 export async function sessionFetch(
   input: RequestInfo | URL,

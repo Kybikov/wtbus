@@ -47,7 +47,6 @@ type app struct {
 	tenantName         string
 	tenantSlug         string
 	dispatcherContact  string
-	subscriptionStatus string
 	systemMembershipID string
 	timezone           *time.Location
 	httpClient         *http.Client
@@ -301,7 +300,7 @@ func parseBotBindings(raw string, fallback botBinding) ([]botBinding, error) {
 func (app *app) loadTenant(ctx context.Context) error {
 	var timezone string
 	if err := app.db.QueryRow(ctx, `
-		SELECT tenant.id::text, tenant.name, tenant.timezone, tenant.subscription_status, COALESCE(branding.dispatcher_contact, ''),
+		SELECT tenant.id::text, tenant.name, tenant.timezone, COALESCE(branding.dispatcher_contact, ''),
 			COALESCE((
 				SELECT membership.id::text
 				FROM memberships membership
@@ -312,7 +311,7 @@ func (app *app) loadTenant(ctx context.Context) error {
 		FROM tenants tenant
 		LEFT JOIN tenant_branding branding ON branding.tenant_id = tenant.id
 		WHERE tenant.slug = $1
-	`, app.tenantSlug).Scan(&app.tenantID, &app.tenantName, &timezone, &app.subscriptionStatus, &app.dispatcherContact, &app.systemMembershipID); err != nil {
+	`, app.tenantSlug).Scan(&app.tenantID, &app.tenantName, &timezone, &app.dispatcherContact, &app.systemMembershipID); err != nil {
 		return err
 	}
 	if app.systemMembershipID == "" {
@@ -1218,6 +1217,9 @@ func (app *app) confirmIndividualTransferRequest(chatID, telegramID int64) {
 }
 
 func (app *app) createIndividualTransferRequest(ctx context.Context, telegramID int64, state bookingState) (time.Time, error) {
+	if err := app.requireBookingAccess(ctx); err != nil {
+		return time.Time{}, err
+	}
 	if !validPlace(state.Origin) || !validPlace(state.Destination) || state.PendingSeats < 1 || state.PendingSeats > 20 || len([]rune(strings.TrimSpace(state.RequestComment))) > 2000 {
 		return time.Time{}, errors.New("individual transfer request is invalid")
 	}
@@ -1393,6 +1395,9 @@ func (app *app) loadCancellableTelegramBooking(ctx context.Context, telegramID i
 }
 
 func (app *app) cancelTelegramBooking(ctx context.Context, telegramID int64, bookingID string) (customerTrip, error) {
+	if err := app.requireBookingAccess(ctx); err != nil {
+		return customerTrip{}, err
+	}
 	if !validBookingID(bookingID) {
 		return customerTrip{}, pgx.ErrNoRows
 	}
@@ -1916,12 +1921,8 @@ type createdBooking struct {
 }
 
 func (app *app) createBooking(ctx context.Context, customerID, tripID string, state bookingState) (createdBooking, error) {
-	allowed, err := app.canAcceptBookings(ctx)
-	if err != nil {
+	if err := app.requireBookingAccess(ctx); err != nil {
 		return createdBooking{}, err
-	}
-	if !allowed {
-		return createdBooking{}, errSubscriptionInactive
 	}
 	if state.PendingSeats < 1 || state.PendingSeats > 20 || strings.TrimSpace(state.PassengerName) == "" || strings.TrimSpace(state.PassengerPhone) == "" || state.PassengerBirthDate == "" {
 		return createdBooking{}, errUnavailableTrip
@@ -2225,6 +2226,9 @@ func (app *app) loadTelegramPayment(ctx context.Context, paymentID string, teleg
 }
 
 func (app *app) chooseCashBooking(ctx context.Context, paymentID string) error {
+	if err := app.requireBookingAccess(ctx); err != nil {
+		return err
+	}
 	tx, err := app.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -2265,6 +2269,9 @@ func (app *app) chooseCashBooking(ctx context.Context, paymentID string) error {
 }
 
 func (app *app) setTelegramPaymentMethod(ctx context.Context, paymentID, method, bankCode string) error {
+	if err := app.requireBookingAccess(ctx); err != nil {
+		return err
+	}
 	tx, err := app.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -2398,12 +2405,22 @@ func validUUID(value string) bool {
 	return true
 }
 
+func (app *app) requireBookingAccess(ctx context.Context) error {
+	allowed, err := app.canAcceptBookings(ctx)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errSubscriptionInactive
+	}
+	return nil
+}
+
 func (app *app) canAcceptBookings(ctx context.Context) (bool, error) {
 	var status string
-	if err := app.db.QueryRow(ctx, `SELECT subscription_status FROM tenants WHERE id = $1`, app.tenantID).Scan(&status); err != nil {
+	if err := app.db.QueryRow(ctx, `SELECT effective_workspace_status(subscription_status,subscription_through,(now() AT TIME ZONE timezone)::date) FROM tenants WHERE id = $1`, app.tenantID).Scan(&status); err != nil {
 		return false, err
 	}
-	app.subscriptionStatus = status
 	return status == "trial" || status == "active", nil
 }
 

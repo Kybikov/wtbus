@@ -1,4 +1,3 @@
-import { PlatformWorkspaces } from "@/components/platform-workspaces"
 import { AccountingSettings } from "@/components/accounting-settings"
 import { getSessionAccess, getSessionRole } from "@/lib/server-role"
 import { redirect } from "next/navigation"
@@ -15,7 +14,7 @@ export default async function SettingsSectionPage({
   const { section } = await params
   if (section === "platform") {
     if (!(await getSessionAccess())?.platformAdmin) notFound()
-    return <PlatformWorkspaces />
+    redirect("/admin")
   }
   if (
     ![

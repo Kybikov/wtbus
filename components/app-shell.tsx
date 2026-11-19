@@ -608,6 +608,16 @@ export function AppShell({
     () => ({ enabled: collectionFooter, target: footerHost }),
     [collectionFooter, footerHost]
   )
+  const [workspaceReadOnly, setWorkspaceReadOnly] = React.useState(false)
+  const readOnlyReason = workspaceReadOnly
+    ? "Рабочее пространство доступно только для просмотра. Продлите подписку, чтобы вносить изменения."
+    : undefined
+  React.useEffect(() => {
+    const update = (event: Event) =>
+      setWorkspaceReadOnly((event as CustomEvent<boolean>).detail)
+    window.addEventListener("vivat:workspace-read-only", update)
+    return () => window.removeEventListener("vivat:workspace-read-only", update)
+  }, [])
   const [descriptionOpen, setDescriptionOpen] = React.useState(false)
   const descriptionId = React.useId()
   const [manualRefreshing, setManualRefreshing] = React.useState(false)
@@ -693,7 +703,7 @@ export function AppShell({
     pageMenu,
     unread,
     onCreate,
-    createDisabled,
+    createDisabled: workspaceReadOnly || createDisabled,
   })
   const profileVersion = React.useRef(0)
   React.useEffect(() => {
@@ -735,6 +745,13 @@ export function AppShell({
       .then(({ branding, brandingOK, identity, identityOK }) => {
         if (cancelled) return
         setIdentityReady(identityOK)
+        if (
+          identityOK &&
+          typeof identity === "object" &&
+          identity !== null &&
+          "workspaceReadOnly" in identity
+        )
+          setWorkspaceReadOnly(identity.workspaceReadOnly === true)
         if (
           identityOK &&
           typeof identity === "object" &&
@@ -1187,6 +1204,7 @@ export function AppShell({
                   ready={identityReady}
                   onCreate={onCreate}
                   createDisabled={createDisabled}
+                  readOnlyReason={readOnlyReason}
                   dataActions={dataActions}
                   viewExport={viewExport}
                   onImported={refreshPage}
@@ -1249,8 +1267,11 @@ export function AppShell({
                     size="icon"
                     variant="ghost"
                     aria-label="Создать запись"
-                    disabled={createDisabled}
-                    disabledReason="Дождитесь загрузки данных для создания записи."
+                    disabled={workspaceReadOnly || createDisabled}
+                    disabledReason={
+                      readOnlyReason ??
+                      "Дождитесь загрузки данных для создания записи."
+                    }
                     onClick={onCreate}
                   >
                     <span className="text-2xl leading-none" aria-hidden>
@@ -1345,6 +1366,14 @@ export function AppShell({
               </div>
             ) : null}
           </header>
+          {workspaceReadOnly ? (
+            <p
+              role="status"
+              className="mt-2 shrink-0 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-foreground sm:text-sm"
+            >
+              {readOnlyReason}
+            </p>
+          ) : null}
           {utilities ? <div className="hidden">{utilities}</div> : null}
           <EntityFooterContext.Provider value={footerContext}>
             <PullToRefresh onRefresh={refreshPage} refreshing={isRefreshing}>

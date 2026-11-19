@@ -66,7 +66,7 @@ func TestPlatformWorkspacesAndOwnerPermissions(t *testing.T) {
 		exec(`INSERT INTO user_credentials(user_id,password_hash) VALUES($1,$2)`, user, string(hash))
 		return user
 	}
-	account("global@workspace.invalid", "developer", true)
+	platformUser := account("global@workspace.invalid", "developer", true)
 	account("tenant-dev@workspace.invalid", "developer", false)
 	account("owner@workspace.invalid", "owner", false)
 	login := func(email string) loginResponse {
@@ -86,7 +86,7 @@ func TestPlatformWorkspacesAndOwnerPermissions(t *testing.T) {
 	call("GET", platform, owner, nil, 403, nil)
 	call("GET", platform, tenantDev, nil, 403, nil)
 	call("GET", platform, "", nil, 401, nil)
-	input := provisionTenantRequest{Slug: added, Name: "Second workspace", Timezone: "UTC", BaseCurrency: "UAH", OwnerEmail: "owner@workspace.invalid", OwnerDisplayName: "QA owner"}
+	input := provisionTenantRequest{Slug: added, Name: "Second workspace", Timezone: "UTC", BaseCurrency: "UAH", SubscriptionThrough: "2099-12-31", OwnerEmail: "owner@workspace.invalid", OwnerDisplayName: "QA owner"}
 	call("POST", platform, admin, input, 201, nil)
 	call("POST", platform, admin, input, 409, nil)
 	sharedMember := row(`SELECT m.id::text FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1 AND u.email='owner@workspace.invalid'`, primary)
@@ -135,5 +135,50 @@ func TestPlatformWorkspacesAndOwnerPermissions(t *testing.T) {
 		t.Fatalf("invalid platform overview: %s", view)
 	}
 	call("POST", "/auth/workspaces", admin, map[string]string{"slug": added}, 200, &next)
-	call("GET", platform, next.SessionToken, nil, 200, nil)
+	admin = next.SessionToken
+	call("GET", platform, admin, nil, 200, nil)
+	call("GET", "/platform/plan", tenantDev, nil, 403, nil)
+	call("GET", "/platform/plan", admin, nil, 200, nil)
+
+	call("PATCH", workspace, admin, map[string]string{"through": "2026-02-31"}, 400, nil)
+	call("PATCH", workspace, admin, map[string]string{"through": "2000-01-01"}, 200, nil)
+	owner = login("owner@workspace.invalid").SessionToken
+	if result := call("GET", "/auth/me", owner, nil, 200, nil); !strings.Contains(result, `"workspaceReadOnly":true`) {
+		t.Fatalf("expired access not returned to client: %s", result)
+	}
+	call("GET", "/tenants/"+added+"/trips", owner, nil, 200, nil)
+	call("POST", "/tenants/"+added+"/customers", owner, nil, 402, nil)
+	call("DELETE", target, owner, nil, 402, nil)
+	call("PATCH", "/tenants/"+added+"/trips/does-not-exist", admin, nil, 402, nil)
+	call("GET", workspace, admin, nil, 200, &details)
+	if event := details.Events[0]; event.NextThrough == nil || *event.NextThrough != "2000-01-01" || event.PreviousThrough == nil || *event.PreviousThrough != "2099-12-31" {
+		t.Fatalf("access change missing from history: %+v", event)
+	}
+
+	today := row(`SELECT (now() AT TIME ZONE timezone)::date::text FROM tenants WHERE id=$1`, second)
+	call("PATCH", workspace, admin, map[string]string{"through": today}, 200, nil)
+	if result := call("GET", "/auth/me", owner, nil, 200, nil); !strings.Contains(result, `"workspaceReadOnly":false`) {
+		t.Fatalf("last day of access must be inclusive: %s", result)
+	}
+
+	unassigned := row(`INSERT INTO tenants(slug,name,subscription_status) VALUES('no-admin-member','Support QA','active') RETURNING id::text`)
+	support := map[string]any{"slug": "no-admin-member", "support": true}
+	call("POST", "/auth/workspaces", tenantDev, support, 403, nil)
+	call("POST", "/auth/workspaces", admin, map[string]string{"slug": "no-admin-member"}, 403, nil)
+	call("POST", "/auth/workspaces", admin, support, 200, &next)
+	call("GET", "/auth/me", admin, nil, 401, nil)
+	if next.Role != "developer" || next.TenantSlug != "no-admin-member" {
+		t.Fatalf("unexpected support session: %+v", next)
+	}
+	call("GET", "/tenants/no-admin-member/trips", next.SessionToken, nil, 200, nil)
+	call("GET", "/tenants/"+added+"/trips", next.SessionToken, nil, 403, nil)
+	call("GET", platform+"/no-admin-member", next.SessionToken, nil, 200, &details)
+	if details.Events[0].Action != "entered" || details.Events[0].Actor != "QA account" {
+		t.Fatalf("support access missing from history: %+v", details.Events)
+	}
+	if row(`SELECT is_active::text FROM memberships WHERE tenant_id=$1 AND user_id=$2`, unassigned, platformUser) != "false" {
+		t.Fatal("support access created an active company membership")
+	}
+	exec(`UPDATE users SET is_platform_admin=false WHERE id=$1`, platformUser)
+	call("GET", "/auth/me", next.SessionToken, nil, 401, nil)
 }

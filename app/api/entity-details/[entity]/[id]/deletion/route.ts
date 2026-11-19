@@ -18,7 +18,7 @@ async function forward(request: Request, { params }: Context) {
     )
     return NextResponse.json(await response.json(), {
       status:
-        response.ok || [400, 401, 403, 404, 409].includes(response.status)
+        response.ok || [400, 401, 402, 403, 404, 409].includes(response.status)
           ? response.status
           : 502,
     })

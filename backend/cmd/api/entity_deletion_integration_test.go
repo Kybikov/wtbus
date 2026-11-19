@@ -89,7 +89,7 @@ func TestDeveloperDeletionPostgres(t *testing.T) {
 	exec(`UPDATE customers SET full_name='Changed after preview' WHERE id=$1`, customer)
 	request("DELETE", "customers", customer, map[string]string{"token": stale.Token}, actor, 409)
 
-	// Full access also applies to inactive subscriptions, without granting other roles a bypass.
+	// Expired workspace access blocks business mutations for all roles.
 	for _, role := range []string{"developer", "owner", "dispatcher"} {
 		who := actor
 		who.Role = role
@@ -99,7 +99,7 @@ func TestDeveloperDeletionPostgres(t *testing.T) {
 		r = r.WithContext(context.WithValue(ctx, identityContextKey{}, who))
 		w := httptest.NewRecorder()
 		app.requireActiveSubscription(func(w http.ResponseWriter, r *http.Request) { called = true; w.WriteHeader(204) })(w, r)
-		if called != (role == "developer") {
+		if called || w.Code != 402 {
 			t.Fatalf("subscription bypass role %s", role)
 		}
 	}

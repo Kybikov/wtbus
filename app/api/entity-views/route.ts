@@ -35,7 +35,7 @@ async function forward(request: NextRequest) {
     const payload = await response.json()
     return NextResponse.json(payload, {
       status:
-        response.ok || [400, 401, 403, 404, 409].includes(response.status)
+        response.ok || [400, 401, 402, 403, 404, 409].includes(response.status)
           ? response.status
           : 502,
     })

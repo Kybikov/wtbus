@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { sessionFetch } from "@/lib/session-navigation"
+import { openWorkspace, sessionFetch } from "@/lib/session-navigation"
 
 type Choice = { slug: string; name: string; role: string }
 type Workspaces = { current: string; items: Choice[] }
@@ -55,19 +55,7 @@ export function WorkspaceSwitcher({
     setSwitching(true)
     setError("")
     try {
-      const response = await sessionFetch("/api/auth/workspaces", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug }),
-      })
-      if (!response.ok) throw Error((await response.json()).error)
-      try {
-        localStorage.removeItem("vivat-ui-preferences")
-        localStorage.setItem("vivat:workspace-change", crypto.randomUUID())
-      } catch {
-        // The session cookie already selects the workspace.
-      }
-      window.location.replace("/")
+      await openWorkspace(slug)
     } catch (reason) {
       setError(
         reason instanceof Error

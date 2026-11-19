@@ -170,6 +170,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/me", app.me)
 	mux.HandleFunc("GET /api/v1/auth/workspaces", app.workspaces)
 	mux.HandleFunc("POST /api/v1/auth/workspaces", app.workspaces)
+	mux.HandleFunc("GET /api/v1/platform/plan", app.requirePlatformAdmin(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"monthlyMinor": workspaceMonthlyMinor, "currency": "UAH"})
+	}))
 	mux.HandleFunc("GET /api/v1/platform/workspaces", app.requirePlatformAdmin(app.platformWorkspaces))
 	mux.HandleFunc("POST /api/v1/platform/workspaces", app.requirePlatformAdmin(app.provisionTenant))
 	mux.HandleFunc("GET /api/v1/platform/workspaces/{slug}", app.requirePlatformAdmin(app.platformWorkspace))
@@ -196,7 +199,7 @@ func (app *application) routes() http.Handler {
 	operations := app.requireRoles("owner", "admin", "dispatcher")
 	managers := app.requireRoles("owner", "admin")
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/record-number-settings", managers(app.recordNumberSettings))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/record-number-settings", managers(app.requireActiveSubscription(app.recordNumberSettings)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/record-number-settings", managers(app.recordNumberSettings))
 	owners := app.requireRoles("owner")
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/record-number-search", operations(app.searchRecordNumbers))
@@ -210,71 +213,71 @@ func (app *application) routes() http.Handler {
 	drivers := app.requireRoles("driver")
 	tripOperators := staff
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/workspace", staff(app.moneyWorkspace))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/workspace", staff(app.requireActiveSubscription(app.moneyWorkspace)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/workspace", staff(app.moneyWorkspace))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/booking-payments", staff(app.bookingPayments))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/trips", staff(app.tripMoney))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips/{tripID}/crew", staff(app.tripCrew))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/crew", staff(app.requireActiveSubscription(app.tripCrew)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/crew", staff(app.tripCrew))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/me/trips", staff(app.myCrewTrips))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/crew-payroll", staff(app.crewPayroll))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/crew-payroll", staff(app.requireActiveSubscription(app.crewPayroll)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/crew-payroll", staff(app.crewPayroll))
 	mux.HandleFunc("GET /api/v1/me/preferences", staff(app.getUserPreferences))
 	mux.HandleFunc("PATCH /api/v1/me/preferences", staff(app.updateUserPreferences))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips", operations(app.listTrips))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/dashboard", operations(app.dashboardSummary))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/statistics", app.requireRoles("owner", "admin", "dispatcher", "accountant")(app.statistics))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips", operations(app.requireActiveSubscription(app.createTrip)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips/schedule", operations(app.requireActiveSubscription(app.createTripSchedule)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips", operations(app.createTrip))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips/schedule", operations(app.createTripSchedule))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}", tripOperators(app.changeTripStatus))
-	mux.HandleFunc("PUT /api/v1/tenants/{slug}/trips/{tripID}", operations(app.requireActiveSubscription(app.updateTrip)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips/{tripID}/route", operations(app.requireActiveSubscription(app.createRouteFromTrip)))
+	mux.HandleFunc("PUT /api/v1/tenants/{slug}/trips/{tripID}", operations(app.updateTrip))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/trips/{tripID}/route", operations(app.createRouteFromTrip))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trip-resources", operations(app.listTripResources))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes", operations(app.listRoutes))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes", operations(app.requireActiveSubscription(app.createRoute)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.requireActiveSubscription(app.updateRoute)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes", operations(app.createRoute))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.updateRoute))
 	for _, record := range []string{"routes/{routeID}", "trips/{tripID}"} {
 		mux.HandleFunc("GET /api/v1/tenants/{slug}/"+record+"/itinerary", operations(app.tripItinerary))
-		mux.HandleFunc("PATCH /api/v1/tenants/{slug}/"+record+"/itinerary", operations(app.requireActiveSubscription(app.tripItinerary)))
+		mux.HandleFunc("PATCH /api/v1/tenants/{slug}/"+record+"/itinerary", operations(app.tripItinerary))
 	}
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes/{routeID}/itinerary/apply", operations(app.applyRouteItinerary))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes/{routeID}/itinerary/apply", operations(app.requireActiveSubscription(app.applyRouteItinerary)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes/{routeID}/itinerary/apply", operations(app.applyRouteItinerary))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/navigation-places", operations(app.navigationPlaces))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/navigation-preview", operations(app.previewRouteNavigation))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.routeNavigation))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.requireActiveSubscription(app.routeNavigation)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/trips/{tripID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/route-statuses", operations(app.listRouteStatuses))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/route-statuses", managers(app.requireActiveSubscription(app.createRouteStatus)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/route-statuses/{statusKey}", managers(app.requireActiveSubscription(app.updateRouteStatus)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/route-statuses", managers(app.createRouteStatus))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/route-statuses/{statusKey}", managers(app.updateRouteStatus))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/workflow-statuses", operations(app.listWorkflowStatuses))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/workflow-statuses", managers(app.requireActiveSubscription(app.createWorkflowStatus)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/workflow-statuses/{statusKey}", managers(app.requireActiveSubscription(app.updateWorkflowStatus)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/workflow-statuses", managers(app.createWorkflowStatus))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/workflow-statuses/{statusKey}", managers(app.updateWorkflowStatus))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/availability-blocks", operations(app.listAvailabilityBlocks))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/availability-blocks", operations(app.requireActiveSubscription(app.createAvailabilityBlock)))
-	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/availability-blocks/{blockID}", operations(app.requireActiveSubscription(app.deleteAvailabilityBlock)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/availability-blocks", operations(app.createAvailabilityBlock))
+	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/availability-blocks/{blockID}", operations(app.deleteAvailabilityBlock))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/fleet", app.requireRoles("owner", "admin", "dispatcher", "driver")(app.listFleet))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/fleet", managers(app.requireActiveSubscription(app.createVehicle)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/fleet/{vehicleID}", managers(app.requireActiveSubscription(app.updateVehicle)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/fleet", managers(app.createVehicle))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/fleet/{vehicleID}", managers(app.updateVehicle))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers", operations(app.listCustomers))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers/{customerID}", operations(app.getCustomer))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers/export", operations(app.exportCustomers))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/customers", operations(app.requireActiveSubscription(app.createCustomer)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/customers/{customerID}", operations(app.requireActiveSubscription(app.updateCustomer)))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers/import", operations(app.requireActiveSubscription(app.customerImportTemplate)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/customers/import", operations(app.requireActiveSubscription(app.importCustomers)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/customers", operations(app.createCustomer))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/customers/{customerID}", operations(app.updateCustomer))
+	mux.HandleFunc("GET /api/v1/tenants/{slug}/customers/import", operations(app.customerImportTemplate))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/customers/import", operations(app.importCustomers))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/custom-fields", operations(app.listCustomFields))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/custom-fields", managers(app.requireActiveSubscription(app.createCustomField)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/custom-fields/{fieldID}", managers(app.requireActiveSubscription(app.updateCustomField)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/custom-fields", managers(app.createCustomField))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/custom-fields/{fieldID}", managers(app.updateCustomField))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/bookings", operations(app.listBookings))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings", operations(app.requireActiveSubscription(app.createBooking)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/bookings/{bookingID}", operations(app.requireActiveSubscription(app.updateBooking)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings", operations(app.createBooking))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/bookings/{bookingID}", operations(app.updateBooking))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.bookingPassengers))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.requireActiveSubscription(app.bookingPassengers)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.requireActiveSubscription(app.bookingPassengers)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings/{bookingID}/payment-confirmation", managers(app.requireActiveSubscription(app.confirmBookingPayment)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.bookingPassengers))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings/{bookingID}/passengers", operations(app.bookingPassengers))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/bookings/{bookingID}/payment-confirmation", managers(app.confirmBookingPayment))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/individual-transfer-requests", operations(app.listIndividualTransferRequests))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/individual-transfer-requests/{requestID}", operations(app.requireActiveSubscription(app.updateIndividualTransferRequest)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/individual-transfer-requests/{requestID}", operations(app.updateIndividualTransferRequest))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/gps-points", tripOperators(app.recordGPSPoint))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/cash-summary", drivers(app.driverCashSummary))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/driver/passengers", staff(app.driverPassengers))
@@ -284,9 +287,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/accounting", finance(app.accountingSnapshot))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/report", finance(app.accountingReport))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/ledger", finance(app.accountingLedger))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/operations", finance(app.requireActiveSubscription(app.accountingOperation)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/operations", finance(app.accountingOperation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/booking-cash", app.requireRoles("owner")(app.driverPassengers))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/booking-cash", app.requireRoles("owner")(app.requireActiveSubscription(app.driverCheckin)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/booking-cash", app.requireRoles("owner")(app.driverCheckin))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/review", finance(app.reviewFinanceEntry))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/settings", finance(app.accountingSettings))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/settings", finance(app.accountingSettings))
@@ -294,21 +297,21 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/driver/handovers", drivers(app.accountingOperation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates/monobank", owners(app.monobankExchangeRates))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.getExchangeRates))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.requireActiveSubscription(app.updateExchangeRates)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/driver-cash", finance(app.requireActiveSubscription(app.recordDriverCash)))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/expenses", finance(app.requireActiveSubscription(app.recordOperationalExpense)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/finance/exchange-rates", owners(app.updateExchangeRates))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/driver-cash", finance(app.recordDriverCash))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/finance/expenses", finance(app.recordOperationalExpense))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/branding", staff(app.getBranding))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/branding", managers(app.requireActiveSubscription(app.updateBranding)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/branding", managers(app.updateBranding))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/payment-config", owners(app.getPaymentConfig))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/payment-config", owners(app.requireActiveSubscription(app.updatePaymentConfig)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/payment-config", owners(app.updatePaymentConfig))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/integration-secrets", owners(app.getIntegrationSecrets))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/integration-secrets/test", owners(app.testIntegration))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.requireActiveSubscription(app.updateIntegrationSecrets)))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/integration-secrets", owners(app.updateIntegrationSecrets))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/activity", managers(app.activityHistory))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/team", managers(app.listTeam))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.requireActiveSubscription(app.createTeamMember)))
-	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.updateTeamMember)))
-	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/team/{membershipID}", managers(app.requireActiveSubscription(app.deleteTeamMember)))
+	mux.HandleFunc("POST /api/v1/tenants/{slug}/team", managers(app.createTeamMember))
+	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/team/{membershipID}", managers(app.updateTeamMember))
+	mux.HandleFunc("DELETE /api/v1/tenants/{slug}/team/{membershipID}", managers(app.deleteTeamMember))
 	mux.HandleFunc("POST /api/v1/control/tenants", app.provisionTenant)
 	mux.HandleFunc("PUT /api/v1/tenants/{slug}/subscription", app.updateSubscription)
 	return app.securityHeaders(app.cors(app.requestAudit(app.recover(mux))))
@@ -323,16 +326,27 @@ func (app *application) requireActiveSubscription(next http.HandlerFunc) http.Ha
 		if !ok {
 			return
 		}
-		actor, _ := identityFromContext(r.Context())
-		if actor.Role != "developer" && !subscriptionAllowsOperations(tenant.SubscriptionStatus) {
+		if !subscriptionAllowsOperations(tenant.SubscriptionStatus) {
 			writeJSON(w, http.StatusPaymentRequired, map[string]string{
-				"error":              "subscription is inactive; update payment to continue",
+				"error":              "Срок доступа истёк или подписка приостановлена. Рабочее пространство доступно только для просмотра.",
 				"code":               "subscription_inactive",
 				"subscriptionStatus": tenant.SubscriptionStatus,
 			})
 			return
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), tenantContextKey{}, tenant)))
+	}
+}
+
+func isWorkspaceMutation(r *http.Request) bool {
+	if r.Pattern == "POST /api/v1/tenants/{slug}/navigation-preview" {
+		return false
+	}
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -349,14 +363,15 @@ const (
 )
 
 type identity struct {
-	UserID        string
-	MembershipID  string
-	TenantID      string
-	TenantSlug    string
-	Role          string
-	DisplayName   string
-	Email         string
-	PlatformAdmin bool
+	UserID         string
+	MembershipID   string
+	TenantID       string
+	TenantSlug     string
+	Role           string
+	DisplayName    string
+	Email          string
+	PlatformAdmin  bool
+	PlatformAccess bool
 }
 
 type loginRequest struct {
@@ -670,9 +685,9 @@ func createSessionWith(ctx context.Context, db interface {
 	}
 	expiresAt := time.Now().UTC().Add(sessionLifetime)
 	if _, err := db.Exec(ctx, `
-		INSERT INTO user_sessions (user_id, membership_id, token_hash, expires_at)
-		VALUES ($1, $2, $3, $4)
-	`, result.UserID, result.MembershipID, tokenHash, expiresAt); err != nil {
+		INSERT INTO user_sessions (user_id, membership_id, token_hash, expires_at, platform_access)
+		VALUES ($1, $2, $3, $4, $5)
+	`, result.UserID, result.MembershipID, tokenHash, expiresAt, result.PlatformAccess); err != nil {
 		return loginResponse{}, fmt.Errorf("store session: %w", err)
 	}
 	return loginResponse{
@@ -716,13 +731,15 @@ func (app *application) authenticate(r *http.Request) (identity, string, error) 
 	hash := sha256.Sum256([]byte(token))
 	var result identity
 	err := app.db.QueryRow(r.Context(), `
-		SELECT u.id::text, m.id::text, t.id::text, t.slug, m.role::text, u.display_name, u.email, u.is_platform_admin AND NOT u.is_system
+		SELECT u.id::text, m.id::text, t.id::text, t.slug, CASE WHEN s.platform_access THEN 'developer' ELSE m.role::text END,
+		       u.display_name, u.email, u.is_platform_admin AND NOT u.is_system, s.platform_access
 		FROM user_sessions s
 		JOIN users u ON u.id = s.user_id
-		JOIN memberships m ON m.id = s.membership_id AND m.user_id = u.id AND m.is_active
+		JOIN memberships m ON m.id = s.membership_id AND m.user_id = u.id
 		JOIN tenants t ON t.id = m.tenant_id
 		WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
-	`, hash[:]).Scan(&result.UserID, &result.MembershipID, &result.TenantID, &result.TenantSlug, &result.Role, &result.DisplayName, &result.Email, &result.PlatformAdmin)
+		  AND ((NOT s.platform_access AND m.is_active) OR (s.platform_access AND u.is_platform_admin AND NOT u.is_system))
+	`, hash[:]).Scan(&result.UserID, &result.MembershipID, &result.TenantID, &result.TenantSlug, &result.Role, &result.DisplayName, &result.Email, &result.PlatformAdmin, &result.PlatformAccess)
 	if err != nil {
 		return identity{}, "", err
 	}
@@ -739,6 +756,12 @@ func (app *application) requireRoles(roles ...string) func(http.HandlerFunc) htt
 	}
 	allowed["developer"] = struct{}{}
 	return func(next http.HandlerFunc) http.HandlerFunc {
+		audited := func(w http.ResponseWriter, r *http.Request) {
+			actor, _ := identityFromContext(r.Context())
+			app.beginAudit(r, actor)
+			next(w, r)
+		}
+		mutation := app.requireActiveSubscription(audited)
 		return func(w http.ResponseWriter, r *http.Request) {
 			identity, _, err := app.authenticate(r)
 			if err != nil {
@@ -754,8 +777,12 @@ func (app *application) requireRoles(roles ...string) func(http.HandlerFunc) htt
 				writeJSON(w, http.StatusForbidden, map[string]string{"error": "role access is denied"})
 				return
 			}
-			app.beginAudit(r, identity)
-			next(w, r.WithContext(context.WithValue(r.Context(), identityContextKey{}, identity)))
+			r = r.WithContext(context.WithValue(r.Context(), identityContextKey{}, identity))
+			if slug != "" && isWorkspaceMutation(r) {
+				mutation(w, r)
+				return
+			}
+			audited(w, r)
 		}
 	}
 }
@@ -961,7 +988,11 @@ func (app *application) me(w http.ResponseWriter, r *http.Request) {
 		writeAuthenticationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenantSlug": identity.TenantSlug, "membershipId": identity.MembershipID, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email, "platformAdmin": identity.PlatformAdmin})
+	company, ok := app.loadTenant(w, r, identity.TenantSlug)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspaceReadOnly": !subscriptionAllowsOperations(company.SubscriptionStatus), "subscriptionThrough": company.SubscriptionThrough, "tenantSlug": identity.TenantSlug, "membershipId": identity.MembershipID, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email, "platformAdmin": identity.PlatformAdmin})
 }
 
 func (app *application) logout(w http.ResponseWriter, r *http.Request) {
@@ -1644,11 +1675,13 @@ func (app *application) deleteTeamMember(w http.ResponseWriter, r *http.Request)
 }
 
 type tenant struct {
-	ID                 string
-	Name               string
-	Timezone           string
-	BaseCurrency       string
-	SubscriptionStatus string
+	SubscriptionThrough          *string
+	ConfiguredSubscriptionStatus string
+	ID                           string
+	Name                         string
+	Timezone                     string
+	BaseCurrency                 string
+	SubscriptionStatus           string
 }
 
 type tripResponse struct {
@@ -4028,7 +4061,9 @@ func (app *application) loadTenant(w http.ResponseWriter, r *http.Request, slug 
 		return cached, true
 	}
 	var result tenant
-	if err := app.db.QueryRow(r.Context(), `SELECT id::text, name, timezone, base_currency, subscription_status FROM tenants WHERE slug = $1`, slug).Scan(&result.ID, &result.Name, &result.Timezone, &result.BaseCurrency, &result.SubscriptionStatus); err != nil {
+	if err := app.db.QueryRow(r.Context(), `SELECT id::text, name, timezone, base_currency,
+		effective_workspace_status(subscription_status,subscription_through,(now() AT TIME ZONE timezone)::date),
+		subscription_status,subscription_through::text FROM tenants WHERE slug = $1`, slug).Scan(&result.ID, &result.Name, &result.Timezone, &result.BaseCurrency, &result.SubscriptionStatus, &result.ConfiguredSubscriptionStatus, &result.SubscriptionThrough); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
 			return tenant{}, false
@@ -4047,17 +4082,18 @@ type updateSubscriptionRequest struct {
 }
 
 type provisionTenantRequest struct {
-	Slug               string  `json:"slug"`
-	Name               string  `json:"name"`
-	Timezone           string  `json:"timezone"`
-	BaseCurrency       string  `json:"baseCurrency"`
-	SubscriptionStatus string  `json:"subscriptionStatus"`
-	OwnerEmail         string  `json:"ownerEmail"`
-	OwnerDisplayName   string  `json:"ownerDisplayName"`
-	OwnerPassword      string  `json:"ownerPassword"`
-	PrimaryColor       string  `json:"primaryColor"`
-	DefaultTheme       string  `json:"defaultTheme"`
-	LogoURL            *string `json:"logoUrl"`
+	SubscriptionThrough string  `json:"subscriptionThrough"`
+	Slug                string  `json:"slug"`
+	Name                string  `json:"name"`
+	Timezone            string  `json:"timezone"`
+	BaseCurrency        string  `json:"baseCurrency"`
+	SubscriptionStatus  string  `json:"subscriptionStatus"`
+	OwnerEmail          string  `json:"ownerEmail"`
+	OwnerDisplayName    string  `json:"ownerDisplayName"`
+	OwnerPassword       string  `json:"ownerPassword"`
+	PrimaryColor        string  `json:"primaryColor"`
+	DefaultTheme        string  `json:"defaultTheme"`
+	LogoURL             *string `json:"logoUrl"`
 }
 
 type provisionTenantResponse struct {
@@ -4132,6 +4168,10 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant provision payload"})
 		return
 	}
+	if input.SubscriptionThrough != "" && !validSubscriptionDate(input.SubscriptionThrough) {
+		writeJSON(w, 400, map[string]string{"error": "Укажите корректную дату окончания доступа."})
+		return
+	}
 	if err := normalizeProvisionTenantRequest(&input); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -4147,11 +4187,12 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 
 	var tenantID string
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO tenants (slug, name, timezone, base_currency, subscription_status,platform_created_by)
-		VALUES ($1, $2, $3, $4, $5,NULLIF($6,'')::uuid)
+		INSERT INTO tenants (slug, name, timezone, base_currency, subscription_status,platform_created_by,subscription_through)
+		VALUES ($1, $2, $3, $4, $5,NULLIF($6,'')::uuid,
+			COALESCE(NULLIF($7,'')::date, CASE WHEN $8::boolean THEN (now() AT TIME ZONE $3)::date - 1 END))
 		ON CONFLICT (slug) DO NOTHING
 		RETURNING id::text
-	`, input.Slug, input.Name, input.Timezone, input.BaseCurrency, input.SubscriptionStatus, actor.UserID).Scan(&tenantID)
+	`, input.Slug, input.Name, input.Timezone, input.BaseCurrency, input.SubscriptionStatus, actor.UserID, input.SubscriptionThrough, actor.PlatformAdmin).Scan(&tenantID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if actor.PlatformAdmin {
 			writeJSON(w, 409, map[string]string{"error": "Компания с таким адресом уже существует."})
@@ -4306,7 +4347,7 @@ func (app *application) updateSubscription(w http.ResponseWriter, r *http.Reques
 	if _, err := tx.Exec(r.Context(), `
 		INSERT INTO subscription_events (tenant_id, external_event_id, previous_status, next_status, reason)
 		VALUES ($1, NULLIF($2, ''), $3, $4, NULLIF($5, ''))
-	`, tenant.ID, input.ExternalEventID, tenant.SubscriptionStatus, input.Status, input.Reason); err != nil {
+	`, tenant.ID, input.ExternalEventID, tenant.ConfiguredSubscriptionStatus, input.Status, input.Reason); err != nil {
 		app.log.Error("record subscription event", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update subscription"})
 		return

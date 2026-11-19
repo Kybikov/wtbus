@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Building2, Plus, Receipt } from "lucide-react"
+import { ArrowUpRight, Building2, Plus, Receipt } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { FieldSelect } from "@/components/ui/field-select"
@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { sessionFetch } from "@/lib/session-navigation"
+import { openWorkspace, sessionFetch } from "@/lib/session-navigation"
 
 type Workspace = {
   slug: string
@@ -23,17 +23,21 @@ type Workspace = {
   members: number
   trips: number
   bookings: number
+  through: string | null
 }
+type Trend = { month: string; collectedMinor: number; bookings: number }
 type Overview = {
   items: Workspace[]
   monthlyMinor: number
   collectedMinor: number
+  trend: Trend[]
 }
 type Payment = {
   amountMinor: number
   paidOn: string
   source: string
   reference: string
+  actor: string
 }
 type Event = {
   at: string
@@ -42,8 +46,11 @@ type Event = {
   previous: string
   next: string
   reason: string
+  previousThrough: string | null
+  nextThrough: string | null
 }
-type Details = { status: string; payments: Payment[]; events: Event[] }
+type Access = { status: string; through: string | null }
+type Details = Access & { payments: Payment[]; events: Event[] }
 
 const url = "/api/platform/workspaces"
 const statuses: Record<string, string> = {
@@ -61,6 +68,15 @@ const day = new Intl.DateTimeFormat("ru-RU", {
   dateStyle: "short",
   timeZone: "UTC",
 })
+const accessDate = (value: string | null) =>
+  value ? day.format(new Date(value)) : "Без срока"
+const monthLabel = new Intl.DateTimeFormat("ru-RU", {
+  month: "short",
+  timeZone: "UTC",
+})
+const count = new Intl.NumberFormat("ru-RU")
+const canEdit = (status: string) => status === "active" || status === "trial"
+
 const dateTime = new Intl.DateTimeFormat("ru-RU", {
   dateStyle: "short",
   timeStyle: "short",
@@ -81,7 +97,69 @@ async function request<T>(address: string, options?: RequestInit): Promise<T> {
 function formatEvent(event: Event) {
   if (event.action === "created") return "Создано рабочее пространство"
   if (event.action === "payment") return "Учтена оплата подписки"
-  return `${statuses[event.previous] ?? event.previous} → ${statuses[event.next] ?? event.next}`
+  if (event.action === "entered") return "Вход администратора платформы"
+  return (
+    [
+      event.previous === event.next
+        ? null
+        : `${statuses[event.previous] ?? event.previous} → ${statuses[event.next] ?? event.next}`,
+      event.previousThrough === event.nextThrough
+        ? null
+        : `${accessDate(event.previousThrough)} → ${accessDate(event.nextThrough)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Доступ обновлён"
+  )
+}
+
+function TrendChart({
+  title,
+  data,
+  metric,
+}: {
+  title: string
+  data: Trend[]
+  metric: "collectedMinor" | "bookings"
+}) {
+  const maximum = Math.max(1, ...data.map((point) => point[metric]))
+  const format = metric === "collectedMinor" ? money : count.format
+  return (
+    <section className="workspace-panel min-w-0 p-4 sm:p-5">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      <ul className="mt-3 grid grid-cols-6 gap-1 sm:gap-2">
+        {data.map((point) => {
+          const value = point[metric]
+          const month = monthLabel.format(new Date(`${point.month}-01`))
+          return (
+            <li
+              key={point.month}
+              tabIndex={0}
+              aria-label={`${month} · ${format(value)}`}
+              className="group relative flex min-w-0 flex-col items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="pointer-events-none absolute -top-1 z-10 rounded bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground opacity-0 shadow-sm group-hover:opacity-100 group-focus-visible:opacity-100">
+                {format(value)}
+              </span>
+              <div
+                className="flex h-28 w-full items-end justify-center border-b border-border"
+                aria-hidden
+              >
+                <div
+                  className={`w-3/4 max-w-12 rounded-t ${metric === "collectedMinor" ? "bg-primary/75" : "bg-emerald-500/65"}`}
+                  style={{
+                    height: value === 0 ? 2 : `${(value / maximum) * 100}%`,
+                  }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground" aria-hidden>
+                {month}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }
 
 export function PlatformWorkspaces() {
@@ -95,6 +173,8 @@ export function PlatformWorkspaces() {
   const [error, setError] = React.useState("")
   const [detailError, setDetailError] = React.useState("")
   const [statusBusy, setStatusBusy] = React.useState(false)
+  const [switching, setSwitching] = React.useState(false)
+  const [dateRevision, setDateRevision] = React.useState(0)
   const [dialog, setDialog] = React.useState<"create" | "payment" | null>(null)
   const [dialogError, setDialogError] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -135,24 +215,37 @@ export function PlatformWorkspaces() {
     return () => controller.abort()
   }, [address, revision, slug])
 
-  async function setStatus(status: string) {
-    if (!detail || detail.status === status || statusBusy) return
+  async function enterWorkspace() {
+    if (!slug || switching) return
+    setSwitching(true)
+    setDetailError("")
+    try {
+      await openWorkspace(slug, true)
+    } catch (reason) {
+      setSwitching(false)
+      setDetailError(errorText(reason))
+    }
+  }
+
+  async function updateAccess(patch: Partial<Access>) {
+    if (!detail || statusBusy || switching) return
     setStatusBusy(true)
     setDetailError("")
     try {
-      await request(address, {
+      const access = await request<Access>(address, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(patch),
       })
       setDetails((value) =>
         value && value.slug === slug
-          ? { ...value, data: { ...value.data, status } }
+          ? { ...value, data: { ...value.data, ...access } }
           : value
       )
       setRevision((value) => value + 1)
-      toast.success("Статус подписки обновлён")
+      toast.success("Доступ обновлён")
     } catch (reason) {
+      setDateRevision((value) => value + 1)
       setDetailError(errorText(reason))
     } finally {
       setStatusBusy(false)
@@ -240,7 +333,10 @@ export function PlatformWorkspaces() {
                   .length,
               ],
               ["Получено в этом месяце", money(overview.collectedMinor)],
-              ["Тариф за месяц", money(overview.monthlyMinor)],
+              [
+                "Только просмотр",
+                overview.items.filter((item) => !canEdit(item.status)).length,
+              ],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -256,46 +352,137 @@ export function PlatformWorkspaces() {
         ) : null}
       </section>
 
+      {overview ? (
+        <>
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <TrendChart
+              title="Платежи за подписки · 6 месяцев"
+              data={overview.trend}
+              metric="collectedMinor"
+            />
+            <TrendChart
+              title="Создано бронирований · 6 месяцев"
+              data={overview.trend}
+              metric="bookings"
+            />
+          </div>
+          <section
+            className="workspace-panel min-w-0 p-4 sm:p-5"
+            aria-label="Список компаний"
+          >
+            <h2 className="mb-2 text-sm font-semibold">Доступ компаний</h2>
+            <ul className="divide-y divide-border">
+              {overview.items.map((item) => (
+                <li key={item.slug}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-pressed={item.slug === slug}
+                    className="grid h-auto min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] items-center justify-items-start gap-x-3 gap-y-1 px-2 py-2 text-left sm:grid-cols-[minmax(0,1fr)_9rem_7rem]"
+                    disabled={statusBusy || switching}
+                    disabledReason={
+                      switching
+                        ? "Открываем рабочее пространство."
+                        : "Сохраняем параметры доступа."
+                    }
+                    onClick={() => {
+                      setSelected(item.slug)
+                      setDetailError("")
+                    }}
+                  >
+                    <span className="min-w-0 break-words whitespace-normal">
+                      {item.name}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${canEdit(item.status) ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-destructive/10 text-destructive"}`}
+                    >
+                      {statuses[item.status] ?? item.status}
+                    </span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {accessDate(item.through)}
+                    </span>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      ) : null}
+
       {current ? (
         <>
           <section className="workspace-panel grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
-            <label className="grid gap-1 text-sm">
-              Компания
-              <FieldSelect
-                aria-label="Компания"
-                value={current.slug}
-                onValueChange={(value) => {
-                  setSelected(value)
-                  setDetailError("")
-                }}
-                disabled={statusBusy}
-                disabledReason="Статус подписки сохраняется."
-                options={
-                  overview?.items.map((item) => ({
-                    value: item.slug,
-                    label: item.name,
-                  })) ?? []
+            <header className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold break-words">
+                  {current.name}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {canEdit(current.status)
+                    ? "Редактирование доступно"
+                    : "Только просмотр"}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={switching || statusBusy}
+                disabledReason={
+                  switching
+                    ? "Открываем рабочее пространство."
+                    : "Сохраняем параметры доступа."
                 }
-              />
-            </label>
+                onClick={() => void enterWorkspace()}
+              >
+                <ArrowUpRight /> Войти в компанию
+              </Button>
+            </header>
             <label className="grid gap-1 text-sm">
               Статус подписки
               <FieldSelect
                 aria-label="Статус подписки"
                 value={detail?.status ?? current.status}
-                onValueChange={(status) => void setStatus(status)}
-                disabled={statusBusy || !detail}
+                onValueChange={(status) => {
+                  if (status !== detail?.status) void updateAccess({ status })
+                }}
+                disabled={statusBusy || switching || !detail}
                 disabledReason={
                   statusBusy
-                    ? "Сохраняем статус подписки."
-                    : detailError
-                      ? "Повторите загрузку данных компании."
-                      : "Загружаем данные компании."
+                    ? "Сохраняем параметры доступа."
+                    : switching
+                      ? "Открываем рабочее пространство."
+                      : detailError
+                        ? "Повторите загрузку данных компании."
+                        : "Загружаем данные компании."
                 }
                 options={Object.entries(statuses).map(([value, label]) => ({
                   value,
                   label,
                 }))}
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              Доступ по (включительно)
+              <Input
+                type="date"
+                required
+                min="2000-01-01"
+                max="2100-12-31"
+                key={`${slug}:${detail?.through}:${dateRevision}`}
+                defaultValue={detail?.through ?? ""}
+                readOnly={statusBusy || switching || !detail}
+                onBlur={(event) => {
+                  const input = event.currentTarget
+                  if (
+                    (input.value || detail?.through) &&
+                    !input.validity.valid
+                  ) {
+                    setDetailError("Укажите корректную дату окончания доступа.")
+                    setDateRevision((value) => value + 1)
+                  } else if (input.value && input.value !== detail?.through) {
+                    void updateAccess({ through: input.value })
+                  }
+                }}
               />
             </label>
             <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground sm:col-span-2">
@@ -366,6 +553,7 @@ export function PlatformWorkspaces() {
                           {payment.source === "manual"
                             ? "Вручную"
                             : "WTBackend"}
+                          {payment.actor ? ` · ${payment.actor}` : ""}
                         </div>
                       </div>
                       <time
@@ -467,6 +655,16 @@ export function PlatformWorkspaces() {
                 <label className="grid gap-1">
                   Часовой пояс
                   <Input required name="timezone" defaultValue="Europe/Kyiv" />
+                </label>
+                <label className="grid gap-1">
+                  Пробный доступ по (включительно)
+                  <Input
+                    required
+                    name="subscriptionThrough"
+                    type="date"
+                    min="2000-01-01"
+                    max="2100-12-31"
+                  />
                 </label>
                 <label className="grid gap-1">
                   Имя владельца

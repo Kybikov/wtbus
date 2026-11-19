@@ -24,13 +24,22 @@ export function SessionMonitor() {
         return
       pending = true
       try {
-        await sessionFetch("/api/auth/me", {
+        const response = await sessionFetch("/api/auth/me", {
           cache: "no-store",
           signal: AbortSignal.any([
             controller.signal,
             AbortSignal.timeout(10_000),
           ]),
         })
+        if (response.ok && !controller.signal.aborted) {
+          const identity = await response.json()
+          if (typeof identity.workspaceReadOnly === "boolean")
+            window.dispatchEvent(
+              new CustomEvent("vivat:workspace-read-only", {
+                detail: identity.workspaceReadOnly,
+              })
+            )
+        }
       } catch {
         // Losing connectivity does not end a session. Check again on reconnect.
       } finally {

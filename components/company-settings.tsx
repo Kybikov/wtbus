@@ -72,9 +72,8 @@ export function CompanySettings({
   const role = useSettingsRole()
   const canManageSecrets = role === "owner" || role === "developer"
   const isSubscriptionLocked =
-    role !== "developer" &&
-    (branding.subscriptionStatus === "past_due" ||
-      branding.subscriptionStatus === "suspended")
+    branding.subscriptionStatus === "past_due" ||
+    branding.subscriptionStatus === "suspended"
 
   const autosave = useFieldAutosave<Branding>(async (next) => {
     if (!/^#[0-9a-f]{6}$/i.test(next.primaryColor))
@@ -270,7 +269,7 @@ export function CompanySettings({
             )}
           </section>
         ) : null}
-        {canManageSecrets && section === "company" && <CompanyCleanup />}
+        {canManageSecrets && !isSubscriptionLocked && section === "company" && <CompanyCleanup />}
         {canManageSecrets && section === "payments" ? (
           <PaymentSettings
             key={`payment-${refreshVersion}`}

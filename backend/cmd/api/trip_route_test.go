@@ -56,6 +56,10 @@ func TestRouteFromTripPostgres(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &result)
 		return result.RouteID
 	}
+	call(trip, 402)
+	if _, err := db.Exec(ctx, `UPDATE tenants SET subscription_status='active' WHERE id=$1`, tenant); err != nil {
+		t.Fatal(err)
+	}
 	call(foreign, 404)
 	route := call(trip, 201)
 	if route == "" || call(trip, 200) != route {
@@ -67,10 +71,7 @@ func TestRouteFromTripPostgres(t *testing.T) {
 	if got := row(`SELECT count(*)::text FROM routes WHERE tenant_id=$1`, tenant); got != "1" {
 		t.Fatal("duplicate routes")
 	}
-	// Production sales still require an active company, a future departure and per-passenger fare.
-	if _, err := db.Exec(ctx, `UPDATE tenants SET subscription_status='active' WHERE id=$1`, tenant); err != nil {
-		t.Fatal(err)
-	}
+	// Production sales require an active company, a future departure and a per-passenger fare.
 	date := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
 	r := httptest.NewRequest("GET", "/api/v1/public/trip-route-qa/trips?origin=A&destination=B&seats=1&date="+date, nil)
 	w := httptest.NewRecorder()

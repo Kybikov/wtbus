@@ -126,7 +126,7 @@ export function SettingsWorkspace({
         ...allowed,
         {
           group: "Платформа",
-          href: "/settings/platform",
+          href: "/admin",
           label: "Рабочие пространства",
           icon: Building2,
         },

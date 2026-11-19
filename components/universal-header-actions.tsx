@@ -43,6 +43,7 @@ export function UniversalHeaderActions({
   ready,
   onCreate,
   createDisabled = false,
+  readOnlyReason,
   dataActions,
   viewExport,
   onImported,
@@ -51,6 +52,7 @@ export function UniversalHeaderActions({
   ready: boolean
   onCreate?: () => void
   createDisabled?: boolean
+  readOnlyReason?: string
   dataActions?: HeaderDataActions
   viewExport: EntityExport | null
   onImported: () => Promise<void>
@@ -59,11 +61,13 @@ export function UniversalHeaderActions({
   const pathname = usePathname()
   const [importOpen, setImportOpen] = React.useState(false)
   const canImport =
-    ready && ["developer", "owner", "admin", "dispatcher"].includes(role)
+    !readOnlyReason &&
+    ready &&
+    ["developer", "owner", "admin", "dispatcher"].includes(role)
   const [busy, setBusy] = React.useState<"export" | null>(null)
   const canOperate = ready && role !== "driver"
   React.useEffect(() => {
-    if (!ready || !onCreate || createDisabled) return
+    if (!ready || !onCreate || createDisabled || readOnlyReason) return
     const timer = window.setTimeout(() => {
       const url = new URL(window.location.href)
       if (url.searchParams.get("create") !== "1") return
@@ -81,7 +85,7 @@ export function UniversalHeaderActions({
         onCreate()
     }, 0)
     return () => clearTimeout(timer)
-  }, [ready, onCreate, createDisabled, pathname, role])
+  }, [ready, onCreate, createDisabled, readOnlyReason, pathname, role])
   async function exportCustomers() {
     if (dataActions) {
       await dataActions.onExport()
@@ -165,8 +169,12 @@ export function UniversalHeaderActions({
               .map((target) => (
                 <DropdownMenuItem
                   key={target.href}
-                  disabled={target.href === pathname && createDisabled}
+                  disabled={
+                    !!readOnlyReason ||
+                    (target.href === pathname && createDisabled)
+                  }
                   disabledReason={
+                    readOnlyReason ??
                     "Дождитесь загрузки данных для создания записи."
                   }
                   onClick={() => {
@@ -183,11 +191,12 @@ export function UniversalHeaderActions({
           <DropdownMenuItem
             disabled={!canImport || busy !== null}
             disabledReason={
-              !canImport
+              readOnlyReason ??
+              (!canImport
                 ? !ready
                   ? "Дождитесь загрузки аккаунта."
                   : "Импорт доступен владельцу, администратору, диспетчеру и разработчику."
-                : "Экспорт уже выполняется. Дождитесь завершения."
+                : "Экспорт уже выполняется. Дождитесь завершения.")
             }
             onClick={() => setImportOpen(true)}
           >
