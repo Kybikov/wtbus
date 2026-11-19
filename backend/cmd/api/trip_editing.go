@@ -3,7 +3,7 @@ package main
 // The workflow phase defines whether a trip has departed. Labels such as
 // boarding, delayed and company-specific statuses must follow that same rule.
 func tripEditRestriction(role, phase string, terminal bool) string {
-	if role == "developer" {
+	if role == "developer" || role == "owner" {
 		return ""
 	}
 	if !terminal && (phase == "planned" || phase == "assigned") {

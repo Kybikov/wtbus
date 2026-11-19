@@ -29,6 +29,7 @@ import {
   Wallet01Icon,
 } from "@hugeicons/core-free-icons"
 import { MoreHorizontal, ChevronDown, ChevronRight } from "lucide-react"
+import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 import { settingsSections } from "@/components/settings-workspace"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
@@ -212,7 +213,14 @@ const navigation: NavigationItem[] = [
     href: "/driver",
     icon: Car01Icon,
     label: "Мои рейсы",
-    roles: ["owner", "admin", "dispatcher", "accountant", "driver", "developer"],
+    roles: [
+      "owner",
+      "admin",
+      "dispatcher",
+      "accountant",
+      "driver",
+      "developer",
+    ],
   },
 ]
 const defaultShellBrand: ShellBrand = {
@@ -703,6 +711,7 @@ export function AppShell({
     window.addEventListener("vivat-profile-change", updated)
     return () => window.removeEventListener("vivat-profile-change", updated)
   }, [])
+  const [workspaceOpen, setWorkspaceOpen] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const shortcutLabel = useSearchShortcutLabel()
   const [localSearchMobileOpen, setLocalSearchMobileOpen] =
@@ -964,6 +973,7 @@ export function AppShell({
 
   return (
     <EntityExportContext.Provider value={setViewExport}>
+      <WorkspaceSwitcher open={workspaceOpen} onOpenChange={setWorkspaceOpen} />
       <SidebarProvider
         className="app-shell-frame h-dvh min-h-0 gap-2 overflow-hidden bg-background p-2 text-foreground"
         onOpenChange={setSidebarOpen}
@@ -1298,6 +1308,9 @@ export function AppShell({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem render={<Link href="/profile" />}>
                     Личный профиль
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setWorkspaceOpen(true)}>
+                    Сменить компанию
                   </DropdownMenuItem>
                   <ThemeToggle menu />
                   {managementRoles.includes(brand.role) ||

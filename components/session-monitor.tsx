@@ -41,11 +41,16 @@ export function SessionMonitor() {
     const timer = window.setInterval(() => void check(), 60_000)
     document.addEventListener("visibilitychange", check)
     window.addEventListener("online", check)
+    const reloadWorkspace = (event: StorageEvent) => {
+      if (event.key === "vivat:workspace-change") window.location.replace("/")
+    }
+    window.addEventListener("storage", reloadWorkspace)
     return () => {
       controller.abort()
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", check)
       window.removeEventListener("online", check)
+      window.removeEventListener("storage", reloadWorkspace)
     }
   }, [publicPage])
   return null

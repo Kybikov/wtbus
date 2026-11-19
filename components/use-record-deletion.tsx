@@ -30,14 +30,18 @@ const removable = new Set<EntityCollection | "company">([
 ])
 type Preview = {
   token: string
-  effects: { label: string; count: number; operation: "delete" | "unlink" | "retain" }[]
+  effects: {
+    label: string
+    count: number
+    operation: "delete" | "unlink" | "retain"
+  }[]
 }
 
 export function useRecordDeletion(
   entity: EntityCollection | "company",
   onDeleted: (id: string) => void
 ) {
-  const [developer, setDeveloper] = React.useState(false)
+  const [canRemove, setCanRemove] = React.useState(false)
   const [target, setTarget] = React.useState<{
     id: string
     label: string
@@ -57,7 +61,9 @@ export function useRecordDeletion(
       .then(async (response) => {
         const identity = await response.json()
         if (!controller.signal.aborted)
-          setDeveloper(response.ok && identity.role === "developer")
+          setCanRemove(
+            response.ok && ["owner", "developer"].includes(identity.role)
+          )
       })
       .catch(() => {
         /* Fail closed; the server independently enforces the role. */
@@ -152,7 +158,7 @@ export function useRecordDeletion(
       setDeleting(false)
     }
   }
-  const available = developer && removable.has(entity)
+  const available = canRemove && removable.has(entity)
   return {
     available,
     open(id: string, label: string) {

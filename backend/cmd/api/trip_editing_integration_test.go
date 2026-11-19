@@ -69,9 +69,9 @@ func TestTripEditingDatabase(t *testing.T) {
 	}{
 		{"new", "owner", true}, {"assigned", "dispatcher", true},
 		{"boarding", "owner", true}, {"assigned", "owner", true},
-		{"qa_wait", "admin", true}, {"qa_closed", "owner", false},
-		{"in_progress", "owner", false},
-		{"completed", "owner", false}, {"cancelled", "dispatcher", false},
+		{"qa_wait", "admin", true}, {"qa_closed", "owner", true}, {"qa_closed", "admin", false},
+		{"in_progress", "owner", true}, {"in_progress", "dispatcher", false},
+		{"completed", "owner", true}, {"completed", "dispatcher", false}, {"cancelled", "dispatcher", false},
 		{"completed", "developer", true},
 	}
 	var delayedTrip string

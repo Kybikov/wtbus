@@ -1,4 +1,4 @@
-import { getSessionRole } from "@/lib/server-role"
+import { getSessionAccess } from "@/lib/server-role"
 import { SettingsFrame } from "@/components/settings-frame"
 
 export default async function PreferencesLayout({
@@ -6,6 +6,10 @@ export default async function PreferencesLayout({
 }: {
   children: React.ReactNode
 }) {
-  const role = await getSessionRole()
-  return <SettingsFrame role={role ?? undefined}>{children}</SettingsFrame>
+  const access = await getSessionAccess()
+  return (
+    <SettingsFrame role={access?.role} platformAdmin={access?.platformAdmin}>
+      {children}
+    </SettingsFrame>
+  )
 }

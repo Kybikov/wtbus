@@ -110,18 +110,36 @@ export function SettingsWorkspace({
   active,
   role,
   children,
+  platformAdmin,
 }: {
   active: string
   role?: string
+  platformAdmin?: boolean
   children: ReactNode
 }) {
   const router = useRouter()
-  const visible = sections.filter(
+  const allowed = sections.filter(
     (s) => !s.roles || (!!role && s.roles.includes(role))
   )
+  const visible = platformAdmin
+    ? [
+        ...allowed,
+        {
+          group: "Платформа",
+          href: "/settings/platform",
+          label: "Рабочие пространства",
+          icon: Building2,
+        },
+      ]
+    : allowed
   return (
     <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
-      <div className="workspace-panel hidden min-w-0 space-y-2 p-3 md:block xl:hidden">
+      <div
+        className={cn(
+          "workspace-panel min-w-0 space-y-2 p-3 md:block xl:hidden",
+          !platformAdmin && "hidden"
+        )}
+      >
         <p className="text-xs text-muted-foreground">Раздел настроек</p>
         <FieldSelect
           aria-label="Раздел настроек"

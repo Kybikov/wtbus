@@ -168,6 +168,13 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", app.login)
 	mux.HandleFunc("POST /api/v1/auth/select-company", app.selectCompany)
 	mux.HandleFunc("GET /api/v1/auth/me", app.me)
+	mux.HandleFunc("GET /api/v1/auth/workspaces", app.workspaces)
+	mux.HandleFunc("POST /api/v1/auth/workspaces", app.workspaces)
+	mux.HandleFunc("GET /api/v1/platform/workspaces", app.requirePlatformAdmin(app.platformWorkspaces))
+	mux.HandleFunc("POST /api/v1/platform/workspaces", app.requirePlatformAdmin(app.provisionTenant))
+	mux.HandleFunc("GET /api/v1/platform/workspaces/{slug}", app.requirePlatformAdmin(app.platformWorkspace))
+	mux.HandleFunc("PATCH /api/v1/platform/workspaces/{slug}", app.requirePlatformAdmin(app.platformWorkspace))
+	mux.HandleFunc("POST /api/v1/platform/workspaces/{slug}/payments", app.requirePlatformAdmin(app.platformWorkspacePayment))
 	mux.HandleFunc("PATCH /api/v1/auth/me", app.updateProfile)
 	mux.HandleFunc("POST /api/v1/auth/logout", app.logout)
 	mux.HandleFunc("GET /api/v1/public/{slug}/catalog", app.publicCatalog)
@@ -194,7 +201,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}", operations(app.entityDetails))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/record-number-search", operations(app.searchRecordNumbers))
 	for _, method := range []string{"GET", "DELETE"} {
-		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}/deletion", app.requireRoles("developer")(app.entityDeletion))
+		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-details/{entity}/{recordID}/deletion", owners(app.entityDeletion))
 	}
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		mux.HandleFunc(method+" /api/v1/tenants/{slug}/entity-views", operations(app.entityViews))
@@ -342,18 +349,20 @@ const (
 )
 
 type identity struct {
-	UserID       string
-	MembershipID string
-	TenantID     string
-	TenantSlug   string
-	Role         string
-	DisplayName  string
-	Email        string
+	UserID        string
+	MembershipID  string
+	TenantID      string
+	TenantSlug    string
+	Role          string
+	DisplayName   string
+	Email         string
+	PlatformAdmin bool
 }
 
 type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	AutoSelect bool   `json:"autoSelect,omitempty"`
 }
 
 type companyChoice struct {
@@ -646,6 +655,12 @@ func companySelectionKey(tokenHash []byte) string {
 }
 
 func (app *application) createSession(ctx context.Context, result identity) (loginResponse, error) {
+	return createSessionWith(ctx, app.db, result)
+}
+
+func createSessionWith(ctx context.Context, db interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, result identity) (loginResponse, error) {
 	if capture, ok := ctx.Value(auditContextKey{}).(*auditCapture); ok {
 		capture.actor = &result
 	}
@@ -654,7 +669,7 @@ func (app *application) createSession(ctx context.Context, result identity) (log
 		return loginResponse{}, fmt.Errorf("create session token: %w", err)
 	}
 	expiresAt := time.Now().UTC().Add(sessionLifetime)
-	if _, err := app.db.Exec(ctx, `
+	if _, err := db.Exec(ctx, `
 		INSERT INTO user_sessions (user_id, membership_id, token_hash, expires_at)
 		VALUES ($1, $2, $3, $4)
 	`, result.UserID, result.MembershipID, tokenHash, expiresAt); err != nil {
@@ -701,13 +716,13 @@ func (app *application) authenticate(r *http.Request) (identity, string, error) 
 	hash := sha256.Sum256([]byte(token))
 	var result identity
 	err := app.db.QueryRow(r.Context(), `
-		SELECT u.id::text, m.id::text, t.id::text, t.slug, m.role::text, u.display_name, u.email
+		SELECT u.id::text, m.id::text, t.id::text, t.slug, m.role::text, u.display_name, u.email, u.is_platform_admin AND NOT u.is_system
 		FROM user_sessions s
 		JOIN users u ON u.id = s.user_id
 		JOIN memberships m ON m.id = s.membership_id AND m.user_id = u.id AND m.is_active
 		JOIN tenants t ON t.id = m.tenant_id
 		WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
-	`, hash[:]).Scan(&result.UserID, &result.MembershipID, &result.TenantID, &result.TenantSlug, &result.Role, &result.DisplayName, &result.Email)
+	`, hash[:]).Scan(&result.UserID, &result.MembershipID, &result.TenantID, &result.TenantSlug, &result.Role, &result.DisplayName, &result.Email, &result.PlatformAdmin)
 	if err != nil {
 		return identity{}, "", err
 	}
@@ -839,8 +854,25 @@ func (app *application) login(w http.ResponseWriter, r *http.Request) {
 	if err := app.redis.Del(r.Context(), throttleKey).Err(); err != nil {
 		app.log.Warn("clear failed login rate limit", "error", err)
 	}
-	if len(identities) == 1 {
-		response, err := app.createSession(r.Context(), identities[0])
+	if len(identities) == 1 || input.AutoSelect {
+		chosen := identities[0]
+		if len(identities) > 1 {
+			var last string
+			err = app.db.QueryRow(r.Context(), `SELECT s.membership_id::text FROM user_sessions s
+				JOIN memberships m ON m.id=s.membership_id AND m.user_id=s.user_id AND m.is_active
+				WHERE s.user_id=$1 ORDER BY s.created_at DESC,s.id DESC LIMIT 1`, userID).Scan(&last)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				app.publicFailure(w, err)
+				return
+			}
+			for _, membership := range identities {
+				if membership.MembershipID == last {
+					chosen = membership
+					break
+				}
+			}
+		}
+		response, err := app.createSession(r.Context(), chosen)
 		if err != nil {
 			app.log.Error("create session", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create session"})
@@ -929,7 +961,7 @@ func (app *application) me(w http.ResponseWriter, r *http.Request) {
 		writeAuthenticationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"tenantSlug": identity.TenantSlug, "membershipId": identity.MembershipID, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email})
+	writeJSON(w, http.StatusOK, map[string]any{"tenantSlug": identity.TenantSlug, "membershipId": identity.MembershipID, "role": identity.Role, "displayName": identity.DisplayName, "email": identity.Email, "platformAdmin": identity.PlatformAdmin})
 }
 
 func (app *application) logout(w http.ResponseWriter, r *http.Request) {
@@ -1071,20 +1103,21 @@ func (app *application) updateUserPreferences(w http.ResponseWriter, r *http.Req
 }
 
 type teamMemberResponse struct {
-	MembershipID string         `json:"membershipId"`
-	UserID       string         `json:"userId"`
-	DisplayName  string         `json:"displayName"`
-	Email        string         `json:"email"`
-	Role         string         `json:"role"`
-	IsActive     bool           `json:"isActive"`
-	IsSystem     bool           `json:"isSystem"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	LastSeenAt   *time.Time     `json:"lastSeenAt,omitempty"`
-	DriverID     *string        `json:"driverId,omitempty"`
-	DriverStatus *string        `json:"driverStatus,omitempty"`
-	ActionCount  int64          `json:"actionCount"`
-	LastActionAt *time.Time     `json:"lastActionAt,omitempty"`
-	CashBalances []moneyBalance `json:"cashBalances"`
+	MembershipID           string         `json:"membershipId"`
+	UserID                 string         `json:"userId"`
+	DisplayName            string         `json:"displayName"`
+	Email                  string         `json:"email"`
+	Role                   string         `json:"role"`
+	IsActive               bool           `json:"isActive"`
+	IsSystem               bool           `json:"isSystem"`
+	PasswordResetProtected bool           `json:"passwordResetProtected,omitempty"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	LastSeenAt             *time.Time     `json:"lastSeenAt,omitempty"`
+	DriverID               *string        `json:"driverId,omitempty"`
+	DriverStatus           *string        `json:"driverStatus,omitempty"`
+	ActionCount            int64          `json:"actionCount"`
+	LastActionAt           *time.Time     `json:"lastActionAt,omitempty"`
+	CashBalances           []moneyBalance `json:"cashBalances"`
 }
 
 type createTeamMemberRequest struct {
@@ -1166,7 +1199,8 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 			, (SELECT d.id::text FROM drivers d WHERE d.membership_id = m.id),
 			(SELECT d.status FROM drivers d WHERE d.membership_id = m.id),
 			(SELECT count(*) FROM activity_events event WHERE event.actor_membership_id = m.id),
-			(SELECT max(event.created_at) FROM activity_events event WHERE event.actor_membership_id = m.id)
+			(SELECT max(event.created_at) FROM activity_events event WHERE event.actor_membership_id = m.id),
+			(u.is_platform_admin OR EXISTS(SELECT 1 FROM memberships other WHERE other.user_id=u.id AND other.tenant_id<>m.tenant_id))
 		FROM memberships m
 		JOIN users u ON u.id = m.user_id
 		WHERE m.tenant_id = $1
@@ -1181,7 +1215,7 @@ func (app *application) listTeam(w http.ResponseWriter, r *http.Request) {
 	items := make([]teamMemberResponse, 0)
 	for rows.Next() {
 		var item teamMemberResponse
-		if err := rows.Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.LastSeenAt, &item.DriverID, &item.DriverStatus, &item.ActionCount, &item.LastActionAt); err != nil {
+		if err := rows.Scan(&item.MembershipID, &item.UserID, &item.DisplayName, &item.Email, &item.Role, &item.IsActive, &item.IsSystem, &item.CreatedAt, &item.LastSeenAt, &item.DriverID, &item.DriverStatus, &item.ActionCount, &item.LastActionAt, &item.PasswordResetProtected); err != nil {
 			app.log.Error("scan team", "error", err, "tenant", slug)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load team"})
 			return
@@ -1429,6 +1463,22 @@ func (app *application) updateTeamMember(w http.ResponseWriter, r *http.Request)
 	if input.Password != nil && actor.Role != "owner" && actor.Role != "developer" && actor.Role != "admin" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Недостаточно прав для сброса пароля."})
 		return
+	}
+	if input.Password != nil {
+		// A company administrator may only manage credentials confined to that company.
+		// The user row is already locked by the membership query.
+		var protected bool
+		err = tx.QueryRow(r.Context(), `SELECT is_platform_admin OR EXISTS(
+			SELECT 1 FROM memberships other WHERE other.user_id=users.id AND other.tenant_id<>$2
+		) FROM users WHERE id=$1`, current.UserID, tenant.ID).Scan(&protected)
+		if err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		if protected {
+			writeJSON(w, 403, map[string]string{"error": "Пароль общего или платформенного аккаунта меняется в личном профиле."})
+			return
+		}
 	}
 	if nextRole == "driver" && current.DriverID == nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "create a new driver account with a phone number instead of changing this role"})
@@ -4070,7 +4120,8 @@ func normalizeProvisionTenantRequest(input *provisionTenantRequest) error {
 }
 
 func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) {
-	if !app.authorizedSaaSControl(r) {
+	actor, _ := identityFromContext(r.Context())
+	if !actor.PlatformAdmin && !app.authorizedSaaSControl(r) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant control is unavailable"})
 		return
 	}
@@ -4096,12 +4147,16 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 
 	var tenantID string
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO tenants (slug, name, timezone, base_currency, subscription_status)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO tenants (slug, name, timezone, base_currency, subscription_status,platform_created_by)
+		VALUES ($1, $2, $3, $4, $5,NULLIF($6,'')::uuid)
 		ON CONFLICT (slug) DO NOTHING
 		RETURNING id::text
-	`, input.Slug, input.Name, input.Timezone, input.BaseCurrency, input.SubscriptionStatus).Scan(&tenantID)
+	`, input.Slug, input.Name, input.Timezone, input.BaseCurrency, input.SubscriptionStatus, actor.UserID).Scan(&tenantID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		if actor.PlatformAdmin {
+			writeJSON(w, 409, map[string]string{"error": "Компания с таким адресом уже существует."})
+			return
+		}
 		var existingName, existingSubscriptionStatus string
 		if err := tx.QueryRow(r.Context(), `SELECT name, subscription_status FROM tenants WHERE slug = $1`, input.Slug).Scan(&existingName, &existingSubscriptionStatus); err != nil {
 			app.log.Error("load replayed tenant", "error", err, "tenant", input.Slug)
@@ -4147,8 +4202,8 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not provision tenant"})
 		return
 	} else {
-		if len([]rune(input.OwnerPassword)) < 12 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new tenant owner password must be at least 12 characters"})
+		if len([]rune(input.OwnerPassword)) < 12 || len(input.OwnerPassword) > 72 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Укажите пароль владельца от 12 символов и до 72 байт."})
 			return
 		}
 		passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.OwnerPassword), bcrypt.DefaultCost)
@@ -4167,6 +4222,12 @@ func (app *application) provisionTenant(w http.ResponseWriter, r *http.Request) 
 		app.log.Error("create tenant owner membership", "error", err, "tenant", input.Slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not provision tenant"})
 		return
+	}
+	if actor.PlatformAdmin && actor.UserID != userID {
+		if _, err := tx.Exec(r.Context(), `INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'developer')`, tenantID, actor.UserID); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
 	}
 	if _, err := ensureSystemActor(r.Context(), tx, tenantID); err != nil {
 		app.log.Error("create tenant system actor", "error", err, "tenant", input.Slug)

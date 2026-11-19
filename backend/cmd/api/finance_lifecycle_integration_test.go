@@ -326,9 +326,9 @@ func TestDriverAccountingLifecyclePostgres(t *testing.T) {
 	}
 	call(admin, "PATCH", company+"/team/"+otherMembership, updateTeamMemberRequest{Password: &newPassword}, 404)
 	newPassword = "second-driver-password-123"
-	call(admin, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{Password: &newPassword}, 200)
-	call(driver, "GET", "auth/me", nil, 401)
-	call(foreignSession.SessionToken, "GET", "auth/me", nil, 401)
+	call(admin, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{Password: &newPassword}, 403)
+	call(driver, "GET", "auth/me", nil, 200)
+	call(foreignSession.SessionToken, "GET", "auth/me", nil, 200)
 	call(dev, "PATCH", company+"/team/"+driverAccount.MembershipID, updateTeamMemberRequest{IsActive: func() *bool { v := false; return &v }()}, 200)
 	call(driver, "GET", company+"/driver/wallet", nil, 401)
 }

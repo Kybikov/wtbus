@@ -270,7 +270,7 @@ export function CompanySettings({
             )}
           </section>
         ) : null}
-        {role === "developer" && section === "company" && <CompanyCleanup />}
+        {canManageSecrets && section === "company" && <CompanyCleanup />}
         {canManageSecrets && section === "payments" ? (
           <PaymentSettings
             key={`payment-${refreshVersion}`}

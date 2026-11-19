@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { MobileDockSettings } from "@/components/mobile-dock-settings"
 import { settingsSections } from "@/components/settings-workspace"
+import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { InterfaceScaleControl } from "@/components/interface-preferences"
 import {
@@ -79,6 +80,7 @@ export function MobileAccountMenu({
   trigger: React.RefObject<HTMLElement | null>
 }) {
   const pathname = usePathname()
+  const [workspaceOpen, setWorkspaceOpen] = React.useState(false)
   const [leaving, setLeaving] = React.useState(false)
   const close = () => onOpenChange(false)
   async function signOut() {
@@ -97,203 +99,223 @@ export function MobileAccountMenu({
     }
   }
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        keepMounted
-        side="right"
-        showCloseButton={false}
-        finalFocus={trigger}
-        className="mobile-account-menu w-[min(92vw,23rem)]! max-w-none! gap-0 overflow-hidden rounded-l-3xl border-border bg-card motion-reduce:transition-none"
-      >
-        <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 bg-card/80 px-3 pt-[calc(.75rem+var(--mobile-safe-top))] pb-3 backdrop-blur-xl">
-          <SheetTitle className="sr-only">Профиль и разделы</SheetTitle>
-          <div className="flex min-w-0 items-center gap-2 pr-28">
-            <span
-              aria-hidden
-              className="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
-            >
-              {account?.initials ?? ""}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <p
-                  title={account?.name}
-                  className="min-w-0 truncate text-sm font-semibold"
+    <>
+      <WorkspaceSwitcher open={workspaceOpen} onOpenChange={setWorkspaceOpen} />
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          keepMounted
+          side="right"
+          showCloseButton={false}
+          finalFocus={trigger}
+          className="mobile-account-menu w-[min(92vw,23rem)]! max-w-none! gap-0 overflow-hidden rounded-l-3xl border-border bg-card motion-reduce:transition-none"
+        >
+          <SheetHeader className="mobile-account-header relative shrink-0 gap-0 border-b border-border/70 bg-card/80 px-3 pt-[calc(.75rem+var(--mobile-safe-top))] pb-3 backdrop-blur-xl">
+            <SheetTitle className="sr-only">Профиль и разделы</SheetTitle>
+            <div className="flex min-w-0 items-center gap-2 pr-28">
+              <span
+                aria-hidden
+                className="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
+              >
+                {account?.initials ?? ""}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <p
+                    title={account?.name}
+                    className="min-w-0 truncate text-sm font-semibold"
+                  >
+                    {account?.name || "Ваш профиль"}
+                  </p>
+                </div>
+                <SheetDescription className="sr-only">
+                  Настройки профиля и компании
+                </SheetDescription>
+                <button
+                  type="button"
+                  aria-label="Сменить компанию"
+                  className="mt-0.5 flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    close()
+                    setWorkspaceOpen(true)
+                  }}
                 >
-                  {account?.name || "Ваш профиль"}
-                </p>
+                  <span className="truncate">
+                    {account?.company || "Компания"}
+                  </span>
+                  <ChevronRight className="size-3 shrink-0" />
+                </button>
               </div>
-              <SheetDescription className="mt-0.5 truncate text-xs">
-                {account?.company}
-              </SheetDescription>
             </div>
-          </div>
-          <span className="absolute top-[calc(.5rem+var(--mobile-safe-top))] right-14 flex h-9 items-center rounded-md px-1.5 text-[10px] text-muted-foreground">
-            {roleNames[role]}
-          </span>
-          <SheetClose
-            render={
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute top-[calc(.5rem+var(--mobile-safe-top))] right-2 size-9 rounded-full"
-                aria-label="Закрыть правое меню"
-              />
-            }
-          >
-            <X className="size-4" />
-          </SheetClose>
-          <nav
-            aria-label="Действия профиля"
-            className="mt-3 grid grid-cols-7 items-center gap-0.5 [&_button]:w-full [&_button]:min-w-0! [&>span]:scale-90"
-          >
-            <Button
-              nativeButton={false}
-              render={<Link href="/profile" onClick={close} />}
-              variant="ghost"
-              size="icon"
-              aria-label="Личный профиль"
-              title="Личный профиль"
+            <span className="absolute top-[calc(.5rem+var(--mobile-safe-top))] right-14 flex h-9 items-center rounded-md px-1.5 text-[10px] text-muted-foreground">
+              {roleNames[role]}
+            </span>
+            <SheetClose
+              render={
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute top-[calc(.5rem+var(--mobile-safe-top))] right-2 size-9 rounded-full"
+                  aria-label="Закрыть правое меню"
+                />
+              }
             >
-              <User className="size-5" />
-            </Button>
-            <Button
-              nativeButton={false}
-              render={<Link href="/notifications" onClick={close} />}
-              variant="ghost"
-              size="icon"
-              aria-label={`Уведомления${unread ? `: ${unread} непрочитанных` : ""}`}
-              title="Уведомления"
-              className="relative"
+              <X className="size-4" />
+            </SheetClose>
+            <nav
+              aria-label="Действия профиля"
+              className="mt-3 grid grid-cols-7 items-center gap-0.5 [&_button]:w-full [&_button]:min-w-0! [&>span]:scale-90"
             >
-              <Bell className="size-5" />
-              {unread > 0 && (
-                <span className="absolute top-0 right-0 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
-                  {unread > 99 ? "99+" : unread}
-                </span>
-              )}
-            </Button>
-            {["developer", "owner", "admin", "accountant"].includes(role) && (
               <Button
                 nativeButton={false}
-                render={<Link href="/settings" onClick={close} />}
+                render={<Link href="/profile" onClick={close} />}
                 variant="ghost"
                 size="icon"
-                aria-label="Настройки компании"
-                title="Настройки компании"
+                aria-label="Личный профиль"
+                title="Личный профиль"
               >
-                <Settings className="size-5" />
+                <User className="size-5" />
               </Button>
-            )}
-            <Button
-              nativeButton={false}
-              render={<Link href="/profile/app" onClick={close} />}
-              variant="ghost"
-              size="icon"
-              aria-label="Приложение"
-              title="Приложение"
-            >
-              <Smartphone className="size-5" />
-            </Button>
-            <ThemeToggle compact />
-            <Dialog>
-              <DialogTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Масштаб интерфейса"
-                    title="Масштаб интерфейса"
-                  />
-                }
+              <Button
+                nativeButton={false}
+                render={<Link href="/notifications" onClick={close} />}
+                variant="ghost"
+                size="icon"
+                aria-label={`Уведомления${unread ? `: ${unread} непрочитанных` : ""}`}
+                title="Уведомления"
+                className="relative"
               >
-                <ZoomIn className="size-5" />
-              </DialogTrigger>
-              <DialogContent className="rounded-3xl">
-                <DialogHeader>
-                  <DialogTitle>Масштаб интерфейса</DialogTitle>
-                  <DialogDescription>
-                    Подберите удобный размер элементов.
-                  </DialogDescription>
-                </DialogHeader>
-                <InterfaceScaleControl />
-              </DialogContent>
-            </Dialog>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Выйти"
-              title="Выйти"
-              disabled={leaving}
-              disabledReason="Выход из аккаунта уже выполняется."
-              onClick={() => void signOut()}
-              className="text-destructive"
-            >
-              <LogOut className="size-5" />
-            </Button>
-          </nav>
-        </SheetHeader>
-        <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
-          data-mobile-menu-scroll
-        >
-          <nav
-            aria-label="Разделы правого меню"
-            className="space-y-4"
-            onClick={(event) => {
-              if ((event.target as HTMLElement).closest("a[href]")) close()
-            }}
+                <Bell className="size-5" />
+                {unread > 0 && (
+                  <span className="absolute top-0 right-0 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </Button>
+              {["developer", "owner", "admin", "accountant"].includes(role) && (
+                <Button
+                  nativeButton={false}
+                  render={<Link href="/settings" onClick={close} />}
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Настройки компании"
+                  title="Настройки компании"
+                >
+                  <Settings className="size-5" />
+                </Button>
+              )}
+              <Button
+                nativeButton={false}
+                render={<Link href="/profile/app" onClick={close} />}
+                variant="ghost"
+                size="icon"
+                aria-label="Приложение"
+                title="Приложение"
+              >
+                <Smartphone className="size-5" />
+              </Button>
+              <ThemeToggle compact />
+              <Dialog>
+                <DialogTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Масштаб интерфейса"
+                      title="Масштаб интерфейса"
+                    />
+                  }
+                >
+                  <ZoomIn className="size-5" />
+                </DialogTrigger>
+                <DialogContent className="rounded-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Масштаб интерфейса</DialogTitle>
+                    <DialogDescription>
+                      Подберите удобный размер элементов.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <InterfaceScaleControl />
+                </DialogContent>
+              </Dialog>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Выйти"
+                title="Выйти"
+                disabled={leaving}
+                disabledReason="Выход из аккаунта уже выполняется."
+                onClick={() => void signOut()}
+                className="text-destructive"
+              >
+                <LogOut className="size-5" />
+              </Button>
+            </nav>
+          </SheetHeader>
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
+            data-mobile-menu-scroll
           >
-            {pageMenu && (
-              <section aria-label="Управление страницей" className="space-y-3">
-                {pageMenu}
-              </section>
-            )}
-            {pageTools}
-            {(pathname.startsWith("/settings") ||
-              pathname.startsWith("/profile")) && (
-              <section aria-label="Подразделы страницы" className="space-y-1">
-                {settingsSections
-                  .filter(
-                    (section) =>
-                      section.href.startsWith(
-                        pathname.startsWith("/settings")
-                          ? "/settings"
-                          : "/profile"
-                      ) &&
-                      (!section.roles || section.roles.includes(role))
-                  )
-                  .map((section) => (
-                    <Link
-                      key={section.href}
-                      href={section.href}
-                      onClick={close}
-                      aria-current={
-                        pathname === section.href ? "page" : undefined
-                      }
-                      className={cn(
-                        "flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-control",
-                        pathname === section.href &&
-                          "bg-control font-semibold text-primary"
-                      )}
-                    >
-                      <section.icon className="size-5" />
-                      <span className="min-w-0 flex-1">{section.label}</span>
-                      <ChevronRight className="size-4" />
-                    </Link>
-                  ))}
-              </section>
-            )}
-          </nav>
-        </div>
-        <div className="shrink-0 border-t border-border/70 bg-card px-3 pt-2 pb-[max(.75rem,var(--mobile-safe-bottom))]">
-          <MobileDockSettings
-            role={role}
-            hrefs={dockHrefs}
-            onChange={onDockChange}
-          />
-        </div>
-      </SheetContent>
-    </Sheet>
+            <nav
+              aria-label="Разделы правого меню"
+              className="space-y-4"
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest("a[href]")) close()
+              }}
+            >
+              {pageMenu && (
+                <section
+                  aria-label="Управление страницей"
+                  className="space-y-3"
+                >
+                  {pageMenu}
+                </section>
+              )}
+              {pageTools}
+              {(pathname.startsWith("/settings") ||
+                pathname.startsWith("/profile")) && (
+                <section aria-label="Подразделы страницы" className="space-y-1">
+                  {settingsSections
+                    .filter(
+                      (section) =>
+                        section.href.startsWith(
+                          pathname.startsWith("/settings")
+                            ? "/settings"
+                            : "/profile"
+                        ) &&
+                        (!section.roles || section.roles.includes(role))
+                    )
+                    .map((section) => (
+                      <Link
+                        key={section.href}
+                        href={section.href}
+                        onClick={close}
+                        aria-current={
+                          pathname === section.href ? "page" : undefined
+                        }
+                        className={cn(
+                          "flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-control",
+                          pathname === section.href &&
+                            "bg-control font-semibold text-primary"
+                        )}
+                      >
+                        <section.icon className="size-5" />
+                        <span className="min-w-0 flex-1">{section.label}</span>
+                        <ChevronRight className="size-4" />
+                      </Link>
+                    ))}
+                </section>
+              )}
+            </nav>
+          </div>
+          <div className="shrink-0 border-t border-border/70 bg-card px-3 pt-2 pb-[max(.75rem,var(--mobile-safe-bottom))]">
+            <MobileDockSettings
+              role={role}
+              hrefs={dockHrefs}
+              onChange={onDockChange}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }

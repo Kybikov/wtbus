@@ -192,7 +192,7 @@ func (app *application) entityDetails(w http.ResponseWriter, r *http.Request) {
 	if entity == "fleet" && actor.Role == "dispatcher" {
 		restriction = "Изменять автомобиль может администратор или владелец компании."
 	}
-	if entity == "trips" && actor.Role != "developer" {
+	if entity == "trips" && actor.Role != "developer" && actor.Role != "owner" {
 		var fields map[string]any
 		if json.Unmarshal(item, &fields) == nil {
 			statusKey, _ := fields["status"].(string)

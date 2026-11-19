@@ -74,7 +74,8 @@ func TestCompanyCleanupPostgres(t *testing.T) {
 		}
 		return preview
 	}
-	call("GET", "", identity{TenantID: tenant, Role: "owner"}, 403)
+	call("GET", "", identity{TenantID: tenant, Role: "owner"}, 200)
+	call("GET", "", identity{TenantID: tenant, Role: "admin"}, 403)
 	call("GET", "", identity{TenantID: other, Role: "developer"}, 403)
 	preview := call("GET", "", actor, 200)
 	if preview.Token == "" || len(preview.Effects) == 0 {

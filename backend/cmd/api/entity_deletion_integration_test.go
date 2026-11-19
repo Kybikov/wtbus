@@ -73,7 +73,7 @@ func TestDeveloperDeletionPostgres(t *testing.T) {
 	}
 	customer := row(`INSERT INTO customers(tenant_id,full_name,phone_e164) VALUES($1,'Delete passenger','+380501234567') RETURNING id::text`, company)
 	foreign := row(`INSERT INTO customers(tenant_id,phone_e164) VALUES($1,'+380501234568') RETURNING id::text`, other)
-	for _, role := range []string{"owner", "admin", "dispatcher", "driver"} {
+	for _, role := range []string{"admin", "dispatcher", "driver"} {
 		who := actor
 		who.Role = role
 		request("GET", "customers", customer, nil, who, 403)

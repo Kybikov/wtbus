@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// A developer can remove operational data in their company, irrespective of
+// Company owners and developers can remove operational data in their company, irrespective of
 // workflow phase. Dependencies are previewed and confirmed, never guessed by UI.
 var deletionTables = map[string]string{
 	"customers": "customers", "trips": "trips", "bookings": "bookings",
@@ -98,8 +98,8 @@ func (app *application) entityDeletion(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": "Войдите в аккаунт."})
 		return
 	}
-	if actor.Role != "developer" {
-		writeJSON(w, 403, map[string]string{"error": "Удаление доступно только разработчику."})
+	if actor.Role != "developer" && actor.Role != "owner" {
+		writeJSON(w, 403, map[string]string{"error": "Удаление доступно владельцу компании и разработчику."})
 		return
 	}
 	company, ok := app.loadTenant(w, r, r.PathValue("slug"))

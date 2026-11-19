@@ -41,6 +41,7 @@ type TeamMember = {
   role: Role
   isActive: boolean
   isSystem: boolean
+  passwordResetProtected?: boolean
   createdAt: string
   lastSeenAt?: string
   driverId?: string
@@ -964,44 +965,51 @@ export function TeamManager() {
                   }}
                 />
               </label>
-              <div className="space-y-3 border-t border-border pt-4">
-                <TemporaryPasswordField
-                  value={resetPassword}
-                  onChange={setResetPassword}
-                  busy={!!changingId}
-                />
-                <p className="text-xs text-muted-foreground">
-                  После сброса сотрудник войдёт с новым паролем. Старые сеансы
-                  завершатся.
+              {accessTarget.passwordResetProtected ? (
+                <p className="border-t border-border pt-4 text-xs text-muted-foreground">
+                  Пароль общего или платформенного аккаунта меняется в личном
+                  профиле.
                 </p>
-                <Button
-                  disabled={
-                    !!changingId ||
-                    accessTarget.membershipId === me?.membershipId ||
-                    resetPassword.length < 12 ||
-                    new TextEncoder().encode(resetPassword).length > 72
-                  }
-                  disabledReason={
-                    changingId
-                      ? "Пароль меняется. Дождитесь завершения."
-                      : accessTarget.membershipId === me?.membershipId
-                        ? "Свой пароль меняйте в личном профиле."
-                        : resetPassword.length < 12
-                          ? "Введите или создайте пароль от 12 символов."
-                          : "Пароль должен занимать не более 72 байт."
-                  }
-                  onClick={() => {
-                    void updateMember(accessTarget, {
-                      password: resetPassword,
-                    }).then((ok) => {
-                      if (ok)
-                        setNotice("Пароль изменён. Передайте его сотруднику.")
-                    })
-                  }}
-                >
-                  Сбросить пароль
-                </Button>
-              </div>
+              ) : (
+                <div className="space-y-3 border-t border-border pt-4">
+                  <TemporaryPasswordField
+                    value={resetPassword}
+                    onChange={setResetPassword}
+                    busy={!!changingId}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    После сброса сотрудник войдёт с новым паролем. Старые сеансы
+                    завершатся.
+                  </p>
+                  <Button
+                    disabled={
+                      !!changingId ||
+                      accessTarget.membershipId === me?.membershipId ||
+                      resetPassword.length < 12 ||
+                      new TextEncoder().encode(resetPassword).length > 72
+                    }
+                    disabledReason={
+                      changingId
+                        ? "Пароль меняется. Дождитесь завершения."
+                        : accessTarget.membershipId === me?.membershipId
+                          ? "Свой пароль меняйте в личном профиле."
+                          : resetPassword.length < 12
+                            ? "Введите или создайте пароль от 12 символов."
+                            : "Пароль должен занимать не более 72 байт."
+                    }
+                    onClick={() => {
+                      void updateMember(accessTarget, {
+                        password: resetPassword,
+                      }).then((ok) => {
+                        if (ok)
+                          setNotice("Пароль изменён. Передайте его сотруднику.")
+                      })
+                    }}
+                  >
+                    Сбросить пароль
+                  </Button>
+                </div>
+              )}
               {error ? (
                 <p role="alert" className="text-sm text-destructive">
                   {error}
