@@ -8,6 +8,7 @@ import { TripEarlyDeparture } from "@/components/trip-early-departure"
 import type { TripOperations } from "@/lib/trip-operations"
 import { TripLinkPicker } from "@/components/trip-link-picker"
 import { CreateRouteFromTrip } from "@/components/create-route-from-trip"
+import { TripItineraryEditor } from "@/components/trip-itinerary-editor"
 import { RouteNavigationEditor } from "@/components/route-navigation-editor"
 import { useRecordDeletion } from "@/components/use-record-deletion"
 import { useRouter } from "next/navigation"
@@ -1110,6 +1111,16 @@ export function EntityDetailPage({
             <dl className="min-w-0 divide-y divide-border/50">
               {entity === "routes" || entity === "trips" ? (
                 <div className="py-3">
+                  <dt className="mb-3 text-sm font-semibold">
+                    Остановки и цены
+                  </dt>
+                  <dd>
+                    <TripItineraryEditor id={id} entity={entity} />
+                  </dd>
+                </div>
+              ) : null}
+              {entity === "routes" || entity === "trips" ? (
+                <div className="py-3">
                   <dt className="mb-3 text-sm font-semibold">Дорога и GPS</dt>
                   <dd>
                     <RouteNavigationEditor routeID={id} entity={entity} />
@@ -1166,6 +1177,13 @@ export function EntityDetailPage({
                       "customer_name",
                       "record_sequence",
                       "navigation",
+                      "itinerary",
+                      "segment_from",
+                      "segment_to",
+                      "segment_origin",
+                      "segment_destination",
+                      "segment_pickup",
+                      "segment_dropoff",
                     ].includes(key) &&
                     key !== "custom_data" &&
                     key !== "last_location" &&

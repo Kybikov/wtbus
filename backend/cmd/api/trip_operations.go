@@ -46,9 +46,7 @@ func tripBoardingReadiness(ctx context.Context, tx pgx.Tx, tenant, trip string) 
 		return "Для посадки и выезда назначьте активный автомобиль, водителя и участника команды с правом посадки или управления рейсом.", nil
 	}
 	var capacity, occupied int
-	err = tx.QueryRow(ctx, `SELECT v.capacity,COALESCE((SELECT sum(b.seats) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id AND
-	 (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR
-	 (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now()))),0)
+	err = tx.QueryRow(ctx, `SELECT v.capacity,trip_occupied_seats(t,0,NULL,true)
 	 FROM trips t JOIN vehicles v ON v.id=t.vehicle_id AND v.tenant_id=t.tenant_id WHERE t.tenant_id=$1 AND t.id=$2`, tenant, trip).Scan(&capacity, &occupied)
 	if err != nil {
 		return "", err
@@ -84,7 +82,7 @@ func readTripOperations(ctx context.Context, db interface {
  COALESCE(sum(b.seats),0),
  COALESCE(bool_and(NOT EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting')<>'boarded')) FILTER(WHERE b.id IS NOT NULL),false),
  now()
- FROM trips t LEFT JOIN bookings b ON b.tenant_id=t.tenant_id AND b.trip_id=t.id AND
+ FROM trips t LEFT JOIN bookings b ON b.tenant_id=t.tenant_id AND b.trip_id=t.id AND COALESCE(b.segment_from,0)=0 AND
  (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR
  (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now()))
  LEFT JOIN driver_booking_checkins c ON c.tenant_id=b.tenant_id AND c.booking_id=b.id

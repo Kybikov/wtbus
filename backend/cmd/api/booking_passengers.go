@@ -150,7 +150,7 @@ func (app *application) bookingPassengers(w http.ResponseWriter, r *http.Request
 	people := bookingManifest(custom, seats, name, phone)
 	originalSeats, originalPrice := seats, price
 	var occupied int
-	err = tx.QueryRow(r.Context(), `SELECT coalesce(sum(b.seats),0) FROM bookings b WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now()))`, company.ID, tripID).Scan(&occupied)
+	err = tx.QueryRow(r.Context(), `SELECT trip_occupied_seats(t,COALESCE(b.segment_from,0),b.segment_to,true) FROM bookings b JOIN trips t ON t.id=b.trip_id AND t.tenant_id=b.tenant_id WHERE b.tenant_id=$1 AND b.id=$2`, company.ID, id).Scan(&occupied)
 	if err != nil {
 		app.publicFailure(w, err)
 		return

@@ -226,12 +226,14 @@ func (app *application) statistics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err = tx.Query(r.Context(), `WITH scoped AS (
- SELECT t.*,(SELECT coalesce(sum(b.seats),0) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id AND
- (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>$5))) occupied,
+ SELECT t.*,trip_occupied_seats(t,0,NULL,true) occupied,
+ (SELECT coalesce(sum(b.seats),0) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id AND
+ (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>$5))) passengers,
  workflow_status_phase(t.tenant_id,'trips',t.status) phase FROM trips t WHERE t.tenant_id=$1 AND t.starts_at>=$2 AND t.starts_at<$3)
  SELECT (starts_at AT TIME ZONE $4)::date::text,origin_name||' → '||destination_name,count(*),
  count(*) FILTER(WHERE phase='completed'),count(*) FILTER(WHERE phase='cancelled'),
- coalesce(sum(capacity) FILTER(WHERE phase<>'cancelled'),0),coalesce(sum(occupied) FILTER(WHERE phase<>'cancelled'),0)
+ coalesce(sum(capacity) FILTER(WHERE phase<>'cancelled'),0),coalesce(sum(occupied) FILTER(WHERE phase<>'cancelled'),0),
+ coalesce(sum(passengers) FILTER(WHERE phase<>'cancelled'),0)
  FROM scoped GROUP BY 1,2`, company.ID, low, high, company.Timezone, now)
 	if err != nil {
 		app.financeFailure(w, err)
@@ -239,8 +241,9 @@ func (app *application) statistics(w http.ResponseWriter, r *http.Request) {
 	}
 	for rows.Next() {
 		var day, label string
+		var passengerCount int64
 		var m statisticsMetrics
-		if err = rows.Scan(&day, &label, &m.Trips, &m.CompletedTrips, &m.CancelledTrips, &m.Capacity, &m.OccupiedSeats); err != nil {
+		if err = rows.Scan(&day, &label, &m.Trips, &m.CompletedTrips, &m.CancelledTrips, &m.Capacity, &m.OccupiedSeats, &passengerCount); err != nil {
 			break
 		}
 		d := days[day]
@@ -250,7 +253,7 @@ func (app *application) statistics(w http.ResponseWriter, r *http.Request) {
 			v := routes[label]
 			v.Label = label
 			v.Trips += m.Trips
-			v.Passengers += m.OccupiedSeats
+			v.Passengers += passengerCount
 			v.Capacity += m.Capacity
 			routes[label] = v
 		}

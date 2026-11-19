@@ -18,6 +18,10 @@ type driverManifestBooking struct {
 	Currency      string            `json:"currency"`
 	Boarding      map[string]string `json:"boarding"`
 	CashMinor     int64             `json:"cashMinor"`
+	Origin        string            `json:"origin,omitempty"`
+	Destination   string            `json:"destination,omitempty"`
+	Pickup        string            `json:"pickup,omitempty"`
+	Dropoff       string            `json:"dropoff,omitempty"`
 	RecordNumber  string            `json:"recordNumber"`
 }
 
@@ -68,11 +72,11 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
       WHEN p.payment_method='cash' OR workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' THEN 'cash_on_boarding' ELSE 'unselected' END,
  CASE WHEN p.payment_method='bank_transfer' THEN p.status::text
       WHEN (checkin.id IS NULL AND NOT EXISTS(SELECT 1 FROM driver_booking_checkins ci JOIN bookings bi ON bi.id=ci.booking_id WHERE bi.tenant_id=b.tenant_id AND bi.trip_id=b.trip_id) AND EXISTS(SELECT 1 FROM driver_cash_ledger l WHERE l.tenant_id=b.tenant_id AND l.trip_id=b.trip_id AND l.kind='cash_collected')) OR COALESCE(checkin.cash_minor,0)>=b.price_minor THEN 'paid' WHEN COALESCE(checkin.cash_minor,0)>0 THEN 'partial' ELSE 'pending' END,
- b.price_minor,b.currency,COALESCE(checkin.boarding,'{}'::jsonb),COALESCE(checkin.cash_minor,0),COALESCE((SELECT number FROM record_numbers n WHERE n.record_id=b.id AND n.tenant_id=b.tenant_id AND n.entity='bookings'),'')
+ b.price_minor,b.currency,COALESCE(checkin.boarding,'{}'::jsonb),COALESCE(checkin.cash_minor,0),COALESCE((SELECT number FROM record_numbers n WHERE n.record_id=b.id AND n.tenant_id=b.tenant_id AND n.entity='bookings'),''),COALESCE(b.segment_origin,''),COALESCE(b.segment_destination,''),COALESCE(b.segment_pickup,''),COALESCE(b.segment_dropoff,'')
  FROM bookings b JOIN customers c ON c.id=b.customer_id AND c.tenant_id=b.tenant_id
  LEFT JOIN driver_booking_checkins checkin ON checkin.booking_id=b.id AND checkin.tenant_id=b.tenant_id
  LEFT JOIN LATERAL (SELECT payment_method,status FROM payments WHERE tenant_id=b.tenant_id AND booking_id=b.id ORDER BY created_at DESC,id DESC LIMIT 1) p ON true
- WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY b.created_at`, company.ID, tripID)
+ WHERE b.tenant_id=$1 AND b.trip_id=$2 AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())) ORDER BY COALESCE(b.segment_from,0),b.created_at`, company.ID, tripID)
 	if err != nil {
 		app.publicFailure(w, err)
 		return
@@ -82,7 +86,7 @@ func (app *application) driverPassengers(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var item driverManifestBooking
 		var people, boarding []byte
-		if err = rows.Scan(&item.ID, &item.Name, &item.Phone, &item.Seats, &people, &item.PaymentMethod, &item.PaymentStatus, &item.AmountMinor, &item.Currency, &boarding, &item.CashMinor, &item.RecordNumber); err != nil {
+		if err = rows.Scan(&item.ID, &item.Name, &item.Phone, &item.Seats, &people, &item.PaymentMethod, &item.PaymentStatus, &item.AmountMinor, &item.Currency, &boarding, &item.CashMinor, &item.RecordNumber, &item.Origin, &item.Destination, &item.Pickup, &item.Dropoff); err != nil {
 			app.publicFailure(w, err)
 			return
 		}

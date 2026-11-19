@@ -13,6 +13,9 @@ export type PublicTrip = {
   priceMinor: number
   currency: string
   availableSeats: number
+  pickup?: string
+  dropoff?: string
+  partial?: boolean
 }
 export type PublicField = {
   key: string

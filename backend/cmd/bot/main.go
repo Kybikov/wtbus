@@ -102,6 +102,9 @@ type tripOption struct {
 	Currency    string
 	PricingMode string
 	Available   int
+	SegmentKey  string
+	Pickup      string
+	Dropoff     string
 }
 
 type routeDirection struct {
@@ -947,7 +950,7 @@ func (app *app) showTrips(chatID int64, state bookingState) {
 	for _, trip := range trips {
 		fmt.Fprintf(&text, "%s → %s\n%s · %d мест · %s\n\n", trip.Origin, trip.Destination, trip.StartsAt.In(app.timezone).Format("02.01 15:04"), trip.Available, formatMoney(trip.PriceMinor, trip.Currency))
 		label := fmt.Sprintf("%s · %s", trip.StartsAt.In(app.timezone).Format("15:04"), formatMoney(trip.PriceMinor, trip.Currency))
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(label, "book:"+trip.ID)))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(label, "book:"+trip.SegmentKey)))
 	}
 	app.sendWithMarkup(chatID, text.String(), tgbotapi.NewInlineKeyboardMarkup(rows...))
 	app.saveState(chatID, state)
@@ -968,7 +971,7 @@ func (app *app) showAvailableDirections(chatID int64) {
 	for _, direction := range directions {
 		label := direction.Origin + " → " + direction.Destination
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(label, "route:"+direction.ID),
+			tgbotapi.NewInlineKeyboardButtonData(label, "direction:"+direction.ID),
 		))
 	}
 	app.saveState(chatID, bookingState{Step: "route"})
@@ -992,7 +995,7 @@ func (app *app) showUpcomingTrips(chatID int64) {
 	for _, trip := range trips {
 		fmt.Fprintf(&message, "%s → %s\n%s · %d мест · %s\n\n", trip.Origin, trip.Destination, trip.StartsAt.In(app.timezone).Format("02.01.2006 15:04"), trip.Available, formatMoney(trip.PriceMinor, trip.Currency))
 		label := fmt.Sprintf("%s · %s → %s", trip.StartsAt.In(app.timezone).Format("02.01 15:04"), trip.Origin, trip.Destination)
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(label, "book:"+trip.ID)))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(label, "book:"+trip.SegmentKey)))
 	}
 	app.clearState(chatID)
 	app.sendWithMarkup(chatID, message.String(), tgbotapi.NewInlineKeyboardMarkup(rows...))
@@ -1370,7 +1373,8 @@ func (app *app) loadCancellableTelegramBooking(ctx context.Context, telegramID i
 	var item customerTrip
 	err := app.db.QueryRow(ctx, `
 		SELECT b.id::text, b.status::text, t.status::text, b.seats, b.price_minor, b.currency,
-			t.origin_name, t.destination_name, t.starts_at, COALESCE(payment.payment_method, '')
+			COALESCE(b.segment_origin,t.origin_name), COALESCE(b.segment_destination,t.destination_name),
+			booking_departure_time(t,b), COALESCE(payment.payment_method, '')
 		FROM bookings b
 		JOIN customers c ON c.id = b.customer_id
 		JOIN trips t ON t.id = b.trip_id
@@ -1400,7 +1404,8 @@ func (app *app) cancelTelegramBooking(ctx context.Context, telegramID int64, boo
 	var item customerTrip
 	err = tx.QueryRow(ctx, `
 		SELECT b.id::text, b.status::text, t.status::text, b.seats, b.price_minor, b.currency,
-			t.origin_name, t.destination_name, t.starts_at, COALESCE(payment.payment_method, '')
+			COALESCE(b.segment_origin,t.origin_name), COALESCE(b.segment_destination,t.destination_name),
+			booking_departure_time(t,b), COALESCE(payment.payment_method, '')
 		FROM bookings b
 		JOIN customers c ON c.id = b.customer_id
 		JOIN trips t ON t.id = b.trip_id
@@ -1481,6 +1486,15 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 		app.handleTelegramCancellationCallback(chatID, callback.From.ID, callback.Data)
 		return
 	}
+	if key, ok := strings.CutPrefix(callback.Data, "direction:"); ok {
+		direction, err := app.findTripDirection(context.Background(), key)
+		if err != nil {
+			app.send(chatID, "Это направление уже недоступно. Обновите список.")
+			return
+		}
+		app.askBookingDate(chatID, bookingState{Origin: direction.Origin, Destination: direction.Destination})
+		return
+	}
 	if strings.HasPrefix(callback.Data, "route:") {
 		app.handleRouteCallback(chatID, callback.Data)
 		return
@@ -1498,17 +1512,18 @@ func (app *app) handleCallback(callback *tgbotapi.CallbackQuery) {
 	if !strings.HasPrefix(callback.Data, "book:") {
 		return
 	}
-	tripID := strings.TrimPrefix(callback.Data, "book:")
-	if strings.TrimSpace(tripID) == "" {
+	key := strings.TrimPrefix(callback.Data, "book:")
+	tripID, _, _ := strings.Cut(key, ":")
+	if !validBookingID(tripID) {
 		return
 	}
 	state, _ := app.getState(chatID)
-	direction, err := app.findTripDirection(context.Background(), tripID)
+	direction, err := app.findTripDirection(context.Background(), key)
 	if err != nil {
 		app.send(chatID, "Этот рейс уже недоступен. Обновите список рейсов.")
 		return
 	}
-	if state.PendingTripID == tripID && (state.Step == "contact" || strings.HasPrefix(state.Step, "passenger_") || state.Step == "seats" || state.Step == "booking_field") {
+	if state.PendingTripID == tripID && state.Origin == direction.Origin && state.Destination == direction.Destination && (state.Step == "contact" || strings.HasPrefix(state.Step, "passenger_") || state.Step == "seats" || state.Step == "booking_field") {
 		return
 	}
 	state.Origin, state.Destination = direction.Origin, direction.Destination
@@ -1868,6 +1883,12 @@ func (app *app) confirmBooking(chatID int64, customerID, tripID string, state bo
 	}
 	app.clearState(chatID)
 	message := fmt.Sprintf("Бронь № %s создана и удерживается 30 минут.\n\nПассажир: %s\nТелефон: %s\nДата рождения: %s\n%s → %s\n%s\nПассажиров: %d\nСтоимость: %s\nСвободно мест: %d", created.Number, state.PassengerName, state.PassengerPhone, formatBirthDate(state.PassengerBirthDate), created.Trip.Origin, created.Trip.Destination, created.Trip.StartsAt.In(app.timezone).Format("02.01.2006 в 15:04"), state.PendingSeats, formatMoney(created.Trip.PriceMinor, created.Trip.Currency), created.Available)
+	if created.Trip.Pickup != "" {
+		message += "\nПосадка: " + created.Trip.Pickup
+	}
+	if created.Trip.Dropoff != "" {
+		message += "\nВысадка: " + created.Trip.Dropoff
+	}
 	if created.Trip.Currency != "UAH" {
 		app.sendWithMarkup(chatID, message+"\n\nДля этого рейса доступна оплата наличными в валюте рейса.", paymentCashMarkup(created.PaymentID))
 		return
@@ -1920,19 +1941,9 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 	var trip tripOption
 	var capacity int
 	err = tx.QueryRow(ctx, `
-		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at, t.ends_at, t.price_minor, t.currency, t.pricing_mode, t.capacity
-		FROM trips t
-		WHERE t.id = $1 AND t.tenant_id = $2 AND `+bookingrules.SalePredicate+`
-			AND origin_name ILIKE '%' || $3 || '%' AND destination_name ILIKE '%' || $4 || '%'
-			AND starts_at >= $5 AND starts_at < $6
-			AND NOT EXISTS (
-				SELECT 1 FROM availability_blocks block
-				WHERE block.tenant_id = t.tenant_id
-				  AND block.starts_at < t.ends_at AND block.ends_at > t.starts_at
-				  AND (block.route_id IS NULL OR block.route_id = t.route_id)
-			)
-		FOR UPDATE OF t
-	`, tripID, app.tenantID, state.Origin, state.Destination, day, day.AddDate(0, 0, 1)).Scan(&trip.ID, &trip.Origin, &trip.Destination, &trip.StartsAt, &trip.EndsAt, &trip.PriceMinor, &trip.Currency, &trip.PricingMode, &capacity)
+		SELECT t.currency,t.pricing_mode,t.capacity FROM trips t
+		WHERE t.id=$1 AND t.tenant_id=$2 AND `+bookingrules.SalePredicate+` FOR UPDATE OF t
+	`, tripID, app.tenantID).Scan(&trip.Currency, &trip.PricingMode, &capacity)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return createdBooking{}, errUnavailableTrip
 	}
@@ -1950,11 +1961,22 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 	if alreadyBooked {
 		return createdBooking{}, errAlreadyBooked
 	}
-	var occupied int
-	if err := tx.QueryRow(ctx, `SELECT `+bookingrules.OccupiedSQL+` FROM trips t WHERE t.id=$1 AND t.tenant_id=$2`, tripID, app.tenantID).Scan(&occupied); err != nil {
+	segment, err := bookingrules.FindSegment(ctx, tx, app.tenantID, tripID, state.Origin, state.Destination)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (segment.StartsAt.Before(day) || !segment.StartsAt.Before(day.AddDate(0, 0, 1)))) {
+		return createdBooking{}, errUnavailableTrip
+	}
+	if err != nil {
 		return createdBooking{}, err
 	}
-	if occupied+int(state.PendingSeats) > capacity {
+	trip.ID, trip.Origin, trip.Destination = tripID, state.Origin, state.Destination
+	trip.StartsAt, trip.EndsAt, trip.PriceMinor = segment.StartsAt, segment.EndsAt, segment.Price
+	if segment.Pickup != nil {
+		trip.Pickup = *segment.Pickup
+	}
+	if segment.Dropoff != nil {
+		trip.Dropoff = *segment.Dropoff
+	}
+	if segment.Occupied+int(state.PendingSeats) > capacity {
 		return createdBooking{}, errNoSeats
 	}
 	if state.CustomData == nil {
@@ -1968,14 +1990,14 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 		return createdBooking{}, err
 	}
 	var bookingID string
-	bookingPrice, ok := priceForBooking(trip.PriceMinor, state.PendingSeats, trip.PricingMode)
+	bookingPrice, ok := priceForBooking(segment.Price, state.PendingSeats, trip.PricingMode)
 	if !ok {
 		return createdBooking{}, fmt.Errorf("booking price exceeds supported amount")
 	}
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO bookings (tenant_id, trip_id, customer_id, status, seats, price_minor, currency, source, custom_data, payment_hold_expires_at)
-		VALUES ($1, $2, $3, 'awaiting_payment', $4, $5, $6, 'telegram', $7, now() + interval '30 minutes') RETURNING id::text
-	`, app.tenantID, tripID, customerID, state.PendingSeats, bookingPrice, trip.Currency, customData).Scan(&bookingID); err != nil {
+		INSERT INTO bookings (tenant_id, trip_id, customer_id, status, seats, price_minor, currency, source, custom_data, payment_hold_expires_at, segment_from, segment_to, segment_origin, segment_destination, segment_pickup, segment_dropoff)
+		VALUES ($1, $2, $3, 'awaiting_payment', $4, $5, $6, 'telegram', $7, now() + interval '30 minutes',$8,$9,$10,$11,$12,$13) RETURNING id::text
+	`, app.tenantID, tripID, customerID, state.PendingSeats, bookingPrice, trip.Currency, customData, segment.From, segment.To, segment.Origin, segment.Destination, segment.Pickup, segment.Dropoff).Scan(&bookingID); err != nil {
 		var pgError *pgconn.PgError
 		if errors.As(err, &pgError) && pgError.Code == "23505" && pgError.ConstraintName == "bookings_one_active_per_customer_trip_idx" {
 			return createdBooking{}, errAlreadyBooked
@@ -2005,7 +2027,7 @@ func (app *app) createBooking(ctx context.Context, customerID, tripID string, st
 		return createdBooking{}, err
 	}
 	trip.PriceMinor = bookingPrice
-	return createdBooking{Number: number, ID: bookingID, PaymentID: paymentID, Trip: trip, Available: capacity - occupied - int(state.PendingSeats)}, nil
+	return createdBooking{Number: number, ID: bookingID, PaymentID: paymentID, Trip: trip, Available: capacity - segment.Occupied - int(state.PendingSeats)}, nil
 }
 
 type telegramPayment struct {
@@ -2385,18 +2407,19 @@ func (app *app) canAcceptBookings(ctx context.Context) (bool, error) {
 	return status == "trial" || status == "active", nil
 }
 
+const segmentCallbackKey = `t.id::text||':'||substr(md5(jsonb_build_array(s.origin,s.destination)::text),1,12)`
+
 func (app *app) findTrips(ctx context.Context, origin, destination string, day time.Time) ([]tripOption, error) {
 	if err := app.expireBookingHolds(ctx); err != nil {
 		return nil, err
 	}
 	rows, err := app.db.Query(ctx, `
-SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,t.pricing_mode,
- t.capacity-`+bookingrules.OccupiedSQL+` AS available
- FROM trips t
+SELECT t.id::text,s.origin,s.destination,s.starts_at,s.ends_at,s.price_minor,t.currency,t.pricing_mode,
+ t.capacity-`+bookingrules.SegmentOccupiedSQL+` AS available, `+segmentCallbackKey+` AS segment_key
+ FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
  WHERE t.tenant_id=$1 AND `+bookingrules.SalePredicate+`
- AND t.origin_name ILIKE '%'||$2||'%' AND t.destination_name ILIKE '%'||$3||'%'
- AND t.starts_at >= $4 AND t.starts_at < $5
- AND t.capacity > `+bookingrules.OccupiedSQL+` ORDER BY t.starts_at
+ AND s.origin=$2 AND s.destination=$3 AND s.starts_at >= $4 AND s.starts_at < $5
+ AND t.capacity > `+bookingrules.SegmentOccupiedSQL+` ORDER BY s.starts_at LIMIT 15
 	`, app.tenantID, origin, destination, day, day.AddDate(0, 0, 1))
 	if err != nil {
 		return nil, err
@@ -2407,11 +2430,10 @@ SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price
 
 func (app *app) findAvailableDirections(ctx context.Context) ([]routeDirection, error) {
 	rows, err := app.db.Query(ctx, `
-SELECT route.id::text,route.origin_name,route.destination_name FROM routes route
- WHERE route.tenant_id=$1 AND route.is_active AND EXISTS(
- SELECT 1 FROM trips t WHERE t.route_id=route.id AND t.tenant_id=route.tenant_id
- AND `+bookingrules.SalePredicate+` AND t.capacity>`+bookingrules.OccupiedSQL+`)
- ORDER BY route.origin_name,route.destination_name LIMIT 20
+SELECT DISTINCT ON (s.origin,s.destination) `+segmentCallbackKey+`,s.origin,s.destination
+ FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
+ WHERE t.tenant_id=$1 AND `+bookingrules.SalePredicate+` AND t.capacity>`+bookingrules.SegmentOccupiedSQL+`
+ ORDER BY s.origin,s.destination,s.starts_at,t.id LIMIT 60
 	`, app.tenantID)
 	if err != nil {
 		return nil, err
@@ -2436,11 +2458,11 @@ func (app *app) findUpcomingTrips(ctx context.Context, limit int) ([]tripOption,
 		return nil, err
 	}
 	rows, err := app.db.Query(ctx, `
-SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,t.pricing_mode,
- t.capacity-`+bookingrules.OccupiedSQL+` AS available
- FROM trips t
+SELECT t.id::text,s.origin,s.destination,s.starts_at,s.ends_at,s.price_minor,t.currency,t.pricing_mode,
+ t.capacity-`+bookingrules.SegmentOccupiedSQL+` AS available, `+segmentCallbackKey+` AS segment_key
+ FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
  WHERE t.tenant_id=$1 AND `+bookingrules.SalePredicate+`
- AND t.capacity > `+bookingrules.OccupiedSQL+` ORDER BY t.starts_at LIMIT $2
+ AND t.capacity > `+bookingrules.SegmentOccupiedSQL+` ORDER BY s.starts_at,t.id,s.from_stop,s.to_stop LIMIT $2
 	`, app.tenantID, limit)
 	if err != nil {
 		return nil, err
@@ -2449,14 +2471,20 @@ SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price
 	return collectTrips(rows)
 }
 
-func (app *app) findTripDirection(ctx context.Context, tripID string) (routeDirection, error) {
+func (app *app) findTripDirection(ctx context.Context, key string) (routeDirection, error) {
 	var direction routeDirection
+	tripID, _, segmented := strings.Cut(key, ":")
+	if !validBookingID(tripID) {
+		return direction, pgx.ErrNoRows
+	}
 	err := app.db.QueryRow(ctx, `
-		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at
-		FROM trips t
-		WHERE t.id = $1 AND t.tenant_id = $2 AND `+bookingrules.SalePredicate+`
-			AND t.capacity > `+bookingrules.OccupiedSQL+`
-	`, tripID, app.tenantID).Scan(&direction.ID, &direction.Origin, &direction.Destination, &direction.StartsAt)
+		SELECT t.id::text,s.origin,s.destination,s.starts_at
+		FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
+		WHERE t.id=$1 AND t.tenant_id=$2 AND `+bookingrules.SalePredicate+`
+		AND t.capacity>`+bookingrules.SegmentOccupiedSQL+`
+		AND (($3 AND `+segmentCallbackKey+`=$4)
+		OR (NOT $3 AND s.from_stop=0 AND s.to_stop=jsonb_array_length(t.itinerary->'stops')+1))
+	`, tripID, app.tenantID, segmented, key).Scan(&direction.ID, &direction.Origin, &direction.Destination, &direction.StartsAt)
 	return direction, err
 }
 
@@ -2493,17 +2521,11 @@ func expireBookingHoldsWith(ctx context.Context, executor sqlExecutor, tenantID,
 
 func (app *app) findAlternativeDates(ctx context.Context, origin, destination string, from time.Time) ([]string, error) {
 	rows, err := app.db.Query(ctx, `
-		SELECT DISTINCT (starts_at AT TIME ZONE $4)::date
-		FROM trips
-		WHERE tenant_id = $1 AND status IN ('new', 'assigned')
-			AND origin_name ILIKE '%' || $2 || '%' AND destination_name ILIKE '%' || $3 || '%'
-			AND starts_at >= $5 AND starts_at < $5 + interval '14 days'
-			AND NOT EXISTS (
-				SELECT 1 FROM availability_blocks block
-				WHERE block.tenant_id = trips.tenant_id
-				  AND block.starts_at < trips.ends_at AND block.ends_at > trips.starts_at
-				  AND (block.route_id IS NULL OR block.route_id = trips.route_id)
-			)
+		SELECT DISTINCT (s.starts_at AT TIME ZONE $4)::date
+		FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
+		WHERE t.tenant_id=$1 AND `+bookingrules.SalePredicate+`
+		AND s.origin=$2 AND s.destination=$3 AND s.starts_at >= $5 AND s.starts_at < $5 + interval '14 days'
+		AND t.capacity>`+bookingrules.SegmentOccupiedSQL+`
 		ORDER BY 1 LIMIT 4
 	`, app.tenantID, origin, destination, app.timezone.String(), from)
 	if err != nil {
@@ -2525,7 +2547,7 @@ func collectTrips(rows pgx.Rows) ([]tripOption, error) {
 	items := make([]tripOption, 0)
 	for rows.Next() {
 		var item tripOption
-		if err := rows.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.PricingMode, &item.Available); err != nil {
+		if err := rows.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.PricingMode, &item.Available, &item.SegmentKey); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

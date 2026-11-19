@@ -30,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/vivat-bus/tms/internal/bookingrules"
 	"github.com/vivat-bus/tms/internal/customerexport"
 	"github.com/vivat-bus/tms/internal/customerimport"
 	"github.com/vivat-bus/tms/internal/ibanpayment"
@@ -224,6 +225,10 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes", operations(app.listRoutes))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/routes", operations(app.requireActiveSubscription(app.createRoute)))
 	mux.HandleFunc("PATCH /api/v1/tenants/{slug}/routes/{routeID}", operations(app.requireActiveSubscription(app.updateRoute)))
+	for _, record := range []string{"routes/{routeID}", "trips/{tripID}"} {
+		mux.HandleFunc("GET /api/v1/tenants/{slug}/"+record+"/itinerary", operations(app.tripItinerary))
+		mux.HandleFunc("PATCH /api/v1/tenants/{slug}/"+record+"/itinerary", operations(app.requireActiveSubscription(app.tripItinerary)))
+	}
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/routes/{routeID}/navigation", operations(app.routeNavigation))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/navigation-places", operations(app.navigationPlaces))
 	mux.HandleFunc("POST /api/v1/tenants/{slug}/navigation-preview", operations(app.previewRouteNavigation))
@@ -1706,14 +1711,11 @@ func (app *application) dashboardSummary(w http.ResponseWriter, r *http.Request)
 
 	trips, err := app.db.Query(r.Context(), `
 		SELECT t.id::text, t.origin_name, t.destination_name, t.starts_at, t.status::text,
-			COALESCE(v.name, ''), COALESCE(d.full_name, ''), t.capacity,
-			COALESCE(SUM(b.seats) FILTER (WHERE workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint
+			COALESCE(v.name, ''), COALESCE(d.full_name, ''), t.capacity,trip_occupied_seats(t,0,NULL,true)
 		FROM trips t
 		LEFT JOIN vehicles v ON v.id = t.vehicle_id
 		LEFT JOIN drivers d ON d.id = t.driver_id
-		LEFT JOIN bookings b ON b.trip_id = t.id AND b.tenant_id = t.tenant_id
 		WHERE t.tenant_id = $1 AND t.starts_at >= $2 AND t.starts_at < $3 AND t.status <> 'cancelled'
-		GROUP BY t.id, v.name, d.full_name
 		ORDER BY t.starts_at
 		LIMIT 6
 	`, tenant.ID, dayStart, dayEnd)
@@ -1745,13 +1747,10 @@ func (app *application) dashboardSummary(w http.ResponseWriter, r *http.Request)
 			CASE WHEN v.capacity > 0 THEN LEAST(100, (COALESCE(t.booked_seats, 0) * 100 / v.capacity)) ELSE 0 END::bigint
 		FROM vehicles v
 		LEFT JOIN LATERAL (
-			SELECT trip.origin_name, trip.destination_name, trip.status,
-				COALESCE(SUM(b.seats) FILTER (WHERE workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at > now())), 0)::bigint AS booked_seats
+			SELECT trip.origin_name, trip.destination_name, trip.status,trip_occupied_seats(trip,0,NULL,true) AS booked_seats
 			FROM trips trip
-			LEFT JOIN bookings b ON b.trip_id = trip.id AND b.tenant_id = trip.tenant_id
 			WHERE trip.vehicle_id = v.id AND trip.tenant_id = v.tenant_id
 				AND trip.starts_at >= $2 AND trip.starts_at < $3 AND trip.status <> 'cancelled'
-			GROUP BY trip.id
 			ORDER BY trip.starts_at
 			LIMIT 1
 		) t ON true
@@ -1831,7 +1830,7 @@ func (app *application) listTrips(w http.ResponseWriter, r *http.Request) {
 			t.id::text, t.kind::text, t.status::text, t.origin_name, t.destination_name,
 			t.starts_at, t.ends_at, t.capacity, t.price_minor, t.pricing_mode, t.currency, t.custom_data, t.route_id::text, t.vehicle_id::text, t.driver_id::text, COALESCE(t.notes, ''),
 			COALESCE(v.name, ''), COALESCE(d.full_name, ''), EXISTS(SELECT 1 FROM memberships m WHERE m.id=d.membership_id AND m.tenant_id=t.tenant_id AND m.is_active AND m.role::text IN ('driver','developer')),
-			GREATEST(0,t.capacity-(SELECT COALESCE(SUM(b.seats),0) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now()))))
+			GREATEST(0,t.capacity-trip_occupied_seats(t,0,NULL,true))
 		FROM trips t
 		JOIN tenants tenant ON tenant.id = t.tenant_id
 		LEFT JOIN vehicles v ON v.id = t.vehicle_id
@@ -3165,6 +3164,9 @@ func (app *application) createTripSchedule(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create trip schedule"})
 			return
 		}
+		if !app.validateTripItinerarySchedule(w, r, tx, tenant.ID, createdID) {
+			return
+		}
 		if err := persistTripNavigation(r.Context(), tx, tenant.ID, createdID, road); err != nil {
 			app.publicFailure(w, err)
 			return
@@ -3366,6 +3368,9 @@ func (app *application) createTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !app.validateTripItinerarySchedule(w, r, tx, tenant.ID, trip.ID) {
+		return
+	}
 	if err = persistTripNavigation(r.Context(), tx, tenant.ID, trip.ID, road); err != nil {
 		app.publicFailure(w, err)
 		return
@@ -3543,7 +3548,7 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var occupied int
-	if err = tx.QueryRow(r.Context(), "SELECT COALESCE(sum(seats),0) FROM bookings WHERE trip_id=$1 AND tenant_id=$2 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed','completed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at>now()))", tripID, tenant.ID).Scan(&occupied); err != nil {
+	if err = tx.QueryRow(r.Context(), "SELECT trip_occupied_seats(t,0,NULL,true) FROM trips t WHERE id=$1 AND tenant_id=$2", tripID, tenant.ID).Scan(&occupied); err != nil {
 		app.publicFailure(w, err)
 		return
 	}
@@ -3589,6 +3594,9 @@ func (app *application) updateTrip(w http.ResponseWriter, r *http.Request) {
 	trip.CustomData, err = decodeCustomData(responseCustomData)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update trip"})
+		return
+	}
+	if !app.validateTripItinerarySchedule(w, r, tx, tenant.ID, trip.ID) {
 		return
 	}
 	if err = persistTripNavigation(r.Context(), tx, tenant.ID, trip.ID, road); err != nil {
@@ -3799,7 +3807,7 @@ func (app *application) changeTripStatus(w http.ResponseWriter, r *http.Request)
 		}
 		{
 			var waiting bool
-			err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings b LEFT JOIN driver_booking_checkins c ON c.booking_id=b.id AND c.tenant_id=b.tenant_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' AND EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting') NOT IN ('boarded','absent')))`, tenant.ID, tripID).Scan(&waiting)
+			err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM bookings b LEFT JOIN driver_booking_checkins c ON c.booking_id=b.id AND c.tenant_id=b.tenant_id WHERE b.tenant_id=$1 AND b.trip_id=$2 AND COALESCE(b.segment_from,0)=0 AND workflow_status_phase(b.tenant_id,'bookings',b.status)='confirmed' AND EXISTS(SELECT 1 FROM generate_series(0,b.seats-1) i WHERE COALESCE(c.boarding->>i::text,'waiting') NOT IN ('boarded','absent')))`, tenant.ID, tripID).Scan(&waiting)
 			if err != nil {
 				app.publicFailure(w, err)
 				return
@@ -4885,7 +4893,7 @@ func (app *application) getCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.db.Query(r.Context(), `
-		SELECT b.id::text, b.status::text, t.origin_name, t.destination_name, t.starts_at, b.seats, b.price_minor, b.currency
+		SELECT b.id::text, b.status::text, COALESCE(b.segment_origin,t.origin_name), COALESCE(b.segment_destination,t.destination_name), booking_departure_time(t,b), b.seats, b.price_minor, b.currency
 		FROM bookings b
 		JOIN trips t ON t.id = b.trip_id AND t.tenant_id = b.tenant_id
 		WHERE b.tenant_id = $1 AND b.customer_id = $2
@@ -5174,6 +5182,9 @@ func (app *application) updateCustomer(w http.ResponseWriter, r *http.Request) {
 }
 
 type createBookingRequest struct {
+	QuotedPriceMinor   *int64         `json:"quotedPriceMinor,omitempty"`
+	Origin             string         `json:"origin"`
+	Destination        string         `json:"destination"`
 	TripID             string         `json:"tripId"`
 	CustomerID         string         `json:"customerId"`
 	Seats              int16          `json:"seats"`
@@ -5525,8 +5536,8 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 	rows, err := app.db.Query(r.Context(), `
 		SELECT b.id::text, b.status::text, b.seats, b.price_minor, b.currency, b.source, b.created_at, b.custom_data,
 			COALESCE(c.full_name, ''), c.phone_e164,
-			t.id::text, t.status::text, t.origin_name, t.destination_name, t.starts_at, t.capacity,
-			GREATEST(t.capacity - COALESCE((SELECT sum(occupied.seats) FROM bookings occupied WHERE occupied.trip_id = t.id AND (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status) IN ('pending','confirmed','completed') OR (workflow_status_phase(occupied.tenant_id,'bookings',occupied.status)='awaiting_payment' AND occupied.payment_hold_expires_at > now()))), 0), 0),
+			t.id::text, t.status::text, COALESCE(b.segment_origin,t.origin_name), COALESCE(b.segment_destination,t.destination_name), booking_departure_time(t,b), t.capacity,
+			GREATEST(t.capacity - trip_occupied_seats(t,COALESCE(b.segment_from,0),b.segment_to,true),0),
 			COALESCE(payment.id::text, ''), CASE WHEN ci.cash_minor>0 THEN CASE WHEN ci.cash_minor>=b.price_minor THEN 'paid' ELSE 'partial' END ELSE COALESCE(payment.status::text,'') END, COALESCE(payment.payment_method,CASE WHEN ci.cash_minor>0 OR b.status='cash_on_boarding' THEN 'cash_on_boarding' ELSE '' END), b.payment_hold_expires_at,
 			COALESCE(request.id::text, ''), count(*) OVER()
 		FROM bookings b
@@ -5540,10 +5551,10 @@ func (app *application) listBookings(w http.ResponseWriter, r *http.Request) {
 		) payment ON true
 		WHERE b.tenant_id = $1
 		  AND ($2 = '' OR b.status::text = $2)
-		  AND ($3 = '' OR b.id::text ILIKE '%' || $3 || '%' OR COALESCE(c.full_name, '') ILIKE '%' || $3 || '%' OR c.phone_e164 ILIKE '%' || $3 || '%' OR t.origin_name ILIKE '%' || $3 || '%' OR t.destination_name ILIKE '%' || $3 || '%'
+		  AND ($3 = '' OR b.id::text ILIKE '%' || $3 || '%' OR COALESCE(c.full_name, '') ILIKE '%' || $3 || '%' OR c.phone_e164 ILIKE '%' || $3 || '%' OR COALESCE(b.segment_origin,t.origin_name) ILIKE '%' || $3 || '%' OR COALESCE(b.segment_destination,t.destination_name) ILIKE '%' || $3 || '%'
 		    OR COALESCE(b.custom_data->>'passenger_name','') ILIKE '%' || $3 || '%' OR COALESCE(b.custom_data->>'passenger_phone','') ILIKE '%' || $3 || '%'
 		    OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(b.custom_data->'passengers')='array' THEN b.custom_data->'passengers' ELSE '[]'::jsonb END) person WHERE concat_ws(' ',person->>'firstName',person->>'lastName') ILIKE '%' || $3 || '%'))
-		  AND ($4 = '' OR (t.starts_at AT TIME ZONE $5)::date = $4::date)
+		  AND ($4 = '' OR (booking_departure_time(t,b) AT TIME ZONE $5)::date = $4::date)
 		  AND ($6 = '' OR b.source = $6)
 		  AND ($7 = '' OR t.status::text = $7)
 		  AND ($8 = ''
@@ -5698,12 +5709,25 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "customer already has an active booking for this trip"})
 		return
 	}
-	var occupied int
-	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats),0) FROM bookings WHERE trip_id=$1 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at > now()))`, input.TripID).Scan(&occupied); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create booking"})
+	if input.RequestID != "" && (input.Origin != "" || input.Destination != "") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Для заявки на индивидуальный трансфер выберите весь маршрут."})
 		return
 	}
-	if occupied+int(input.Seats) > int(capacity) {
+	segment, err := bookingrules.FindSegment(r.Context(), tx, tenant.ID, input.TripID, input.Origin, input.Destination)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "Участок больше не продаётся. Обновите список рейсов."})
+		return
+	}
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	priceMinor = segment.Price
+	if input.QuotedPriceMinor != nil && *input.QuotedPriceMinor != priceMinor {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "Цена участка изменилась. Выберите рейс заново."})
+		return
+	}
+	if segment.Occupied+int(input.Seats) > int(capacity) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "not enough available seats"})
 		return
 	}
@@ -5714,7 +5738,7 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 	}
 	var booking bookingResponse
 	var responseCustomData []byte
-	err = tx.QueryRow(r.Context(), `INSERT INTO bookings (tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data) VALUES ($1,$2,$3,'cash_on_boarding',$4,$5,$6,'dispatcher',$7) RETURNING id::text,trip_id::text,customer_id::text,seats,status::text,price_minor,currency,custom_data`, tenant.ID, input.TripID, input.CustomerID, input.Seats, bookingPrice, currency, encodedCustomData).Scan(&booking.ID, &booking.TripID, &booking.CustomerID, &booking.Seats, &booking.Status, &booking.PriceMinor, &booking.Currency, &responseCustomData)
+	err = tx.QueryRow(r.Context(), `INSERT INTO bookings (tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data,segment_from,segment_to,segment_origin,segment_destination,segment_pickup,segment_dropoff) VALUES ($1,$2,$3,'cash_on_boarding',$4,$5,$6,'dispatcher',$7,$8,$9,$10,$11,$12,$13) RETURNING id::text,trip_id::text,customer_id::text,seats,status::text,price_minor,currency,custom_data`, tenant.ID, input.TripID, input.CustomerID, input.Seats, bookingPrice, currency, encodedCustomData, segment.From, segment.To, segment.Origin, segment.Destination, segment.Pickup, segment.Dropoff).Scan(&booking.ID, &booking.TripID, &booking.CustomerID, &booking.Seats, &booking.Status, &booking.PriceMinor, &booking.Currency, &responseCustomData)
 	if err != nil {
 		var pgError *pgconn.PgError
 		if errors.As(err, &pgError) && pgError.Code == "23505" && pgError.ConstraintName == "bookings_one_active_per_customer_trip_idx" {
@@ -5746,7 +5770,7 @@ func (app *application) createBooking(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create booking"})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"item": booking, "availableSeats": int(capacity) - occupied - int(input.Seats)})
+	writeJSON(w, http.StatusCreated, map[string]any{"item": booking, "availableSeats": int(capacity) - segment.Occupied - int(input.Seats)})
 }
 
 func canCreateBookingForTripStatus(status string) bool {
@@ -5873,7 +5897,7 @@ func (app *application) updateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var occupied int
-	if err := tx.QueryRow(r.Context(), `SELECT COALESCE(sum(seats), 0) FROM bookings WHERE trip_id = $1 AND (workflow_status_phase(tenant_id,'bookings',status) IN ('pending','confirmed') OR (workflow_status_phase(tenant_id,'bookings',status)='awaiting_payment' AND payment_hold_expires_at > now()))`, tripID).Scan(&occupied); err != nil {
+	if err := tx.QueryRow(r.Context(), `SELECT trip_occupied_seats(t,COALESCE(b.segment_from,0),b.segment_to) FROM trips t JOIN bookings b ON b.trip_id=t.id AND b.tenant_id=t.tenant_id WHERE b.id=$1 AND t.tenant_id=$2`, bookingID, tenant.ID).Scan(&occupied); err != nil {
 		app.log.Error("count booking seats", "error", err, "tenant", slug)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update booking"})
 		return

@@ -9,6 +9,5 @@ const SalePredicate = `t.kind = 'regular' AND t.pricing_mode = 'per_passenger'
  AND NOT EXISTS (SELECT 1 FROM availability_blocks a WHERE a.tenant_id=t.tenant_id
    AND (a.route_id IS NULL OR a.route_id=t.route_id) AND a.starts_at<t.ends_at AND a.ends_at>t.starts_at)`
 
-// OccupiedSQL includes custom workflow statuses in their business phase.
-const OccupiedSQL = `(SELECT COALESCE(sum(b.seats),0) FROM bookings b WHERE b.tenant_id=t.tenant_id AND b.trip_id=t.id
- AND (workflow_status_phase(b.tenant_id,'bookings',b.status) IN ('pending','confirmed') OR (workflow_status_phase(b.tenant_id,'bookings',b.status)='awaiting_payment' AND b.payment_hold_expires_at>now())))`
+// SegmentOccupiedSQL expects a trip t and a selected segment s.
+const SegmentOccupiedSQL = `trip_occupied_seats(t,s.from_stop,s.to_stop)`

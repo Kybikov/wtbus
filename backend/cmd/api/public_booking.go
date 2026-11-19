@@ -25,7 +25,8 @@ import (
 // drafts, disabled routes/vehicles, departed trips or blocked departures are sold.
 const publicSalePredicate = bookingrules.SalePredicate
 
-const publicOccupiedSQL = bookingrules.OccupiedSQL
+const publicSegmentColumns = `t.id::text,s.origin,s.destination,s.starts_at,s.ends_at,s.price_minor,t.currency,
+ t.capacity-` + bookingrules.SegmentOccupiedSQL + ` AS available_seats,s.pickup,s.dropoff,s.from_stop<>0 OR s.to_stop<>jsonb_array_length(t.itinerary->'stops')+1 AS partial`
 
 var publicUUID = regexp.MustCompile(`(?i)^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
@@ -48,6 +49,9 @@ type publicTrip struct {
 	PriceMinor     int64     `json:"priceMinor"`
 	Currency       string    `json:"currency"`
 	AvailableSeats int       `json:"availableSeats"`
+	Pickup         string    `json:"pickup,omitempty"`
+	Dropoff        string    `json:"dropoff,omitempty"`
+	Partial        bool      `json:"partial,omitempty"`
 }
 
 func (app *application) publicTenant(w http.ResponseWriter, r *http.Request) (tenant, bool) {
@@ -74,7 +78,7 @@ func (app *application) publicCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT origin_name,destination_name FROM routes WHERE tenant_id=$1 AND is_active
- UNION SELECT t.origin_name,t.destination_name FROM trips t WHERE t.tenant_id=$1 AND `+publicSalePredicate+`
+ UNION SELECT s.origin,s.destination FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s WHERE t.tenant_id=$1 AND `+publicSalePredicate+`
  ORDER BY 1,2`, company.ID)
 	if err != nil {
 		app.publicFailure(w, err)
@@ -151,10 +155,9 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, location)
-	rows, err := app.db.Query(r.Context(), `SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,
- t.capacity-`+publicOccupiedSQL+` FROM trips t WHERE t.tenant_id=$1 AND t.origin_name=$2 AND t.destination_name=$3
- AND t.starts_at>=$4 AND t.starts_at<$5 AND `+publicSalePredicate+`
- ORDER BY t.starts_at LIMIT 200`, company.ID, origin, destination, start, start.AddDate(0, 0, 1))
+	rows, err := app.db.Query(r.Context(), `SELECT `+publicSegmentColumns+` FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
+ WHERE t.tenant_id=$1 AND s.origin=$2 AND s.destination=$3 AND s.starts_at>=$4 AND s.starts_at<$5 AND `+publicSalePredicate+`
+ ORDER BY s.starts_at LIMIT 200`, company.ID, origin, destination, start, start.AddDate(0, 0, 1))
 	if err != nil {
 		app.publicFailure(w, err)
 		return
@@ -164,7 +167,7 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 	available := false
 	for rows.Next() {
 		var item publicTrip
-		if err = rows.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.AvailableSeats); err != nil {
+		if err = rows.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.AvailableSeats, &item.Pickup, &item.Dropoff, &item.Partial); err != nil {
 			app.publicFailure(w, err)
 			return
 		}
@@ -182,10 +185,9 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 		// Suggest only real, still saleable departures with enough seats. The
 		// preceding side never includes departed trips; each side is bounded.
 		nearby, queryErr := app.db.Query(r.Context(), `WITH eligible AS (
- SELECT t.id::text,t.origin_name,t.destination_name,t.starts_at,t.ends_at,t.price_minor,t.currency,
- t.capacity-`+publicOccupiedSQL+` AS available_seats FROM trips t
- WHERE t.tenant_id=$1 AND t.origin_name=$2 AND t.destination_name=$3 AND `+publicSalePredicate+`
- AND t.capacity-`+publicOccupiedSQL+` >= $6)
+ SELECT `+publicSegmentColumns+` FROM trips t CROSS JOIN LATERAL trip_sale_segments(t) s
+ WHERE t.tenant_id=$1 AND s.origin=$2 AND s.destination=$3 AND `+publicSalePredicate+`
+ AND t.capacity-`+bookingrules.SegmentOccupiedSQL+` >= $6)
  (SELECT * FROM eligible WHERE starts_at<$4 ORDER BY starts_at DESC,id LIMIT 3)
  UNION ALL
  (SELECT * FROM eligible WHERE starts_at>=$5 ORDER BY starts_at,id LIMIT 3)`, company.ID, origin, destination, start, start.AddDate(0, 0, 1), seats)
@@ -196,7 +198,7 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 		defer nearby.Close()
 		for nearby.Next() {
 			var item publicTrip
-			if err = nearby.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.AvailableSeats); err != nil {
+			if err = nearby.Scan(&item.ID, &item.Origin, &item.Destination, &item.StartsAt, &item.EndsAt, &item.PriceMinor, &item.Currency, &item.AvailableSeats, &item.Pickup, &item.Dropoff, &item.Partial); err != nil {
 				app.publicFailure(w, err)
 				return
 			}
@@ -217,6 +219,8 @@ func (app *application) publicTrips(w http.ResponseWriter, r *http.Request) {
 }
 
 type publicBookingInput struct {
+	Origin           string            `json:"origin,omitempty"`
+	Destination      string            `json:"destination,omitempty"`
 	RequestKey       string            `json:"requestKey"`
 	TripID           string            `json:"tripId"`
 	QuotedPriceMinor int64             `json:"quotedPriceMinor"`
@@ -407,10 +411,9 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var capacity int16
-	var price int64
 	var currency string
 	var saleable bool
-	err = tx.QueryRow(r.Context(), `SELECT t.capacity,t.price_minor,t.currency,(`+publicSalePredicate+`) FROM trips t WHERE t.id=$1 AND t.tenant_id=$2 FOR UPDATE OF t`, input.TripID, company.ID).Scan(&capacity, &price, &currency, &saleable)
+	err = tx.QueryRow(r.Context(), `SELECT t.capacity,t.currency,(`+publicSalePredicate+`) FROM trips t WHERE t.id=$1 AND t.tenant_id=$2 FOR UPDATE OF t`, input.TripID, company.ID).Scan(&capacity, &currency, &saleable)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !saleable) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Рейс уже недоступний. Оберіть інший."})
 		return
@@ -419,16 +422,21 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		app.publicFailure(w, err)
 		return
 	}
+	segment, err := bookingrules.FindSegment(r.Context(), tx, company.ID, input.TripID, input.Origin, input.Destination)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "Ця ділянка вже недоступна. Оновіть пошук."})
+		return
+	}
+	if err != nil {
+		app.publicFailure(w, err)
+		return
+	}
+	price := segment.Price
 	if price != input.QuotedPriceMinor {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Ціна рейсу змінилася. Оновіть пошук і перевірте нову ціну."})
 		return
 	}
-	var occupied int
-	if err = tx.QueryRow(r.Context(), `SELECT `+publicOccupiedSQL+` FROM trips t WHERE t.id=$1`, input.TripID).Scan(&occupied); err != nil {
-		app.publicFailure(w, err)
-		return
-	}
-	if occupied+int(input.Seats) > int(capacity) {
+	if segment.Occupied+int(input.Seats) > int(capacity) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Недостатньо вільних місць. Оновіть результати пошуку."})
 		return
 	}
@@ -488,10 +496,10 @@ func (app *application) publicCreateBooking(w http.ResponseWriter, r *http.Reque
 		holdExpiresAt = &expires
 	}
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data,payment_hold_expires_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,'web',$8,$9)
+		INSERT INTO bookings(tenant_id,trip_id,customer_id,status,seats,price_minor,currency,source,custom_data,payment_hold_expires_at,segment_from,segment_to,segment_origin,segment_destination,segment_pickup,segment_dropoff)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'web',$8,$9,$10,$11,$12,$13,$14,$15)
 		RETURNING id::text,status::text,seats,price_minor,currency
-	`, company.ID, input.TripID, customerID, bookingStatus, input.Seats, total, currency, data, holdExpiresAt).Scan(&result.Reference, &result.Status, &result.Seats, &result.PriceMinor, &result.Currency)
+	`, company.ID, input.TripID, customerID, bookingStatus, input.Seats, total, currency, data, holdExpiresAt, segment.From, segment.To, segment.Origin, segment.Destination, segment.Pickup, segment.Dropoff).Scan(&result.Reference, &result.Status, &result.Seats, &result.PriceMinor, &result.Currency)
 	if err != nil {
 		app.publicFailure(w, err)
 		return

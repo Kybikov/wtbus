@@ -15,6 +15,7 @@ export type RouteNavigation = {
   startLabel?: string
   endLabel?: string
   coordinates?: RoadPoint[]
+  via?: RoadPoint[]
   distanceMeters?: number
 }
 const RoadMap = dynamic(
@@ -110,8 +111,15 @@ function Editor({ routeID, entity = "routes" }: EditorProps) {
   }, [routeID, entity, initialize])
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
-  }, [load])
+    function refreshRoad(event: Event) {
+      if ((event as CustomEvent<string>).detail === routeID) void load()
+    }
+    window.addEventListener("vivat:route-road-updated", refreshRoad)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener("vivat:route-road-updated", refreshRoad)
+    }
+  }, [load, routeID])
   function choose(
     key: "start" | "end",
     point: RoadPoint | null,

@@ -39,6 +39,7 @@ type routeNavigation struct {
 	StartLabel     string      `json:"startLabel,omitempty"`
 	EndLabel       string      `json:"endLabel,omitempty"`
 	Coordinates    []roadPoint `json:"coordinates,omitempty"`
+	Via            []roadPoint `json:"via,omitempty"`
 	DistanceMeters float64     `json:"distanceMeters,omitempty"`
 }
 type roadProgress struct {
@@ -138,7 +139,8 @@ var routingSlot struct {
 	next time.Time
 }
 
-func buildRoad(ctx context.Context, base string, input routeNavigation) (routeNavigation, error) {
+func buildRoad(ctx context.Context, base string, input routeNavigation, via ...roadPoint) (routeNavigation, error) {
+	input.Via = via
 	if input.Start == nil || input.End == nil {
 		return input, nil
 	}
@@ -149,8 +151,7 @@ func buildRoad(ctx context.Context, base string, input routeNavigation) (routeNa
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return input, errors.New("Сервис построения маршрута недоступен.")
 	}
-	// Public OSRM service permits at most one request/second. Only selected
-	// endpoints leave the server; live GPS fixes are always matched locally.
+	// Only planned route points go to OSRM. Live GPS fixes are matched locally.
 	routingSlot.Lock()
 	delay := time.Until(routingSlot.next)
 	if delay < 0 {
@@ -165,7 +166,16 @@ func buildRoad(ctx context.Context, base string, input routeNavigation) (routeNa
 		return input, ctx.Err()
 	case <-timer.C:
 	}
-	endpoint := fmt.Sprintf("%s/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=false&radiuses=1000;1000", strings.TrimRight(base, "/"), input.Start[0], input.Start[1], input.End[0], input.End[1])
+	waypoints := append(append([]roadPoint{*input.Start}, via...), *input.End)
+	coordinates, radii := make([]string, 0, len(waypoints)), make([]string, 0, len(waypoints))
+	for _, point := range waypoints {
+		if !validRoadPoint(point) {
+			return input, errors.New("Уточните координаты остановки.")
+		}
+		coordinates = append(coordinates, fmt.Sprintf("%.6f,%.6f", point[0], point[1]))
+		radii = append(radii, "1000")
+	}
+	endpoint := fmt.Sprintf("%s/route/v1/driving/%s?overview=full&geometries=geojson&steps=false&radiuses=%s", strings.TrimRight(base, "/"), strings.Join(coordinates, ";"), strings.Join(radii, ";"))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return input, err
@@ -270,8 +280,8 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, 400, map[string]string{"error": "Неверный маршрут."})
 		return
 	}
-	var raw []byte
-	if err := app.db.QueryRow(r.Context(), `SELECT navigation FROM `+table+` WHERE id=$1 AND tenant_id=$2`, id, tenant.ID).Scan(&raw); err != nil {
+	var raw, itineraryRaw []byte
+	if err := app.db.QueryRow(r.Context(), `SELECT navigation,itinerary FROM `+table+` WHERE id=$1 AND tenant_id=$2`, id, tenant.ID).Scan(&raw, &itineraryRaw); err != nil {
 		var databaseError *pgconn.PgError
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, 404, map[string]string{"error": "Маршрут не найден."})
@@ -339,9 +349,15 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 	var err error
 	if sameRoadPoint(nav.Start, previous.Start) && sameRoadPoint(nav.End, previous.End) && len(previous.Coordinates) > 1 {
 		built.Coordinates = previous.Coordinates
+		built.Via = previous.Via
 		built.DistanceMeters = previous.DistanceMeters
 	} else {
-		built, err = buildRoad(ctx, base, nav)
+		var itinerary tripItinerary
+		if err = json.Unmarshal(itineraryRaw, &itinerary); err != nil {
+			app.publicFailure(w, err)
+			return
+		}
+		built, err = buildRoad(ctx, base, nav, itinerary.points()...)
 	}
 	if err != nil {
 		app.log.Warn("build route navigation", "error", err, "route", id)
@@ -349,10 +365,10 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	data, _ := json.Marshal(built)
-	query := `UPDATE ` + table + ` SET navigation=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3`
-	args := []any{data, id, tenant.ID}
+	query := `UPDATE ` + table + ` SET navigation=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3 AND itinerary=$4::jsonb`
+	args := []any{data, id, tenant.ID, itineraryRaw}
 	if table == "routes" {
-		query = `UPDATE routes SET navigation=$1,distance_km=$4,updated_at=now() WHERE id=$2 AND tenant_id=$3`
+		query = `UPDATE routes SET navigation=$1,distance_km=$5,updated_at=now() WHERE id=$2 AND tenant_id=$3 AND itinerary=$4::jsonb`
 		args = append(args, math.Round(built.DistanceMeters/10)/100)
 	}
 	tx, err := app.db.Begin(r.Context())
@@ -367,7 +383,7 @@ func (app *application) routeNavigation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, 404, map[string]string{"error": "Маршрут удалён."})
+		writeJSON(w, 409, map[string]string{"error": "Маршрут изменился. Обновите страницу и повторите попытку."})
 		return
 	}
 	if table == "trips" {

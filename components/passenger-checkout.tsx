@@ -221,6 +221,9 @@ export function PassengerCheckout({
     const data = {
       tripId: trip.id,
       quotedPriceMinor: trip.priceMinor,
+      ...(trip.partial
+        ? { origin: trip.origin, destination: trip.destination }
+        : {}),
       seats,
       passengers: passengers.map(({ firstName, lastName, birthDate }) => ({
         firstName: firstName.trim(),
@@ -360,6 +363,22 @@ export function PassengerCheckout({
       <p className="mt-2 text-xs text-muted-foreground">
         Часовий пояс: {catalog.timezone}
       </p>
+      {trip.pickup || trip.dropoff ? (
+        <dl className="mt-4 grid gap-2 text-sm">
+          {trip.pickup ? (
+            <div>
+              <dt className="text-muted-foreground">Посадка</dt>
+              <dd className="break-words">{trip.pickup}</dd>
+            </div>
+          ) : null}
+          {trip.dropoff ? (
+            <div>
+              <dt className="text-muted-foreground">Висадка</dt>
+              <dd className="break-words">{trip.dropoff}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
       <Separator className="my-5" />
       <dl className="space-y-4 text-sm">
         <div className="flex justify-between gap-3">

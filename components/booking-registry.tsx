@@ -90,6 +90,14 @@ type BookingTrip = {
   currency: string
 }
 
+type BookableSegment = {
+  origin: string
+  destination: string
+  startsAt: string
+  priceMinor: number
+  availableSeats: number
+}
+
 type CustomerOption = { id: string; fullName: string; phone: string }
 
 type BookingForm = {
@@ -323,14 +331,61 @@ export function BookingRegistry() {
   const [isCreating, setIsCreating] = React.useState(false)
   const [createError, setCreateError] = React.useState<string | null>(null)
   const [bookableTrips, setBookableTrips] = React.useState<BookingTrip[]>([])
-  const [customers, setCustomers] = React.useState<CustomerOption[]>([])
-  const [bookingCustomFields, setBookingCustomFields] = React.useState<
-    CustomDataField[]
-  >([])
   const [bookingForm, setBookingForm] =
     React.useState<BookingForm>(emptyBookingForm)
   const [sourceRequest, setSourceRequest] =
     React.useState<RequestPrefill | null>(null)
+  const [itinerary, setItinerary] = React.useState<{
+    tripId: string
+    segments: BookableSegment[]
+    error?: string
+  }>()
+  const [segmentKey, setSegmentKey] = React.useState("")
+  const segmentTripID = isCreateOpen && !sourceRequest ? bookingForm.tripId : ""
+  const [segmentAttempt, setSegmentAttempt] = React.useState(0)
+  const segments =
+    itinerary?.tripId === segmentTripID ? (itinerary?.segments ?? []) : []
+  const segmentError =
+    itinerary?.tripId === segmentTripID ? itinerary?.error : undefined
+  const selectedSegment = segments.find(
+    (segment) =>
+      JSON.stringify([segment.origin, segment.destination]) === segmentKey
+  )
+  const segmentLoading = Boolean(
+    segmentTripID && itinerary?.tripId !== segmentTripID
+  )
+  React.useEffect(() => {
+    if (!segmentTripID) return
+    const controller = new AbortController()
+    async function loadSegments() {
+      try {
+        const response = await sessionFetch(
+          `/api/routes/itinerary?entity=trips&id=${encodeURIComponent(segmentTripID)}`,
+          { signal: controller.signal }
+        )
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error)
+        if (!controller.signal.aborted)
+          setItinerary({ tripId: segmentTripID, segments: data.segments ?? [] })
+      } catch (reason) {
+        if (!controller.signal.aborted)
+          setItinerary({
+            tripId: segmentTripID,
+            segments: [],
+            error:
+              reason instanceof Error
+                ? reason.message
+                : "Не удалось загрузить участки.",
+          })
+      }
+    }
+    void loadSegments()
+    return () => controller.abort()
+  }, [segmentTripID, segmentAttempt])
+  const [customers, setCustomers] = React.useState<CustomerOption[]>([])
+  const [bookingCustomFields, setBookingCustomFields] = React.useState<
+    CustomDataField[]
+  >([])
 
   const loadController = React.useRef<AbortController | null>(null)
   const [nextOffset, setNextOffset] = React.useState(0)
@@ -578,6 +633,8 @@ export function BookingRegistry() {
   }, [bookingForm.date, isCreateOpen, sourceRequest])
 
   function openCreateBooking() {
+    setItinerary(undefined)
+    setSegmentKey("")
     setSourceRequest(null)
     setBookingForm(emptyBookingForm())
     setCreateError(null)
@@ -588,6 +645,16 @@ export function BookingRegistry() {
     event.preventDefault()
     setCreateError(null)
     const seats = Number.parseInt(bookingForm.seats, 10)
+    if (segmentLoading) return
+    if (
+      segmentKey &&
+      (!selectedSegment || seats > selectedSegment.availableSeats)
+    ) {
+      setCreateError(
+        "На выбранном участке недостаточно свободных мест или он уже недоступен."
+      )
+      return
+    }
     if (
       !bookingForm.tripId ||
       !bookingForm.customerId ||
@@ -610,6 +677,13 @@ export function BookingRegistry() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tripId: bookingForm.tripId,
+          ...(selectedSegment
+            ? {
+                origin: selectedSegment.origin,
+                destination: selectedSegment.destination,
+                quotedPriceMinor: selectedSegment.priceMinor,
+              }
+            : {}),
           customerId: bookingForm.customerId,
           seats,
           passengerName: bookingForm.passengerName,
@@ -1210,12 +1284,10 @@ export function BookingRegistry() {
                   disabled={
                     isCreating || isCreateLoading || bookableTrips.length === 0
                   }
-                  onValueChange={(value) =>
-                    setBookingForm((current) => ({
-                      ...current,
-                      tripId: value,
-                    }))
-                  }
+                  onValueChange={(value) => {
+                    setSegmentKey("")
+                    setBookingForm((current) => ({ ...current, tripId: value }))
+                  }}
                   options={[
                     {
                       value: "",
@@ -1233,6 +1305,50 @@ export function BookingRegistry() {
                   value={bookingForm.tripId}
                 />
               </label>
+              {segmentLoading ? (
+                <p
+                  role="status"
+                  className="text-xs text-muted-foreground sm:col-span-2"
+                >
+                  Загружаем участки рейса…
+                </p>
+              ) : null}
+              {segmentError ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-destructive sm:col-span-2">
+                  <span role="alert">{segmentError}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setItinerary(undefined)
+                      setSegmentAttempt((value) => value + 1)
+                    }}
+                  >
+                    Повторить
+                  </Button>
+                </div>
+              ) : null}
+              {segments.length ? (
+                <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
+                  Участок рейса
+                  <FieldSelect
+                    aria-label="Участок рейса"
+                    value={segmentKey}
+                    onValueChange={setSegmentKey}
+                    options={[
+                      { value: "", label: "Весь маршрут" },
+                      ...segments.map((segment) => ({
+                        value: JSON.stringify([
+                          segment.origin,
+                          segment.destination,
+                        ]),
+                        label: `${segment.origin} → ${segment.destination} · ${formatDate(segment.startsAt, timezone)} · ${formatMoney(segment.priceMinor, bookableTrips.find((trip) => trip.id === segmentTripID)?.currency ?? "EUR")} · мест ${segment.availableSeats}`,
+                      })),
+                    ]}
+                  />
+                </label>
+              ) : null}
               <label className="grid gap-2 text-sm font-semibold sm:col-span-2">
                 Клиент
                 <FieldSelect
@@ -1359,9 +1475,9 @@ export function BookingRegistry() {
                 Отмена
               </Button>
               <Button
-                disabled={isCreating || isCreateLoading}
+                disabled={isCreating || isCreateLoading || segmentLoading}
                 disabledReason={
-                  isCreateLoading
+                  isCreateLoading || segmentLoading
                     ? "Дождитесь загрузки данных для бронирования."
                     : "Бронирование создаётся. Дождитесь завершения."
                 }

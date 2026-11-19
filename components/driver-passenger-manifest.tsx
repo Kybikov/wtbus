@@ -33,6 +33,10 @@ export type ManifestBooking = {
   currency: string
   boarding: Record<string, string>
   cashMinor: number
+  origin?: string
+  destination?: string
+  pickup?: string
+  dropoff?: string
 }
 const money = (amount: number, currency: string) =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency }).format(
@@ -356,6 +360,19 @@ export function DriverPassengerManifest({
                 className="min-w-0 py-3 first:pt-0 lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(12rem,1fr)] lg:items-center lg:gap-6"
               >
                 <div className="space-y-2">
+                  {booking.origin && booking.destination ? (
+                    <div className="space-y-0.5 text-xs text-muted-foreground">
+                      <p className="font-medium text-foreground">
+                        {booking.origin} → {booking.destination}
+                      </p>
+                      {booking.pickup ? (
+                        <p>Посадка · {booking.pickup}</p>
+                      ) : null}
+                      {booking.dropoff ? (
+                        <p>Высадка · {booking.dropoff}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {Array.from({ length: booking.seats }, (_, index) => {
                     const person = booking.passengers[index]
                     const name = person

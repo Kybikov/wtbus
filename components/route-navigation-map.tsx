@@ -59,6 +59,15 @@ export function RouteNavigationMap({
           .bindTooltip(key === "start" ? "Отправление" : "Прибытие")
           .addTo(layer)
     }
+    for (const [index, point] of (navigation.via ?? []).entries()) {
+      L.circleMarker([point[1], point[0]], {
+        radius: 6,
+        color: "#2563eb",
+        fillOpacity: 1,
+      })
+        .bindTooltip(`Остановка ${index + 1}`)
+        .addTo(layer)
+    }
     const points = navigation.coordinates?.length
       ? navigation.coordinates
       : [navigation.start, navigation.end].filter(
