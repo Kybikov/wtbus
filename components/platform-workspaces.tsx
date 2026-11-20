@@ -375,7 +375,7 @@ export function PlatformWorkspaces({
 
       {overview ? (
         <>
-          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
             <TrendChart
               title="Платежи за подписки · 6 месяцев"
               data={overview.trend}

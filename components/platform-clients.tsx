@@ -274,7 +274,7 @@ export function PlatformClients() {
         </p>
       )}
       {overview && (
-        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[16rem_minmax(0,1fr)]">
           <section
             className="workspace-panel min-w-0 space-y-2 p-3"
             aria-label="Список клиентов"

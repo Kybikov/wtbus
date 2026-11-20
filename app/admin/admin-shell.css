@@ -1,0 +1,181 @@
+.platform-shell {
+  --platform-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  --platform-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  --platform-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  --platform-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  padding: var(--platform-top) var(--platform-right)
+    calc(5rem + var(--platform-bottom)) var(--platform-left);
+}
+
+.platform-sidebar {
+  position: fixed;
+  right: var(--platform-right);
+  bottom: var(--platform-bottom);
+  left: var(--platform-left);
+  z-index: 30;
+  padding: 0.25rem;
+  box-shadow: 0 4px 24px color-mix(in oklab, var(--foreground) 11%, transparent);
+}
+
+.platform-topbar {
+  position: sticky;
+  top: var(--platform-top);
+  z-index: 20;
+}
+
+.platform-shell :is(main, main [id]) {
+  scroll-margin-top: calc(var(--platform-top) + 4rem);
+}
+
+.platform-nav-list {
+  --pn-gap: 0.25rem;
+  --pn-height: 3.25rem;
+  --pn-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --pn-pill: color-mix(in oklab, var(--primary) 13%, transparent);
+  --pn-ink: var(--foreground);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--pn-count), minmax(0, 1fr));
+  gap: var(--pn-gap);
+}
+
+/* Sliding pill and rolling label adapted from https://reactbits.dev/components/pill-nav. */
+.platform-nav-list[data-active]::before {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: calc((100% - (var(--pn-count) - 1) * var(--pn-gap)) / var(--pn-count));
+  height: var(--pn-height);
+  border: 1px solid color-mix(in oklab, var(--primary) 21%, transparent);
+  border-radius: max(0.25rem, calc(var(--app-radius) - 0.25rem));
+  background: var(--pn-pill);
+  transform: translateX(calc(var(--pn-active) * (100% + var(--pn-gap))));
+  transition: transform 350ms var(--pn-ease);
+  content: "";
+  pointer-events: none;
+}
+
+.platform-nav-link {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  height: var(--pn-height);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  border-radius: max(0.25rem, calc(var(--app-radius) - 0.25rem));
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  outline: none;
+}
+
+.platform-nav-link[aria-current="page"] {
+  color: var(--pn-ink);
+}
+
+.platform-nav-link[aria-current="page"] svg {
+  color: var(--primary);
+}
+
+.platform-nav-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.platform-nav-label {
+  position: relative;
+  overflow: hidden;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.platform-nav-label > span {
+  display: block;
+  transition: transform 360ms var(--pn-ease);
+}
+
+.platform-nav-label > span:last-child {
+  position: absolute;
+  inset: 0;
+  color: var(--pn-ink);
+  transform: translateY(100%);
+}
+
+.platform-nav-fill {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: -1;
+  width: max(150%, 9rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 360ms var(--pn-ease);
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .platform-nav-link:not([aria-current]):hover .platform-nav-fill {
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  .platform-nav-link:not([aria-current]):hover
+    .platform-nav-label
+    > span:first-child {
+    transform: translateY(-100%);
+  }
+
+  .platform-nav-link:not([aria-current]):hover
+    .platform-nav-label
+    > span:last-child {
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 64rem) {
+  .platform-shell {
+    padding-bottom: 1rem;
+  }
+
+  .platform-shell-grid {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .platform-sidebar {
+    position: sticky;
+    inset: var(--platform-top) auto auto;
+    align-self: start;
+    min-height: calc(100dvh - var(--platform-top) - 1rem);
+    padding: 0.5rem;
+    box-shadow: none;
+  }
+
+  .platform-nav-list {
+    --pn-height: 2.625rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .platform-nav-list[data-active]::before {
+    width: 100%;
+    transform: translateY(calc(var(--pn-active) * (100% + var(--pn-gap))));
+  }
+
+  .platform-nav-link {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    padding-inline: 0.75rem;
+    font-size: 0.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-nav-list[data-active]::before,
+  .platform-nav-fill,
+  .platform-nav-label > span {
+    transition: none;
+  }
+}

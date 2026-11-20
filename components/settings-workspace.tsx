@@ -110,42 +110,24 @@ export function SettingsWorkspace({
   active,
   role,
   children,
-  platformAdmin,
 }: {
   active: string
   role?: string
-  platformAdmin?: boolean
   children: ReactNode
 }) {
   const router = useRouter()
   const allowed = sections.filter(
     (s) => !s.roles || (!!role && s.roles.includes(role))
   )
-  const visible = platformAdmin
-    ? [
-        ...allowed,
-        {
-          group: "Платформа",
-          href: "/admin",
-          label: "Рабочие пространства",
-          icon: Building2,
-        },
-      ]
-    : allowed
   return (
     <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
-      <div
-        className={cn(
-          "workspace-panel min-w-0 space-y-2 p-3 md:block xl:hidden",
-          !platformAdmin && "hidden"
-        )}
-      >
+      <div className="workspace-panel hidden min-w-0 space-y-2 p-3 md:block xl:hidden">
         <p className="text-xs text-muted-foreground">Раздел настроек</p>
         <FieldSelect
           aria-label="Раздел настроек"
           value={active}
           onValueChange={(href) => router.push(href)}
-          options={visible.map((section) => ({
+          options={allowed.map((section) => ({
             value: section.href,
             label: section.label,
           }))}
@@ -154,9 +136,9 @@ export function SettingsWorkspace({
       </div>
       <aside className="workspace-panel sticky top-0 hidden min-w-0 p-2 xl:block">
         <nav aria-label="Разделы настроек" className="min-w-0 space-y-1">
-          {visible.map((s, i) => (
+          {allowed.map((s, i) => (
             <div key={s.href} className="shrink-0 xl:shrink">
-              {i === 0 || visible[i - 1].group !== s.group ? (
+              {i === 0 || allowed[i - 1].group !== s.group ? (
                 <p className="hidden px-3 pt-4 pb-2 text-xs text-muted-foreground xl:block">
                   {s.group}
                 </p>

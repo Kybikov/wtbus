@@ -11,11 +11,9 @@ export function useSettingsRole() {
 
 export function SettingsFrame({
   role,
-  platformAdmin,
   children,
 }: {
   role?: string
-  platformAdmin?: boolean
   children: React.ReactNode
 }) {
   const path = usePathname()
@@ -29,11 +27,7 @@ export function SettingsFrame({
       }}
     >
       <SettingsRole.Provider value={role}>
-        <SettingsWorkspace
-          role={role}
-          active={path}
-          platformAdmin={platformAdmin}
-        >
+        <SettingsWorkspace role={role} active={path}>
           {children}
         </SettingsWorkspace>
       </SettingsRole.Provider>
